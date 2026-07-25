@@ -21,4 +21,11 @@ describe("cargoSmsRecipients", () => {
       cargoSmsRecipients({ ...cargo, customerRole: "RECEIVER" }, { prefer: "external" })
     ).toEqual([{ name: "Ali", phone: "+252611111111", type: "Sender" }]);
   });
+
+  it("includes both parties by default so the booking customer is notified", () => {
+    expect(cargoSmsRecipients(cargo)).toEqual([
+      { name: "Ali", phone: "+252611111111", type: "Sender" },
+      { name: "Fatima", phone: "+252615267625", type: "Receiver" },
+    ]);
+  });
 });

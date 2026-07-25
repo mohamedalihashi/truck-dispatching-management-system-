@@ -1,0 +1,192 @@
+import { prisma } from "../../lib/prisma.js";
+import { auditFields } from "../../lib/auditContext.js";
+
+function mapComplaint(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    customerName: row.customer?.name || null,
+    againstRole: row.againstRole,
+    againstUserId: row.againstUserId,
+    againstName: row.againstName || row.againstUser?.name || null,
+    referenceType: row.referenceType,
+    referenceId: row.referenceId,
+    subject: row.subject,
+    message: row.message,
+    status: row.status,
+    adminNote: row.adminNote,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+const complaintInclude = {
+  customer: { select: { id: true, name: true, email: true, phone: true } },
+  againstUser: { select: { id: true, name: true, role: true } }
+};
+
+async function resolveReferenceForCustomer(referenceId, customerId) {
+  const id = String(referenceId || "").trim();
+  if (!id) return null;
+
+  const trip = await prisma.trip.findFirst({
+    where: { id, customerId },
+    include: {
+      driver: { select: { id: true, name: true } },
+      dispatcher: { select: { id: true, name: true } }
+    }
+  });
+  if (trip) {
+    return {
+      referenceType: "trip",
+      referenceId: trip.id,
+      driver: trip.driver,
+      dispatcher: trip.dispatcher
+    };
+  }
+
+  const request = await prisma.cargoRequest.findFirst({
+    where: { id, customerId },
+    include: {
+      driver: { select: { id: true, name: true } },
+      dispatcher: { select: { id: true, name: true } }
+    }
+  });
+  if (request) {
+    return {
+      referenceType: "cargo_request",
+      referenceId: request.id,
+      driver: request.driver,
+      dispatcher: request.dispatcher
+    };
+  }
+
+  return null;
+}
+
+export const supportComplaintRepository = {
+  async createSupportComplaint({ customerId, againstRole, referenceId, subject, message, actorId }) {
+    const role = String(againstRole || "").toLowerCase();
+    if (!["driver", "dispatcher"].includes(role)) {
+      const error = new Error("You can only complain about a driver or dispatcher");
+      error.status = 400;
+      throw error;
+    }
+    const text = String(message || "").trim();
+    if (text.length < 10) {
+      const error = new Error("Please describe the issue in at least 10 characters");
+      error.status = 400;
+      throw error;
+    }
+
+    const resolved = await resolveReferenceForCustomer(referenceId, customerId);
+    if (!resolved) {
+      const error = new Error("Trip or request ID not found for your account. Check the ID and try again.");
+      error.status = 404;
+      throw error;
+    }
+
+    const target = role === "driver" ? resolved.driver : resolved.dispatcher;
+    if (!target?.id) {
+      const error = new Error(
+        role === "driver"
+          ? "No driver is assigned on this trip/request yet"
+          : "No dispatcher is linked to this trip/request yet"
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const row = await prisma.supportComplaint.create({
+      data: {
+        customerId,
+        againstRole: role,
+        againstUserId: target.id,
+        againstName: target.name,
+        referenceType: resolved.referenceType,
+        referenceId: resolved.referenceId,
+        subject: String(subject || "").trim() || `Complaint about ${role}`,
+        message: text.slice(0, 2000),
+        status: "Open"
+      },
+      include: complaintInclude
+    });
+
+    await prisma.auditLog.create({
+      data: auditFields({
+        userId: actorId || customerId,
+        action: "support.complaint.created",
+        entityType: "support_complaints",
+        entityId: row.id,
+        description: `Customer complaint against ${role} on ${resolved.referenceId}`,
+        newValues: {
+          againstRole: role,
+          againstUserId: target.id,
+          referenceId: resolved.referenceId
+        }
+      })
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: target.id,
+        type: "support.complaint",
+        message: `A customer filed a support complaint about you on ${resolved.referenceId}.`
+      }
+    });
+
+    return mapComplaint(row);
+  },
+
+  async listSupportComplaints({ customerId, status, page = 1, limit = 50 } = {}) {
+    const where = {};
+    if (customerId) where.customerId = customerId;
+    if (status) where.status = status;
+    const [data, total] = await Promise.all([
+      prisma.supportComplaint.findMany({
+        where,
+        include: complaintInclude,
+        orderBy: { createdAt: "desc" },
+        skip: (Number(page) - 1) * Number(limit),
+        take: Number(limit)
+      }),
+      prisma.supportComplaint.count({ where })
+    ]);
+    return { data: data.map(mapComplaint), total, page: Number(page) };
+  },
+
+  async updateSupportComplaintStatus(id, { status, adminNote, actorId }) {
+    const allowed = ["Open", "In Review", "Resolved", "Closed"];
+    if (!allowed.includes(status)) {
+      const error = new Error("Invalid complaint status");
+      error.status = 400;
+      throw error;
+    }
+    const existing = await prisma.supportComplaint.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    const row = await prisma.supportComplaint.update({
+      where: { id },
+      data: {
+        status,
+        adminNote: adminNote?.trim() || existing.adminNote
+      },
+      include: complaintInclude
+    });
+
+    await prisma.auditLog.create({
+      data: auditFields({
+        userId: actorId,
+        action: "support.complaint.updated",
+        entityType: "support_complaints",
+        entityId: id,
+        description: `Complaint status set to ${status}`,
+        oldValues: { status: existing.status },
+        newValues: { status }
+      })
+    });
+
+    return mapComplaint(row);
+  }
+};

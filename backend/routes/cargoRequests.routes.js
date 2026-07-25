@@ -178,6 +178,12 @@ router.post("/", requireRole("customer", "admin", "dispatcher"), validate(cargoR
     if (!customer || customer.role !== "customer") {
       return res.status(400).json({ message: "Valid customer is required" });
     }
+    if (req.user.role === "dispatcher") {
+      const allowed = await db.isCustomerVisibleToDispatcher(customerId, req.user.sub);
+      if (!allowed) {
+        return res.status(403).json({ message: "You can only create requests for customers you registered or assigned" });
+      }
+    }
     if (req.user.role === "customer" && !req.body.customerRole) {
       return res.status(400).json({ message: "Customer role is required" });
     }
@@ -198,7 +204,8 @@ router.post("/", requireRole("customer", "admin", "dispatcher"), validate(cargoR
     const { request, notification } = await db.createCargoRequest({
       ...bookingDetails,
       customerId,
-      customerName: customer.name
+      customerName: customer.name,
+      dispatcherId: req.user.role === "dispatcher" ? req.user.sub : undefined
     });
     req.app.get("io").emit("order.created", request);
     if (notification) req.app.get("io").emit("notification.created", notification);
@@ -331,6 +338,21 @@ router.delete("/:id", requireRole("customer", "dispatcher", "admin"), async (req
     req.app.get("io").emit("order.cancelled", request);
     void sendCargoRequestEventSms(request, "booking.cancelled").catch((error) => console.error("Cancelled SMS failed:", error.message));
     res.json(request);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/restore", requireRole("customer", "dispatcher", "admin"), async (req, res, next) => {
+  try {
+    const options = {};
+    if (req.user.role === "customer") options.customerId = req.user.sub;
+    const result = await db.restoreCargoRequest(req.params.id, req.user.sub, options);
+    if (!result) return res.status(404).json({ message: "Cargo request not found" });
+    req.app.get("io").emit("order.restored", result.request);
+    if (result.notification) req.app.get("io").emit("notification.created", result.notification);
+    void sendCargoRequestEventSms(result.request, "booking.restored").catch((error) => console.error("Restored SMS failed:", error.message));
+    res.json(result.request);
   } catch (error) {
     next(error);
   }

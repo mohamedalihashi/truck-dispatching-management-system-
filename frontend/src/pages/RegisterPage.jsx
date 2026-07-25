@@ -26,15 +26,12 @@ export function RegisterPage() {
     register,
     handleSubmit,
     setValue,
-    watch,
     formState: { isSubmitting }
   } = useForm({
     defaultValues: {
-      code: "",
-      customerType: "Individual"
+      code: ""
     }
   });
-  const customerType = watch("customerType");
 
   useEffect(() => {
     const stored = loadRegisterVerification();
@@ -47,10 +44,8 @@ export function RegisterPage() {
     const payload = new FormData();
     ["name", "username", "email", "phone", "password"].forEach((key) => payload.append(key, values[key]));
     payload.append("role", "customer");
-    ["customerType", "city", "address", "companyName", "companyPhone", "companyAddress", "businessRegistrationNumber"].forEach((key) => {
-      if (values[key]) payload.append(key, values[key]);
-    });
-    if (values.profilePhoto?.[0]) payload.append("profilePhoto", values.profilePhoto[0]);
+    payload.append("city", values.city);
+    payload.append("address", values.address);
     return payload;
   }
 
@@ -154,34 +149,15 @@ export function RegisterPage() {
               <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(onSubmitForm)}>
                 <Field label="Full name"><input className="stitch-input" {...register("name", { required: true })} /></Field>
                 <Field label="Phone"><input className="stitch-input" type="tel" {...register("phone", { required: true })} /></Field>
+                <Field label="Email (Gmail)"><input className="stitch-input" type="email" {...register("email", { required: true })} /></Field>
+                <Field label="City"><input className="stitch-input" {...register("city", { required: true })} /></Field>
+                <Field label="Address" className="sm:col-span-2"><input className="stitch-input" {...register("address", { required: true })} /></Field>
                 <Field label="Username" className="sm:col-span-2">
                   <input className="stitch-input" autoComplete="username" {...register("username", { required: true, minLength: 3, pattern: /^[a-zA-Z0-9._-]+$/ })} />
-                </Field>
-                <Field label="Email" className="sm:col-span-2">
-                  <input className="stitch-input" type="email" {...register("email", { required: true })} />
                 </Field>
                 <Field label="Password" className="sm:col-span-2">
                   <input className="stitch-input" type="password" {...register("password", { required: true, minLength: 6 })} />
                 </Field>
-                <>
-                    <Field label="Customer type">
-                      <select className="stitch-input" {...register("customerType", { required: true })}>
-                        <option value="Individual">Individual</option>
-                        <option value="Business">Business</option>
-                      </select>
-                    </Field>
-                    <Field label="City"><input className="stitch-input" {...register("city", { required: true })} /></Field>
-                    <Field label="Address (optional)" className="sm:col-span-2"><input className="stitch-input" {...register("address")} /></Field>
-                    <FileInput label="Profile photo (optional)" name="profilePhoto" register={register} required={false} accept="image/jpeg,image/png,image/webp" />
-                    {customerType === "Business" ? (
-                      <>
-                        <Field label="Company name" className="sm:col-span-2"><input className="stitch-input" {...register("companyName", { required: true })} /></Field>
-                        <Field label="Company phone"><input className="stitch-input" type="tel" {...register("companyPhone", { required: true })} /></Field>
-                        <Field label="Company address"><input className="stitch-input" {...register("companyAddress", { required: true })} /></Field>
-                        <Field label="Business registration no. (optional)" className="sm:col-span-2"><input className="stitch-input" {...register("businessRegistrationNumber")} /></Field>
-                      </>
-                    ) : null}
-                </>
 
                 {error && <p className="sm:col-span-2 rounded-lg bg-error-container px-3 py-2 text-sm text-on-error-container">{error}</p>}
                 <div className="sm:col-span-2">
@@ -265,13 +241,5 @@ function Field({ label, children, className = "" }) {
       <span className="mb-1.5 block font-medium text-on-surface-variant">{label}</span>
       {children}
     </label>
-  );
-}
-
-function FileInput({ label, name, register, accept, required = true }) {
-  return (
-    <Field label={label} className="sm:col-span-2">
-      <input className="stitch-input" type="file" accept={accept} {...register(name, { required })} />
-    </Field>
   );
 }

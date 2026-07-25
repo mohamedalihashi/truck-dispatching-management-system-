@@ -12,6 +12,8 @@ const truckSchema = z.object({
   capacity: z.string().min(1),
   truckType: z.string().min(1).optional(),
   type: z.string().min(1).optional(),
+  region: z.string().trim().min(1),
+  city: z.string().trim().min(1),
   driverId: z.string().uuid(),
   status: z.enum(["Available", "Busy", "Maintenance"]).default("Available")
 });

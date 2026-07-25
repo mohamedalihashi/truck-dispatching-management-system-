@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { CheckCircle2, Clock, Eye, FileText, Hourglass, Pencil, Plus, Trash2, Truck, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Eye, FileText, Hourglass, Pencil, Plus, RotateCcw, Trash2, Truck, XCircle } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
@@ -16,6 +16,7 @@ import {
   useCustomers,
   usePricingMutations,
   useQuoteMutations,
+  useRestoreCargo,
   useTrucks,
   useUpdateCargo
 } from "../../hooks/useApi";
@@ -53,6 +54,7 @@ export function RequestsPage() {
   const canQuote = ["driver", "dispatcher", "admin"].includes(user.role);
   const canAssign = user.role === "admin" || user.role === "dispatcher";
   const canEdit = user.role === "admin" || user.role === "dispatcher";
+  const canRestore = user.role === "admin" || user.role === "dispatcher";
   const { data, isLoading } = useCargoRequests({ status: status || undefined, search: search || undefined });
   const { data: summary } = useCargoRequestSummary();
   const { data: trucks } = useTrucks();
@@ -61,6 +63,7 @@ export function RequestsPage() {
   const quote = useQuoteMutations();
   const pricing = usePricingMutations();
   const cancel = useCancelCargo();
+  const restore = useRestoreCargo();
   const create = useCreateCargo();
   const update = useUpdateCargo();
   const fleet = trucks?.data || [];
@@ -236,6 +239,15 @@ export function RequestsPage() {
     }
   }
 
+  async function onRestore(id) {
+    if (!confirm("Restore this cancelled request?")) return;
+    try {
+      await restore.mutateAsync(id);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   async function onCreate(values) {
     setError("");
     try {
@@ -353,6 +365,17 @@ export function RequestsPage() {
                     {CANCELABLE_REQUEST_STATUSES.includes(row.status) && (
                       <button type="button" className="p-1 text-error" onClick={() => onCancel(row.id)} title="Cancel">
                         <Trash2 size={16} />
+                      </button>
+                    )}
+                    {canRestore && row.status === "Cancelled" && (
+                      <button
+                        type="button"
+                        className="p-1 text-secondary-container disabled:opacity-50"
+                        onClick={() => onRestore(row.id)}
+                        disabled={restore.isPending}
+                        title="Restore"
+                      >
+                        <RotateCcw size={16} />
                       </button>
                     )}
                   </div>

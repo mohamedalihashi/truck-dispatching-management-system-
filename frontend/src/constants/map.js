@@ -23,4 +23,6 @@ export const SOMALIA_CITIES = {
   garowe: { lat: 8.4021, lng: 48.4847, name: "Garowe" },
 };
 
+export const SOMALIA_CITY_NAMES = Object.values(SOMALIA_CITIES).map((city) => city.name);
+
 export const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";

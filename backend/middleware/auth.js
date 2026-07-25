@@ -116,8 +116,7 @@ export function requirePermission(permission) {
         req.isSuperAdmin = true;
         return next();
       }
-      const row = await prisma.setting.findUnique({ where: { key: "rolePermissions" } });
-      const permissions = mergeRolePermissions(row?.value);
+      const permissions = mergeRolePermissions({});
       if (!permissions[user.role]?.[permission]) {
         return res.status(403).json({ message: `Your role is not allowed to access ${permission}` });
       }

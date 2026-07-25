@@ -8,6 +8,7 @@ import {
   LogOut,
   MapPin,
   Menu,
+  MessageSquare,
   Package,
   Plus,
   Route,
@@ -39,7 +40,9 @@ const icons = {
   file: FileText,
   map: MapPin,
   plus: Plus,
-  package: Package
+  package: Package,
+  message: MessageSquare,
+  help: HelpCircle
 };
 
 const primaryLabels = {
@@ -53,6 +56,7 @@ const navPermissions = {
   "": "dashboard",
   users: "users",
   drivers: "users",
+  customers: "users",
   requests: "requests",
   trips: "trips",
   jobs: "trips",
@@ -64,6 +68,9 @@ const navPermissions = {
   reports: "reports",
   "audit-logs": "auditLogs",
   pricing: "settings",
+  sms: "notifications",
+  communication: "notifications",
+  support: "dashboard",
   settings: "settings",
   notifications: "notifications"
 };
@@ -136,24 +143,36 @@ export function DashboardLayout() {
           <p className="app-sidebar-muted mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em]">
             Menu
           </p>
-          {items.map((item) => {
+          {items.map((item, index) => {
             const Icon = icons[item.icon] || LayoutDashboard;
             const to = item.to ? `${base}/${item.to}` : base;
+            const prevSection = items[index - 1]?.section;
+            const showSection = item.section && item.section !== prevSection;
             return (
-              <NavLink
-                key={to}
-                to={to}
-                end={item.end}
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                    isActive ? "app-sidebar-link-active shadow-sm" : "app-sidebar-link"
-                  }`
-                }
-              >
-                <Icon size={18} className="shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </NavLink>
+              <div key={to}>
+                {showSection ? (
+                  <p
+                    className={`app-sidebar-muted px-3 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                      index === 0 ? "mb-2" : "mb-2 mt-4"
+                    }`}
+                  >
+                    {item.section}
+                  </p>
+                ) : null}
+                <NavLink
+                  to={to}
+                  end={item.end}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                      isActive ? "app-sidebar-link-active shadow-sm" : "app-sidebar-link"
+                    }`
+                  }
+                >
+                  <Icon size={18} className="shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </NavLink>
+              </div>
             );
           })}
         </nav>
@@ -210,10 +229,11 @@ export function DashboardLayout() {
             </button>
             <button
               type="button"
+              onClick={() => navigate(`${base}/support`)}
               className="app-sidebar-link flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition"
             >
               <HelpCircle size={14} />
-              Help
+              Support
             </button>
           </div>
 

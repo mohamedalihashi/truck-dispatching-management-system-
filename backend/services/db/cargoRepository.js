@@ -11,10 +11,8 @@ import {
 import { pricingRepository } from "./pricingRepository.js";
 import {
   mapCargoRequest,
-  mapTrip,
   mapNotification,
   cargoRequestInclude,
-  tripInclude,
   reqStatusToDb,
   reqStatusToApi,
 } from "./mappers.js";
@@ -107,6 +105,7 @@ async createCargoRequest(payload) {
       data: {
         id,
         customerId: payload.customerId,
+        dispatcherId: payload.dispatcherId || null,
         pickup: payload.pickup,
         destination: payload.destination,
         truckType: payload.truckType,
@@ -664,7 +663,7 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
         entityType: "trips",
         entityId: tripId,
         description: `Driver and truck assigned to cargo request ${id}`,
-        oldValues: { driverId: existing.driverId, truckId: existing.truckId },
+        oldValues: { driverId: current.driverId, truckId: current.truckId },
         newValues: { driverId, truckId, cargoRequestId: id },
       }),
     });
@@ -759,5 +758,65 @@ async cancelCargoRequest(id, actorId, { customerId } = {}) {
   });
 },
 
+async restoreCargoRequest(id, actorId, { customerId } = {}) {
+  return withTransaction(async (tx) => {
+    const existing = await tx.cargoRequest.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    if (customerId && existing.customerId !== customerId) {
+      const error = new Error("Not allowed to restore this request");
+      error.status = 403;
+      throw error;
+    }
+
+    if (reqStatusToApi(existing.status) !== "Cancelled") {
+      const error = new Error("Only cancelled requests can be restored");
+      error.status = 400;
+      throw error;
+    }
+
+    const lastCancel = await tx.auditLog.findFirst({
+      where: { action: "cargo.cancelled", entityId: id },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Driver and truck are released on cancel, so anything that implied an
+    // assignment comes back one step earlier and has to be assigned again.
+    const restorable = ["Pending", "Awaiting Approval", "Quote Rejected", "Approved"];
+    const previous = lastCancel?.oldValues?.status;
+    const status = restorable.includes(previous) ? previous : previous ? "Approved" : "Pending";
+
+    await tx.cargoRequest.update({
+      where: { id },
+      data: { status: reqStatusToDb(status) },
+    });
+
+    const notification = await tx.notification.create({
+      data: {
+        userId: existing.customerId,
+        type: "order.restored",
+        message: `${id} restored to ${status}`,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: auditFields({
+        userId: actorId || existing.customerId,
+        action: "cargo.restored",
+        entityType: "cargo_requests",
+        entityId: id,
+        description: `Cargo request ${id} restored`,
+        oldValues: { status: "Cancelled" },
+        newValues: { status },
+      }),
+    });
+
+    const request = await tx.cargoRequest.findUnique({
+      where: { id },
+      include: cargoRequestInclude,
+    });
+    return { request: mapCargoRequest(request), notification: mapNotification(notification) };
+  });
+},
 
 };

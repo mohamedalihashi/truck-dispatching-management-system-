@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, Clock, Eye, Route, Truck, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Eye, Route, RotateCcw, Truck, XCircle } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { StatusBadge } from "../../components/ui/StatusBadge";
@@ -26,6 +26,17 @@ export function TripsPage() {
     setError("");
     try {
       await actions.updateStatus.mutateAsync({ id, status: nextStatus });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function restoreTrip(id) {
+    setError("");
+    if (!confirm(`Restore trip ${id}?`)) return;
+    try {
+      await actions.restore.mutateAsync(id);
+      setViewing((current) => (current?.id === id ? null : current));
     } catch (err) {
       setError(err.message);
     }
@@ -130,6 +141,16 @@ export function TripsPage() {
                         </Button>
                       </>
                     )}
+                    {canManage && row.status === "Cancelled" && (
+                      <Button
+                        variant="secondary"
+                        className="px-2 py-1 text-xs"
+                        onClick={() => restoreTrip(row.id)}
+                        disabled={actions.restore.isPending}
+                      >
+                        <RotateCcw size={14} /> Restore
+                      </Button>
+                    )}
                   </div>
                 )
               }
@@ -182,6 +203,13 @@ export function TripsPage() {
                   {s}
                 </Button>
               ))}
+            </div>
+          )}
+          {canManage && viewing.status === "Cancelled" && (
+            <div className="mt-4 border-t border-outline-variant pt-4">
+              <Button variant="secondary" onClick={() => restoreTrip(viewing.id)} disabled={actions.restore.isPending}>
+                <RotateCcw size={14} /> Restore trip
+              </Button>
             </div>
           )}
         </Modal>

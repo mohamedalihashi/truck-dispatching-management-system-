@@ -1,11 +1,10 @@
 import { prisma, withTransaction } from "../../lib/prisma.js";
-import { coordsFromPlaceName, estimateEta, shouldRecordPoint } from "../../lib/somaliaGeo.js";
+import { estimateEta, shouldRecordPoint } from "../../lib/somaliaGeo.js";
 import { auditFields } from "../../lib/auditContext.js";
 import { buildWaafiReferenceId } from "../waafiPayService.js";
 import { cargoStatusFromTripStatus, validateTripStatusChange } from "../../lib/tripStatus.js";
 import {
   mapTrip,
-  mapFeedback,
   mapFeedbackListItem,
   mapNotification,
   tripInclude,
@@ -458,5 +457,90 @@ async rejectTrip(id, driverId) {
   });
 },
 
+async restoreTrip(id, actorId) {
+  return withTransaction(async (tx) => {
+    const existing = await tx.trip.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    if (tripStatusToApi(existing.status) !== "Cancelled") {
+      const error = new Error("Only cancelled trips can be restored");
+      error.status = 400;
+      throw error;
+    }
+
+    const truck = existing.truckId
+      ? await tx.truck.findUnique({ where: { id: existing.truckId } })
+      : null;
+
+    if (truck && truck.status !== "Available") {
+      const error = new Error("The truck of this trip is no longer available. Assign the request to another truck.");
+      error.status = 400;
+      throw error;
+    }
+
+    // The driver has to accept again, so a restored trip goes back to Assigned.
+    const status = existing.driverId && truck ? "Assigned" : "Pending";
+
+    await tx.trip.update({
+      where: { id },
+      data: { status: tripStatusToDb(status) },
+    });
+
+    if (existing.cargoRequestId) {
+      await tx.cargoRequest.update({
+        where: { id: existing.cargoRequestId },
+        data: {
+          status: reqStatusToDb(status === "Assigned" ? "Assigned" : "Approved"),
+          driverId: status === "Assigned" ? existing.driverId : null,
+          truckId: status === "Assigned" ? existing.truckId : null,
+        },
+      });
+    }
+
+    if (truck && status === "Assigned") {
+      await tx.truck.update({
+        where: { id: truck.id },
+        data: { status: "Busy" },
+      });
+    }
+
+    const notification = await tx.notification.create({
+      data: {
+        userId: existing.customerId,
+        type: "trip.restored",
+        message: `${id} restored to ${status}`,
+      },
+    });
+
+    if (status === "Assigned" && existing.driverId) {
+      await tx.notification.create({
+        data: {
+          userId: existing.driverId,
+          type: "driver.assigned",
+          message: `${id} restored and assigned to you again`,
+        },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: auditFields({
+        userId: actorId,
+        action: "trip.restored",
+        entityType: "trips",
+        entityId: id,
+        description: `Trip ${id} restored`,
+        oldValues: { status: "Cancelled" },
+        newValues: { status },
+      }),
+    });
+
+    const joined = await tx.trip.findUnique({
+      where: { id },
+      include: tripInclude,
+    });
+
+    return { trip: mapTrip(joined), notification: mapNotification(notification) };
+  });
+},
 
 };

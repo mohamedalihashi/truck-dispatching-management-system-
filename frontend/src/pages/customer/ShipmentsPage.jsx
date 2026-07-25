@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Eye, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Eye, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
@@ -9,7 +9,7 @@ import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { TripFeedbackForm } from "../../components/TripFeedbackForm";
 import { resolveUploadUrl } from "../../config/api.js";
-import { useCancelCargo, useCargoRequests, useQuoteMutations, useTrips, useUpdateCargo } from "../../hooks/useApi";
+import { useCancelCargo, useCargoRequests, useQuoteMutations, useRestoreCargo, useTrips, useUpdateCargo } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { api } from "../../services/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,6 +33,7 @@ export function ShipmentsPage() {
   });
   const updateCargo = useUpdateCargo();
   const cancelCargo = useCancelCargo();
+  const restoreCargo = useRestoreCargo();
   const quoteActions = useQuoteMutations();
   const qc = useQueryClient();
 
@@ -69,6 +70,15 @@ export function ShipmentsPage() {
     if (!confirm("Cancel this cargo request?")) return;
     try {
       await cancelCargo.mutateAsync(id);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function restoreRequest(id) {
+    if (!confirm("Restore this cancelled request?")) return;
+    try {
+      await restoreCargo.mutateAsync(id);
     } catch (err) {
       alert(err.message);
     }
@@ -200,6 +210,17 @@ export function ShipmentsPage() {
                     {CANCELABLE_REQUEST_STATUSES.includes(row.status) && (
                       <button type="button" className="p-1 text-error" onClick={() => cancelRequest(row.id)} title="Cancel">
                         <Trash2 size={16} />
+                      </button>
+                    )}
+                    {row.status === "Cancelled" && (
+                      <button
+                        type="button"
+                        className="p-1 text-secondary-container disabled:opacity-50"
+                        onClick={() => restoreRequest(row.id)}
+                        disabled={restoreCargo.isPending}
+                        title="Restore"
+                      >
+                        <RotateCcw size={16} />
                       </button>
                     )}
                   </div>

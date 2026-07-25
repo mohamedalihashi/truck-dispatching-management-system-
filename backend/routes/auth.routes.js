@@ -20,7 +20,7 @@ function isAuthOtpEnabled() {
 
 function publicUser(user) {
   if (!user) return user;
-  const { passwordHash, ...safe } = user;
+  const { passwordHash: _passwordHash, ...safe } = user;
   return safe;
 }
 
@@ -32,12 +32,12 @@ export const registerSchema = z.object({
   role: z.literal("customer"),
   phone: z.string().trim().min(1),
   customerProfile: z.object({
-    customerType: z.enum(["Individual", "Business"]),
+    customerType: z.enum(["Individual", "Business"]).optional().default("Business"),
     city: z.string().trim().min(1),
     companyName: z.string().trim().optional(),
+    address: z.string().trim().min(1),
     companyPhone: z.string().trim().optional(),
     companyAddress: z.string().trim().optional(),
-    address: z.string().trim().optional(),
     businessRegistrationNumber: z.string().trim().optional(),
     // Cloudinary https URLs or local /uploads/... fallback paths
     profilePhotoUrl: z
@@ -53,12 +53,6 @@ export const registerSchema = z.object({
 }).superRefine((data, ctx) => {
   if (!data.customerProfile) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerProfile"], message: "Customer profile is required" });
-    return;
-  }
-  if (data.customerProfile.customerType === "Business") {
-    for (const field of ["companyName", "companyPhone", "companyAddress"]) {
-      if (!data.customerProfile[field]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerProfile", field], message: `${field} is required for business customers` });
-    }
   }
 });
 
@@ -108,13 +102,9 @@ router.post("/register", registrationLimiter, registrationUpload.fields([
     const payload = {
       name: req.body.name, username: req.body.username, email: req.body.email, phone: req.body.phone, password: req.body.password, role: "customer",
       customerProfile: {
-        customerType: req.body.customerType,
+        customerType: "Business",
         city: req.body.city,
-        address: req.body.address || undefined,
-        companyName: req.body.companyName || undefined,
-        companyPhone: req.body.companyPhone || undefined,
-        companyAddress: req.body.companyAddress || undefined,
-        businessRegistrationNumber: req.body.businessRegistrationNumber || undefined,
+        address: req.body.address,
         profilePhotoUrl: profilePhoto?.url || undefined,
         profilePhotoPublicId: profilePhoto?.publicId || undefined
       }

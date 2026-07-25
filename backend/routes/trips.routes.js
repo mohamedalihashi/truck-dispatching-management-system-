@@ -132,6 +132,20 @@ router.post("/:id/accept", requireRole("driver"), async (req, res, next) => {
   }
 });
 
+router.post("/:id/restore", requireRole("dispatcher", "admin"), async (req, res, next) => {
+  try {
+    const result = await db.restoreTrip(req.params.id, req.user.sub);
+    if (!result) return res.status(404).json({ message: "Trip not found" });
+    req.app.get("io").emit("trip.status.updated", result.trip);
+    if (result.notification) req.app.get("io").emit("notification.created", result.notification);
+    void sendTripEventSms(result.trip.id, "cargo.restored")
+      .catch((error) => console.error("Restored trip SMS failed:", error.message));
+    res.json(result.trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/reject", requireRole("driver"), async (req, res, next) => {
   try {
     const result = await db.rejectTrip(req.params.id, req.user.sub);

@@ -4,10 +4,18 @@ import { registerSchema } from "../routes/auth.routes.js";
 const password = "StrongPass1!";
 
 describe("public registration validation", () => {
-  it("accepts an individual customer", () => {
+  it("accepts a customer with required profile fields", () => {
     const result = registerSchema.safeParse({
-      name: "Customer One", username: "customer.one", email: "customer@example.com", phone: "+252610000001",
-      password, role: "customer", customerProfile: { customerType: "Individual", city: "Mogadishu" },
+      name: "Customer One",
+      username: "customer.one",
+      email: "customer@example.com",
+      phone: "+252610000001",
+      password,
+      role: "customer",
+      customerProfile: {
+        city: "Mogadishu",
+        address: "Hodan"
+      }
     });
     expect(result.success).toBe(true);
   });
@@ -21,18 +29,23 @@ describe("public registration validation", () => {
       password,
       role: "customer",
       customerProfile: {
-        customerType: "Individual",
         city: "Mogadishu",
+        address: "Wadajir",
         profilePhotoUrl: "/uploads/customers/photo.png"
       }
     });
     expect(result.success).toBe(true);
   });
 
-  it("requires business company fields", () => {
+  it("requires city and address", () => {
     const result = registerSchema.safeParse({
-      name: "Business Owner", username: "business.owner", email: "business@example.com", phone: "+252610000002",
-      password, role: "customer", customerProfile: { customerType: "Business", city: "Hargeisa" },
+      name: "Customer Three",
+      username: "customer.three",
+      email: "customer3@example.com",
+      phone: "+252610000002",
+      password,
+      role: "customer",
+      customerProfile: { city: "Hargeisa" }
     });
     expect(result.success).toBe(false);
   });

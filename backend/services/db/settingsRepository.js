@@ -1,39 +1,37 @@
 import { prisma } from "../../lib/prisma.js";
-import { mergeRolePermissions, PERMISSION_CATALOG } from "../../lib/permissions.js";
+import { DEFAULT_ROLE_PERMISSIONS, mergeRolePermissions, PERMISSION_CATALOG } from "../../lib/permissions.js";
 
 export const settingsRepository = {
   async getSettings() {
     const rows = await prisma.setting.findMany();
     const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+    // Role permissions are fixed in code — not editable in Settings.
     return {
       ...settings,
-      rolePermissions: mergeRolePermissions(settings.rolePermissions),
+      rolePermissions: mergeRolePermissions({}),
       permissionCatalog: PERMISSION_CATALOG,
     };
   },
 
   async getPermissionsForUser(userId) {
-    const [user, row] = await Promise.all([
-      prisma.user.findUnique({ where: { id: userId }, select: { role: true, isSuperAdmin: true } }),
-      prisma.setting.findUnique({ where: { key: "rolePermissions" } }),
-    ]);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, isSuperAdmin: true },
+    });
     if (!user) return null;
     const all = Object.fromEntries(PERMISSION_CATALOG.map(({ key }) => [key, true]));
     return {
       role: user.role,
       isSuperAdmin: user.isSuperAdmin,
-      permissions: user.isSuperAdmin ? all : mergeRolePermissions(row?.value)[user.role],
+      permissions: user.isSuperAdmin ? all : DEFAULT_ROLE_PERMISSIONS[user.role],
       catalog: PERMISSION_CATALOG,
     };
   },
 
-  async updateRolePermissions(value) {
-    const normalized = mergeRolePermissions(value);
-    return prisma.setting.upsert({
-      where: { key: "rolePermissions" },
-      update: { value: normalized, updatedAt: new Date() },
-      create: { key: "rolePermissions", value: normalized },
-    });
+  async updateRolePermissions() {
+    const error = new Error("Role permissions are fixed and cannot be changed from Settings");
+    error.status = 403;
+    throw error;
   },
 
   async updateSettings(key, value) {

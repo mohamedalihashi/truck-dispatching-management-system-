@@ -101,12 +101,14 @@ export const api = {
   acceptCargoQuote: (id) => apiClient.post(`/cargo-requests/${id}/quote/accept`),
   rejectCargoQuote: (id, payload) => apiClient.post(`/cargo-requests/${id}/quote/reject`, payload),
   cancelCargoRequest: (id) => apiClient.delete(`/cargo-requests/${id}`),
+  restoreCargoRequest: (id) => apiClient.post(`/cargo-requests/${id}/restore`),
   listTrips: (params = {}) => apiClient.get("/trips", { params }),
   tripSummary: () => apiClient.get("/trips/summary"),
   listTripFeedback: (params = {}) => apiClient.get("/trips/feedback", { params }),
   updateTripStatus: (id, status) => apiClient.patch(`/trips/${id}/status`, { status }),
   acceptTrip: (id) => apiClient.post(`/trips/${id}/accept`),
   rejectTrip: (id) => apiClient.post(`/trips/${id}/reject`),
+  restoreTrip: (id) => apiClient.post(`/trips/${id}/restore`),
   updateTripLocation: (id, payload) => apiClient.patch(`/trips/${id}/location`, payload),
   getTripLocations: (id) => apiClient.get(`/trips/${id}/locations`),
   uploadProof: (id, formData) =>
@@ -156,7 +158,11 @@ export const api = {
   userActivityReport: (params) => apiClient.get("/admin/user-activity-report", { params }),
   deliveryFeedbackReport: (params) => apiClient.get("/admin/delivery-feedback", { params }),
   listSmsNotifications: (params) => apiClient.get("/admin/sms-notifications", { params }),
+  sendSmsNotification: (payload) => apiClient.post("/admin/sms-notifications", payload),
   resendSmsNotification: (id) => apiClient.post(`/admin/sms-notifications/${id}/resend`),
+  listSupportComplaints: (params = {}) => apiClient.get("/support", { params }),
+  createSupportComplaint: (payload) => apiClient.post("/support", payload),
+  updateSupportComplaintStatus: (id, payload) => apiClient.patch(`/support/${id}/status`, payload),
   getPublicFeedback: (token) => apiClient.get(`/public/feedback/${encodeURIComponent(token)}`),
   submitPublicFeedback: (token, payload) => apiClient.post(`/public/feedback/${encodeURIComponent(token)}`, payload)
 };

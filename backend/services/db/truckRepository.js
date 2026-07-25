@@ -10,6 +10,8 @@ async listTrucks({ status, search, page = 1, limit = 50 } = {}) {
       { truckNumber: { contains: search, mode: "insensitive" } },
       { plateNumber: { contains: search, mode: "insensitive" } },
       { truckType: { contains: search, mode: "insensitive" } },
+      { city: { contains: search, mode: "insensitive" } },
+      { region: { contains: search, mode: "insensitive" } },
       { driver: { name: { contains: search, mode: "insensitive" } } },
     ];
   }
@@ -46,6 +48,8 @@ async createTruck(payload) {
       plateNumber: payload.plateNumber,
       capacity: payload.capacity,
       truckType: payload.truckType || payload.type,
+      region: payload.region || "",
+      city: payload.city || "",
       driverId: payload.driverId,
       status: payload.status || "Available",
     },
@@ -99,6 +103,8 @@ async updateTruck(id, payload, { driverId } = {}) {
   if (payload.capacity !== undefined) data.capacity = payload.capacity;
   if (payload.truckType !== undefined) data.truckType = payload.truckType;
   if (payload.type !== undefined) data.truckType = payload.type;
+  if (payload.city !== undefined) data.city = payload.city;
+  if (payload.region !== undefined) data.region = payload.region;
   if (payload.status !== undefined) data.status = payload.status;
   if (payload.driverId !== undefined) data.driverId = payload.driverId;
 

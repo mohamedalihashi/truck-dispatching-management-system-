@@ -6,7 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/Button";
 import { OtpCodeBanner } from "../components/ui/OtpCodeBanner";
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
-import { roleHome, DEMO_ACCOUNTS, DEMO_PASSWORD } from "../utils/helpers";
+import { roleHome } from "../utils/helpers";
 import { useOtpAutoSubmit, useResendCooldown } from "../hooks/useOtpVerification";
 import {
   clearLoginVerification,
@@ -75,7 +75,7 @@ export function LoginPage() {
     } catch (err) {
       const hint =
         err.message === "Invalid username/email or password"
-          ? " Use a demo account below (password: Password123!) or reset your password."
+          ? " Check your username/email and password, or use Forgot password."
           : "";
       setError(`${err.message}${hint}`);
     }

@@ -1,4 +1,4 @@
-import { SOMALIA_BOUNDS, SOMALIA_CITIES, SOMALIA_CENTER } from "../constants/map";
+import { SOMALIA_CITIES, SOMALIA_CENTER } from "../constants/map";
 
 const CITY_LIST = Object.values(SOMALIA_CITIES);
 
@@ -18,15 +18,6 @@ export function randomSomaliaCoords() {
     lat: base.lat + (Math.random() - 0.5) * 0.12,
     lng: base.lng + (Math.random() - 0.5) * 0.12
   };
-}
-
-export function isInSomalia(lat, lng) {
-  return (
-    lat >= SOMALIA_BOUNDS.south &&
-    lat <= SOMALIA_BOUNDS.north &&
-    lng >= SOMALIA_BOUNDS.west &&
-    lng <= SOMALIA_BOUNDS.east
-  );
 }
 
 export function matchSomaliaCity(text = "") {

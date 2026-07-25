@@ -1,9 +1,17 @@
 import { Router } from "express";
+import { z } from "zod";
 import { requireAuth, requireRole, requirePasswordChanged, requirePermission, requireSuperAdmin } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
 import { db } from "../services/dbService.js";
-import { listSmsNotifications, resendSms } from "../services/smsService.js";
+import { listSmsNotifications, resendSms, sendManualSms } from "../services/smsService.js";
 
 const router = Router();
+
+const sendSmsSchema = z.object({
+  recipientPhone: z.string().trim().min(7),
+  recipientName: z.string().trim().optional(),
+  message: z.string().trim().min(1).max(1000)
+});
 
 router.use(requireAuth);
 router.use(requirePasswordChanged);
@@ -154,6 +162,30 @@ router.get("/delivery-feedback", requireRole("admin"), requirePermission("report
 router.get("/sms-notifications", requireRole("admin"), requirePermission("notifications"), async (req, res, next) => {
   try {
     res.json(await listSmsNotifications({ status: req.query.status, page: req.query.page, limit: req.query.limit }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/sms-notifications", requireRole("admin"), requirePermission("notifications"), validate(sendSmsSchema), async (req, res, next) => {
+  try {
+    const actor = await db.findUserById(req.user.sub);
+    const result = await sendManualSms({
+      recipientPhone: req.body.recipientPhone,
+      recipientName: req.body.recipientName,
+      message: req.body.message,
+      sentByUserId: req.user.sub,
+      sentByName: actor?.name || "Admin"
+    });
+    await db.recordAudit({
+      userId: req.user.sub,
+      action: "sms.manual.sent",
+      entityType: "sms_notifications",
+      entityId: result?.id,
+      description: `Manual SMS to ${req.body.recipientPhone}`,
+      newValues: { recipientPhone: req.body.recipientPhone, status: result?.status }
+    });
+    res.status(201).json(result);
   } catch (error) {
     next(error);
   }

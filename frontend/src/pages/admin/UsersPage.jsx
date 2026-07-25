@@ -12,15 +12,17 @@ import { DocumentCard, DocumentsGrid } from "../../components/ui/DocumentCard";
 import { useUserMutations, useUserSummary, useUsers } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
+import { somaliaLocations, somaliaRegions } from "../../data/somaliaLocations";
 
-/** mode="fleet" → Fleet / Drivers page (admin trucks + dispatcher drivers). */
+/** mode="fleet" → Fleet / Drivers. mode="customers" → Customers (dispatcher register). */
 export function UsersPage({ mode } = {}) {
   const { user: authUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isDispatcher = authUser.role === "dispatcher";
-  const isFleet = mode === "fleet" || isDispatcher;
-  const [role, setRole] = useState(isFleet ? "driver" : "");
+  const isCustomersMode = mode === "customers";
+  const isFleet = mode === "fleet" || (isDispatcher && !isCustomersMode);
+  const [role, setRole] = useState(isFleet ? "driver" : isCustomersMode ? "customer" : "");
   const { search, hasSearch } = useDashboardSearch();
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState(null);
@@ -35,13 +37,21 @@ export function UsersPage({ mode } = {}) {
   const [dispatcherPhoto, setDispatcherPhoto] = useState(null);
   const [dispatcherCv, setDispatcherCv] = useState(null);
   const [photo1Preview, setPhoto1Preview] = useState("");
-  const { data, isLoading } = useUsers({ role: isFleet ? "driver" : role || undefined, search: search || undefined });
+  const listRole = isFleet ? "driver" : isCustomersMode ? "customer" : role || undefined;
+  const { data, isLoading } = useUsers({ role: listRole, search: search || undefined });
   const { data: summary } = useUserSummary();
   const mutations = useUserMutations();
-  const { register, handleSubmit, watch, reset, formState: { isSubmitting } } = useForm({
-    defaultValues: { role: isFleet ? "driver" : "customer", truckType: "", capacity: "12 tons", status: "Active" }
+  const { register, handleSubmit, watch, reset, setValue, formState: { isSubmitting } } = useForm({
+    defaultValues: {
+      role: isFleet ? "driver" : "customer",
+      truckType: "",
+      capacity: "12 tons",
+      status: "Active"
+    }
   });
-  const selectedRole = isFleet ? "driver" : watch("role");
+  const selectedRole = isFleet ? "driver" : isCustomersMode ? "customer" : watch("role");
+  const truckRegion = watch("region");
+  const truckCities = somaliaLocations[truckRegion] || [];
 
   function openCreate() {
     setEditing(null);
@@ -55,7 +65,12 @@ export function UsersPage({ mode } = {}) {
     setDispatcherPhoto(null);
     setDispatcherCv(null);
     setPhoto1Preview("");
-    reset({ role: isFleet ? "driver" : "customer", truckType: "", capacity: "12 tons", status: "Active" });
+    reset({
+      role: isFleet ? "driver" : "customer",
+      truckType: "",
+      capacity: "12 tons",
+      status: "Active"
+    });
     setOpen(true);
   }
 
@@ -102,10 +117,14 @@ export function UsersPage({ mode } = {}) {
         await mutations.update.mutateAsync({ id: editing.id, payload });
       } else {
         let result;
-        const createRole = isFleet ? "driver" : values.role;
+        const createRole = isFleet ? "driver" : isCustomersMode ? "customer" : values.role;
         if (createRole === "driver") {
           if (!truckPhoto1 || !driverImage || !driverLicenseDocument || truckDocuments.length === 0) {
             setError("Driver license document, driver photo, one truck photo, and at least one truck document are required.");
+            return;
+          }
+          if (!values.region?.trim() || !values.city?.trim()) {
+            setError("Region and city are required for the driver and truck.");
             return;
           }
           const formData = new FormData();
@@ -119,6 +138,8 @@ export function UsersPage({ mode } = {}) {
           formData.append("plateNumber", values.plateNumber);
           formData.append("capacity", values.capacity);
           formData.append("truckType", values.truckType);
+          formData.append("city", values.city?.trim() || "");
+          formData.append("region", values.region?.trim() || "");
           formData.append("truckPhoto1", truckPhoto1);
           formData.append("driverImage", driverImage);
           formData.append("driverLicenseDocument", driverLicenseDocument);
@@ -151,6 +172,24 @@ export function UsersPage({ mode } = {}) {
           formData.append("nationalIdBack", nationalIdBack);
           formData.append("dispatcherPhoto", dispatcherPhoto);
           formData.append("dispatcherCv", dispatcherCv);
+          result = await mutations.create.mutateAsync(formData);
+        } else if (createRole === "customer") {
+          if (!values.phone?.trim()) {
+            setError("Phone is required for customers.");
+            return;
+          }
+          if (!values.city?.trim() || !values.address?.trim()) {
+            setError("City and address are required.");
+            return;
+          }
+          const formData = new FormData();
+          formData.append("name", values.name);
+          formData.append("username", values.username);
+          formData.append("email", values.email);
+          formData.append("phone", values.phone.trim());
+          formData.append("role", "customer");
+          formData.append("city", values.city.trim());
+          formData.append("address", values.address.trim());
           result = await mutations.create.mutateAsync(formData);
         } else {
           const payload = {
@@ -196,15 +235,17 @@ export function UsersPage({ mode } = {}) {
   return (
     <div className="space-y-8">
       <PageHeader
-        title={isFleet ? "Fleet / Drivers" : "Users"}
+        title={isFleet ? "Fleet / Drivers" : isCustomersMode ? "Customers" : "Users"}
         subtitle={
           isFleet
             ? "Register a driver together with their truck, photos, and documents."
-            : "Manage admins, dispatchers, customers, and driver-truck accounts."
+            : isCustomersMode
+              ? "Register customers so you can create cargo requests on their behalf."
+              : "Manage admins, dispatchers, customers, and driver-truck accounts."
         }
         actions={
           <Button onClick={openCreate}>
-            <Plus size={16} /> {isFleet ? "Add Truck" : "Add user"}
+            <Plus size={16} /> {isFleet ? "Add Truck" : isCustomersMode ? "Add Customer" : "Add user"}
           </Button>
         }
       />
@@ -215,12 +256,18 @@ export function UsersPage({ mode } = {}) {
         </p>
       )}
 
-      <section className={`grid grid-cols-2 gap-3 ${isFleet ? "md:grid-cols-3" : "md:grid-cols-3 xl:grid-cols-6"}`}>
+      <section className={`grid grid-cols-2 gap-3 ${isFleet || isCustomersMode ? "md:grid-cols-3" : "md:grid-cols-3 xl:grid-cols-6"}`}>
         {isFleet ? (
           <>
             <MetricCard icon={Users} label="Total Drivers" value={summary?.drivers ?? "—"} tone="navy" />
             <MetricCard icon={UserCheck} label="Active Drivers" value={summary?.driverActive ?? "—"} tone="green" />
             <MetricCard icon={Truck} label="Fleet Trucks" value={summary?.trucks ?? "—"} tone="soft" />
+          </>
+        ) : isCustomersMode ? (
+          <>
+            <MetricCard icon={Users} label="Total Customers" value={summary?.customers ?? "—"} tone="blue" />
+            <MetricCard icon={UserCheck} label="Active Users" value={summary?.active ?? "—"} tone="green" />
+            <MetricCard icon={UserX} label="Inactive Users" value={summary?.inactive ?? "—"} tone="orange" />
           </>
         ) : (
           <>
@@ -240,7 +287,7 @@ export function UsersPage({ mode } = {}) {
             Showing results for <span className="font-semibold text-on-surface">&quot;{search}&quot;</span>
           </p>
         ) : null}
-        {!isFleet ? (
+        {!isFleet && !isCustomersMode ? (
           <select
             className="stitch-input max-w-xs"
             value={role}
@@ -257,23 +304,39 @@ export function UsersPage({ mode } = {}) {
 
       <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
         <div className="border-b border-outline-variant px-6 py-5">
-          <h2 className="text-xl font-semibold text-on-surface">{isFleet ? "Drivers & trucks" : "Directory"}</h2>
+          <h2 className="text-xl font-semibold text-on-surface">
+            {isFleet ? "Drivers & trucks" : isCustomersMode ? "Customer directory" : "Directory"}
+          </h2>
         </div>
         {isLoading ? (
-          <p className="py-10 text-center text-sm text-on-surface-variant">{isFleet ? "Loading fleet…" : "Loading users…"}</p>
+          <p className="py-10 text-center text-sm text-on-surface-variant">
+            {isFleet ? "Loading fleet…" : isCustomersMode ? "Loading customers…" : "Loading users…"}
+          </p>
         ) : (
           <DataTable
             rows={data?.data || []}
             columns={[
               { key: "name", label: "Name" },
               { key: "email", label: "Email" },
-              ...(!isFleet ? [{
+              ...(!isFleet && !isCustomersMode ? [{
                 key: "role",
                 label: "Role",
                 render: (row) => row.isSuperAdmin ? "Super Admin" : row.role
-              }] : [
+              }] : isCustomersMode ? [
+                {
+                  key: "city",
+                  label: "City",
+                  render: (row) => row.customerProfile?.city || "—"
+                },
+                {
+                  key: "address",
+                  label: "Address",
+                  render: (row) => row.customerProfile?.address || "—"
+                }
+              ] : [
                 { key: "truckNumber", label: "Truck", render: (row) => row.truckNumber || "—" },
                 { key: "plateNumber", label: "Plate", render: (row) => row.plateNumber || "—" },
+                { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
                 { key: "truckType", label: "Type", render: (row) => row.truckType || "—" },
                 {
                   key: "truckStatus",
@@ -312,7 +375,7 @@ export function UsersPage({ mode } = {}) {
                           </button>
                         )}
                       </>
-                    ) : row.status !== "Active" ? (
+                    ) : isFleet && row.status !== "Active" ? (
                       <Button className="px-2 py-1 text-xs" onClick={() => mutations.verifyDriver.mutate(row.id)}>Verify</Button>
                     ) : null}
                   </div>
@@ -334,6 +397,8 @@ export function UsersPage({ mode } = {}) {
               <>
                 <Detail label="Truck number" value={viewing.truckNumber || "—"} />
                 <Detail label="Plate" value={viewing.plateNumber || "—"} />
+                <Detail label="Region" value={viewing.region || "—"} />
+                <Detail label="City" value={viewing.city || "—"} />
                 <Detail label="Truck type" value={viewing.truckType || "—"} />
                 <Detail label="Capacity" value={viewing.capacity || "—"} />
                 <Detail label="Truck status" value={viewing.truckStatus ? <StatusBadge status={viewing.truckStatus} /> : "—"} />
@@ -349,6 +414,12 @@ export function UsersPage({ mode } = {}) {
                 <Detail label="Address" value={viewing.dispatcherProfile.address || "—"} />
                 <Detail label="Experience" value={viewing.dispatcherProfile.yearsOfExperience ?? "—"} />
                 <Detail label="Verification" value={viewing.dispatcherProfile.verificationStatus || "—"} />
+              </>
+            ) : null}
+            {viewing.role === "customer" && viewing.customerProfile ? (
+              <>
+                <Detail label="City" value={viewing.customerProfile.city || "—"} />
+                <Detail label="Address" value={viewing.customerProfile.address || "—"} className="sm:col-span-2" />
               </>
             ) : null}
             <Detail
@@ -399,15 +470,15 @@ export function UsersPage({ mode } = {}) {
 
       {open && (
         <Modal
-          title={editing ? (isFleet ? "Edit driver" : "Edit user") : (isFleet ? "Add Truck" : "Create user")}
+          title={editing ? (isFleet ? "Edit driver" : isCustomersMode ? "Edit customer" : "Edit user") : (isFleet ? "Add Truck" : isCustomersMode ? "Add Customer" : "Create user")}
           onClose={() => setOpen(false)}
           wide
         >
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-            <input className="stitch-input" placeholder="Name" {...register("name", { required: true })} />
-            <input className="stitch-input" placeholder="Phone" {...register("phone")} />
+            <input className="stitch-input" placeholder={selectedRole === "customer" ? "Full name" : "Name"} {...register("name", { required: true })} />
+            <input className="stitch-input" placeholder="Phone" {...register("phone", { required: selectedRole === "customer" })} />
             {!editing ? <input className="stitch-input sm:col-span-2" placeholder="Username" {...register("username", { required: true, minLength: 3 })} /> : null}
-            <input className="stitch-input sm:col-span-2" type="email" placeholder="Email" {...register("email", { required: true })} />
+            <input className="stitch-input sm:col-span-2" type="email" placeholder={selectedRole === "customer" ? "Email (Gmail)" : "Email"} {...register("email", { required: true })} />
             {editing ? (
               <input
                 className="stitch-input"
@@ -417,10 +488,10 @@ export function UsersPage({ mode } = {}) {
               />
             ) : (
               <p className="sm:col-span-2 rounded-lg bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant">
-                A temporary password will be emailed automatically. The driver must set a new password on first sign-in.
+                A temporary password will be emailed automatically. The user must set a new password on first sign-in.
               </p>
             )}
-            {!isFleet ? (
+            {!isFleet && !isCustomersMode ? (
               <select className="stitch-input" {...register("role")}>
                 <option value="customer">Customer</option>
                 <option value="dispatcher">Dispatcher</option>
@@ -428,13 +499,19 @@ export function UsersPage({ mode } = {}) {
                 {(authUser.isSuperAdmin || editing?.role === "admin") ? <option value="admin">Admin</option> : null}
               </select>
             ) : (
-              <input type="hidden" {...register("role")} value="driver" />
+              <input type="hidden" {...register("role")} value={isCustomersMode ? "customer" : "driver"} />
             )}
             {editing && !isDispatcher && (
               <select className="stitch-input" {...register("status")}>
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
               </select>
+            )}
+            {!editing && selectedRole === "customer" && (
+              <>
+                <input className="stitch-input" placeholder="City" {...register("city", { required: true })} />
+                <input className="stitch-input sm:col-span-2" placeholder="Address" {...register("address", { required: true })} />
+              </>
             )}
             {!editing && selectedRole === "driver" && (
               <>
@@ -454,6 +531,34 @@ export function UsersPage({ mode } = {}) {
                 <input className="stitch-input" placeholder="Plate number" {...register("plateNumber", { required: true })} />
                 <input className="stitch-input" placeholder="Capacity" {...register("capacity", { required: true })} />
                 <input className="stitch-input" placeholder="Write truck type" {...register("truckType", { required: true })} />
+                <label className="block text-sm">
+                  <span className="mb-1.5 block font-medium text-on-surface-variant">Region *</span>
+                  <select
+                    className="stitch-input"
+                    {...register("region", {
+                      required: true,
+                      onChange: () => setValue("city", "")
+                    })}
+                  >
+                    <option value="">Select region</option>
+                    {somaliaRegions.map((region) => (
+                      <option key={region} value={region}>{region}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1.5 block font-medium text-on-surface-variant">City / District *</span>
+                  <select
+                    className="stitch-input disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!truckRegion}
+                    {...register("city", { required: true })}
+                  >
+                    <option value="">{truckRegion ? "Select city" : "Select region first"}</option>
+                    {truckCities.map((city) => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                </label>
                 <label className="sm:col-span-2 block text-sm">
                   <span className="mb-1.5 block font-medium text-on-surface-variant">Truck photo *</span>
                   <input
@@ -506,7 +611,7 @@ export function UsersPage({ mode } = {}) {
                 Cancel
               </Button>
               <Button disabled={isSubmitting || mutations.create.isPending || mutations.update.isPending}>
-                {editing ? "Save changes" : (isFleet ? "Register truck" : "Create")}
+                {editing ? "Save changes" : (isFleet ? "Register truck" : isCustomersMode ? "Register customer" : "Create")}
               </Button>
             </div>
           </form>
@@ -525,11 +630,11 @@ function Detail({ label, value, className = "" }) {
   );
 }
 
-function FileField({ label, accept, onChange }) {
+function FileField({ label, accept, onChange, required = true }) {
   return (
-    <label className="block text-sm">
+    <label className="block text-sm sm:col-span-2">
       <span className="mb-1.5 block font-medium text-on-surface-variant">{label}</span>
-      <input type="file" accept={accept} className="stitch-input w-full" onChange={(event) => onChange(event.target.files?.[0] || null)} required />
+      <input type="file" accept={accept} className="stitch-input w-full" onChange={(event) => onChange(event.target.files?.[0] || null)} required={required} />
     </label>
   );
 }

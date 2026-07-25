@@ -172,7 +172,7 @@ export function BookTruckPage() {
                     {fromDistricts.map((district) => <option key={district}>{district}</option>)}
                   </select>
                 </Field>
-                <Field label="From Neighborhood" error={errors.fromNeighborhood?.message}>
+                <Field label="Xaafadda" error={errors.fromNeighborhood?.message}>
                   <input
                     className="stitch-input"
                     placeholder="Enter pickup neighborhood or detailed address"
@@ -209,7 +209,7 @@ export function BookTruckPage() {
                     {toDistricts.map((district) => <option key={district}>{district}</option>)}
                   </select>
                 </Field>
-                <Field label="To Neighborhood" error={errors.toNeighborhood?.message}>
+                <Field label="Xaafadda" error={errors.toNeighborhood?.message}>
                   <input
                     className="stitch-input"
                     placeholder="Enter delivery neighborhood or detailed address"

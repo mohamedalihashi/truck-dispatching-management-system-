@@ -59,12 +59,3 @@ export const registrationUpload = multer({
     cb(null, true);
   }
 });
-
-export function fileToPublicUrl(file) {
-  if (!file) return null;
-  if (process.env.VERCEL) {
-    return `mock://upload-${Date.now()}`;
-  }
-  const filename = file.filename || path.basename(file.path);
-  return `/uploads/${filename}`;
-}

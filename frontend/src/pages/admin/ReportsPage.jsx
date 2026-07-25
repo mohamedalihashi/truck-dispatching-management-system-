@@ -1,24 +1,52 @@
 import { useMemo, useState } from "react";
-import { Download, Printer, RotateCcw, Search } from "lucide-react";
+import { Download, Printer, RotateCcw } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
-import { usePayments, useTrips, useTrucks, useUsers } from "../../hooks/useApi";
+import { useDeliveryFeedbackReport, usePayments, useTrips } from "../../hooks/useApi";
 import { money } from "../../utils/helpers";
-import { UserActivityReport } from "./UserActivityReport";
-import { DeliveryFeedbackReport } from "./DeliveryFeedbackReport";
 
-const REPORTS = {
-  trucks: { label: "Truck report", description: "Fleet, assigned drivers, capacity, and availability." },
-  users: { label: "User report", description: "Customers, dispatchers, drivers, and account status." },
-  dispatch: { label: "Dispatch report", description: "Trips, routes, assignments, fares, and delivery status." },
-  payments: { label: "Payment report", description: "Invoices, collections, balances, and payment status." }
-};
+const TABS = [
+  { id: "rankings", label: "Rankings" },
+  { id: "trips", label: "Trips" },
+  { id: "payments", label: "Payments" },
+  { id: "feedback", label: "Feedback" }
+];
 
-const date = (value) => (value ? new Date(value).toLocaleDateString() : "—");
+const RANK_ROLES = [
+  { id: "driver", label: "Drivers", countLabel: "Trips taken" },
+  { id: "customer", label: "Customers", countLabel: "Shipments" },
+  { id: "dispatcher", label: "Dispatchers", countLabel: "Assignments" }
+];
 
-/** Local YYYY-MM-DD (avoids UTC day-shift from toISOString). */
+function rankPeople(trips, roleKey, nameKey, sortDir) {
+  const map = new Map();
+  for (const trip of trips) {
+    const id = trip[roleKey];
+    const name = trip[nameKey];
+    if (!id && !name) continue;
+    const key = String(id || name);
+    const current = map.get(key) || {
+      id: key,
+      name: name || "Unknown",
+      trips: 0,
+      delivered: 0,
+      cancelled: 0,
+      fare: 0
+    };
+    current.trips += 1;
+    if (trip.status === "Delivered") current.delivered += 1;
+    if (trip.status === "Cancelled") current.cancelled += 1;
+    current.fare += Number(trip.fare || 0);
+    if (name) current.name = name;
+    map.set(key, current);
+  }
+  const rows = [...map.values()];
+  rows.sort((a, b) => (sortDir === "least" ? a.trips - b.trips : b.trips - a.trips));
+  return rows.map((row, index) => ({ ...row, rank: index + 1 }));
+}
+
 function toLocalDateKey(value) {
   if (!value) return "";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -27,10 +55,7 @@ function toLocalDateKey(value) {
     const raw = String(value);
     return /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : "";
   }
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function inDateRange(value, dateFrom, dateTo) {
@@ -42,6 +67,10 @@ function inDateRange(value, dateFrom, dateTo) {
   return true;
 }
 
+function formatDate(value) {
+  return value ? new Date(value).toLocaleDateString() : "—";
+}
+
 function csvCell(value) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
@@ -49,7 +78,9 @@ function csvCell(value) {
 function downloadCsv(name, columns, rows) {
   const csv = [
     columns.map((column) => csvCell(column.label)).join(","),
-    ...rows.map((row) => columns.map((column) => csvCell(column.export ? column.export(row) : row[column.key])).join(","))
+    ...rows.map((row) =>
+      columns.map((column) => csvCell(column.export ? column.export(row) : row[column.key])).join(",")
+    )
   ].join("\r\n");
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -60,360 +91,256 @@ function downloadCsv(name, columns, rows) {
   URL.revokeObjectURL(url);
 }
 
-function buildTruckReport(rows, loading) {
-  return {
-    rows,
-    loading,
-    chartTitle: "Fleet status distribution",
-    chartData: ["Available", "Busy", "Maintenance"].map((status) => ({
-      name: status,
-      value: rows.filter((row) => row.status === status).length
-    })),
-    metrics: [
-      ["Total trucks", rows.length],
-      ["Available", rows.filter((row) => row.status === "Available").length],
-      ["Busy", rows.filter((row) => row.status === "Busy").length],
-      ["Maintenance", rows.filter((row) => row.status === "Maintenance").length]
-    ],
-    columns: [
-      { key: "truckNumber", label: "Truck" },
-      { key: "plateNumber", label: "Plate" },
-      { key: "truckType", label: "Type" },
-      { key: "capacity", label: "Capacity" },
-      { key: "driver", label: "Driver" },
-      { key: "status", label: "Status", type: "status" },
-      { key: "createdAt", label: "Registered", render: (row) => date(row.createdAt), export: (row) => date(row.createdAt) }
-    ]
-  };
-}
-
-function buildUserReport(rows, loading) {
-  return {
-    rows,
-    loading,
-    chartTitle: "Users by role",
-    chartData: ["customer", "dispatcher", "driver", "admin"].map((role) => ({
-      name: role.charAt(0).toUpperCase() + role.slice(1),
-      value: rows.filter((row) => row.role === role).length
-    })),
-    metrics: [
-      ["Total users", rows.length],
-      ["Customers", rows.filter((row) => row.role === "customer").length],
-      ["Dispatchers", rows.filter((row) => row.role === "dispatcher").length],
-      ["Drivers", rows.filter((row) => row.role === "driver").length]
-    ],
-    columns: [
-      { key: "name", label: "Name" },
-      { key: "email", label: "Email" },
-      { key: "phone", label: "Phone" },
-      { key: "role", label: "Role" },
-      { key: "status", label: "Status", type: "status" },
-      { key: "createdAt", label: "Registered", render: (row) => date(row.createdAt), export: (row) => date(row.createdAt) }
-    ]
-  };
-}
-
-function buildDispatchReport(rows, loading) {
-  return {
-    rows,
-    loading,
-    chartTitle: "Trips by status",
-    chartData: ["Pending", "Assigned", "In Transit", "Delivered", "Cancelled"].map((status) => ({
-      name: status,
-      value: rows.filter((row) => row.status === status).length
-    })),
-    metrics: [
-      ["Total trips", rows.length],
-      ["Delivered", rows.filter((row) => row.status === "Delivered").length],
-      ["Active", rows.filter((row) => !["Delivered", "Cancelled", "Pending"].includes(row.status)).length],
-      ["Total fares", money(rows.reduce((sum, row) => sum + Number(row.fare || 0), 0))]
-    ],
-    columns: [
-      { key: "id", label: "Trip", render: (row) => String(row.id).slice(0, 8), export: (row) => row.id },
-      { key: "customer", label: "Customer" },
-      { key: "driver", label: "Driver" },
-      { key: "dispatcher", label: "Dispatcher" },
-      { key: "route", label: "Route" },
-      { key: "fare", label: "Fare", render: (row) => money(row.fare) },
-      { key: "status", label: "Status", type: "status" },
-      { key: "createdAt", label: "Created", render: (row) => date(row.createdAt), export: (row) => date(row.createdAt) }
-    ]
-  };
-}
-
-function buildPaymentReport(rows, loading) {
-  return {
-    rows,
-    loading,
-    chartTitle: "Payment collection overview",
-    chartData: [
-      { name: "Invoiced", value: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0) },
-      { name: "Collected", value: rows.reduce((sum, row) => sum + Number(row.amountPaid || 0), 0) },
-      { name: "Balance", value: rows.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0) }
-    ],
-    metrics: [
-      ["Invoices", rows.length],
-      ["Invoice total", money(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0))],
-      ["Collected", money(rows.reduce((sum, row) => sum + Number(row.amountPaid || 0), 0))],
-      ["Balance due", money(rows.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0))]
-    ],
-    columns: [
-      { key: "referenceId", label: "Reference" },
-      { key: "customer", label: "Customer" },
-      { key: "amount", label: "Amount", render: (row) => `${money(row.amount)} ${row.currency || ""}` },
-      { key: "amountPaid", label: "Paid", render: (row) => money(row.amountPaid) },
-      { key: "balanceDue", label: "Balance", render: (row) => money(row.balanceDue) },
-      { key: "method", label: "Method" },
-      { key: "status", label: "Status", type: "status" },
-      { key: "createdAt", label: "Date", render: (row) => date(row.createdAt), export: (row) => date(row.createdAt) }
-    ]
-  };
-}
-
 export function ReportsPage() {
-  const [type, setType] = useState("trucks");
-  const [reportSearch, setReportSearch] = useState("");
-  const [reportUserId, setReportUserId] = useState("");
+  const [tab, setTab] = useState("rankings");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const trucks = useTrucks({ limit: 500 });
-  const users = useUsers({ limit: 500 });
-  const trips = useTrips({ limit: 500 });
-  const payments = usePayments({ limit: 500 });
+  const [rankRole, setRankRole] = useState("driver");
+  const [rankSort, setRankSort] = useState("most");
 
-  const report = useMemo(() => {
-    const needle = reportSearch.trim().toLowerCase();
-    let source = [];
-    let loading = false;
-    let build = buildTruckReport;
+  const tripsQuery = useTrips({ limit: 500 });
+  const paymentsQuery = usePayments({ limit: 500 });
+  const feedbackQuery = useDeliveryFeedbackReport({ limit: 200 });
 
-    if (type === "trucks") {
-      source = trucks.data?.data || [];
-      loading = trucks.isLoading;
-      build = buildTruckReport;
-    } else if (type === "users") {
-      source = users.data?.data || [];
-      loading = users.isLoading;
-      build = buildUserReport;
-    } else if (type === "dispatch") {
-      source = trips.data?.data || [];
-      loading = trips.isLoading;
-      build = buildDispatchReport;
-    } else {
-      source = payments.data?.data || [];
-      loading = payments.isLoading;
-      build = buildPaymentReport;
-    }
+  const trips = useMemo(
+    () => (tripsQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
+    [tripsQuery.data, dateFrom, dateTo]
+  );
+  const payments = useMemo(
+    () => (paymentsQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
+    [paymentsQuery.data, dateFrom, dateTo]
+  );
+  const feedback = useMemo(
+    () => (feedbackQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
+    [feedbackQuery.data, dateFrom, dateTo]
+  );
 
-    const rows = source.filter((row) => {
-      if (type === "users" && reportUserId && String(row.id) !== String(reportUserId)) return false;
-      if (!inDateRange(row.createdAt, dateFrom, dateTo)) return false;
-      if (!needle) return true;
+  const rankings = useMemo(() => {
+    if (rankRole === "customer") return rankPeople(trips, "customerId", "customer", rankSort);
+    if (rankRole === "dispatcher") return rankPeople(trips, "dispatcherId", "dispatcher", rankSort);
+    return rankPeople(trips, "driverId", "driver", rankSort);
+  }, [trips, rankRole, rankSort]);
 
-      const searchable = [
-        row.id,
-        row.truckId,
-        row.truckNumber,
-        row.plateNumber,
-        row.name,
-        row.email,
-        row.phone,
-        row.customer,
-        row.driver,
-        row.dispatcher,
-        row.referenceId,
-        row.route,
-        row.pickup,
-        row.destination,
-        row.status,
-        row.role,
-        row.method
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return searchable.includes(needle);
-    });
+  const rankMeta = RANK_ROLES.find((item) => item.id === rankRole) || RANK_ROLES[0];
 
-    return build(rows, loading);
-  }, [
-    type,
-    reportSearch,
-    reportUserId,
-    dateFrom,
-    dateTo,
-    trucks.data,
-    trucks.isLoading,
-    users.data,
-    users.isLoading,
-    trips.data,
-    trips.isLoading,
-    payments.data,
-    payments.isLoading
-  ]);
+  const metrics = useMemo(() => {
+    const delivered = trips.filter((row) => row.status === "Delivered").length;
+    const active = trips.filter((row) => !["Delivered", "Cancelled", "Pending"].includes(row.status)).length;
+    const collected = payments.reduce((sum, row) => sum + Number(row.amountPaid || 0), 0);
+    const balance = payments.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0);
+    const avgRating = feedback.length
+      ? (
+          feedback.reduce((sum, row) => sum + Number(row.rating || 0), 0) / feedback.length
+        ).toFixed(1)
+      : "—";
+    return [
+      { label: "Trips", value: trips.length },
+      { label: "Delivered", value: delivered },
+      { label: "Active", value: active },
+      { label: "Collected", value: money(collected) },
+      { label: "Balance due", value: money(balance) },
+      { label: "Avg rating", value: avgRating }
+    ];
+  }, [trips, payments, feedback]);
 
-  function resetReportFilters() {
-    setReportSearch("");
-    setReportUserId("");
-    setDateFrom("");
-    setDateTo("");
-  }
+  const tripChart = useMemo(
+    () =>
+      ["Pending", "Assigned", "In Transit", "Delivered", "Cancelled"].map((status) => ({
+        name: status,
+        value: trips.filter((row) => row.status === status).length
+      })),
+    [trips]
+  );
 
-  const dateFilterActive = Boolean(dateFrom || dateTo);
+  const rankingColumns = [
+    { key: "rank", label: "#" },
+    { key: "name", label: rankMeta.label.slice(0, -1) },
+    { key: "trips", label: rankMeta.countLabel },
+    { key: "delivered", label: "Delivered" },
+    { key: "cancelled", label: "Cancelled" },
+    { key: "fare", label: "Total fare", render: (row) => money(row.fare), export: (row) => row.fare }
+  ];
+
+  const tripColumns = [
+    { key: "id", label: "Trip", render: (row) => String(row.id).slice(0, 10), export: (row) => row.id },
+    { key: "customer", label: "Customer" },
+    { key: "driver", label: "Driver" },
+    { key: "dispatcher", label: "Dispatcher" },
+    { key: "route", label: "Route" },
+    { key: "fare", label: "Fare", render: (row) => money(row.fare), export: (row) => row.fare },
+    { key: "status", label: "Status", type: "status" },
+    { key: "createdAt", label: "Date", render: (row) => formatDate(row.createdAt), export: (row) => formatDate(row.createdAt) }
+  ];
+
+  const paymentColumns = [
+    { key: "referenceId", label: "Reference" },
+    { key: "customer", label: "Customer" },
+    { key: "amount", label: "Amount", render: (row) => money(row.amount), export: (row) => row.amount },
+    { key: "amountPaid", label: "Paid", render: (row) => money(row.amountPaid), export: (row) => row.amountPaid },
+    { key: "balanceDue", label: "Balance", render: (row) => money(row.balanceDue), export: (row) => row.balanceDue },
+    { key: "status", label: "Status", type: "status" },
+    { key: "createdAt", label: "Date", render: (row) => formatDate(row.createdAt), export: (row) => formatDate(row.createdAt) }
+  ];
+
+  const feedbackColumns = [
+    { key: "tripId", label: "Trip" },
+    { key: "customer", label: "Customer" },
+    { key: "driver", label: "Driver" },
+    { key: "rating", label: "Rating", render: (row) => (row.rating ? `${row.rating}/5` : "—") },
+    { key: "comment", label: "Comment", render: (row) => row.comment || "—" },
+    { key: "createdAt", label: "Date", render: (row) => formatDate(row.createdAt), export: (row) => formatDate(row.createdAt) }
+  ];
+
+  const activeColumns =
+    tab === "rankings"
+      ? rankingColumns
+      : tab === "trips"
+        ? tripColumns
+        : tab === "payments"
+          ? paymentColumns
+          : feedbackColumns;
+  const activeRows =
+    tab === "rankings" ? rankings : tab === "trips" ? trips : tab === "payments" ? payments : feedback;
+  const loading =
+    tab === "payments"
+      ? paymentsQuery.isLoading
+      : tab === "feedback"
+        ? feedbackQuery.isLoading
+        : tripsQuery.isLoading;
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Report Center"
-        subtitle="Prepare and export a separate operational report for every part of the business."
+        title="Reports"
+        subtitle="Rank drivers, customers, and dispatchers. Review trips, payments, and feedback."
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
             <Button variant="outline" onClick={() => window.print()}>
               <Printer size={17} /> Print
             </Button>
-            <Button onClick={() => downloadCsv(type, report.columns, report.rows)} disabled={!report.rows.length}>
+            <Button onClick={() => downloadCsv(tab, activeColumns, activeRows)} disabled={!activeRows.length}>
               <Download size={17} /> Export CSV
             </Button>
           </div>
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:hidden">
-        {Object.entries(REPORTS).map(([key, item]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => {
-              setType(key);
-              setReportUserId("");
-            }}
-            className={`rounded-xl border p-4 text-left transition ${
-              type === key
-                ? "border-secondary-container bg-secondary-container text-on-secondary-container shadow-md"
-                : "border-outline-variant bg-surface-container-lowest hover:border-secondary-container"
-            }`}
-          >
-            <span className="font-semibold">{item.label}</span>
-            <span className={`mt-1 block text-xs ${type === key ? "text-on-secondary-container/80" : "text-on-surface-variant"}`}>
-              {item.description}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <section className="mb-6 rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm print:hidden">
-        <div className="mb-4">
-          <h2 className="font-semibold text-on-surface">Search and filter report</h2>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            Filter by date range (registered / created date), search text, or a specific user. Metrics and chart update with the filter.
-          </p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="relative xl:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Search report</span>
-            <Search className="absolute bottom-3 left-3 text-on-surface-variant" size={16} />
-            <input
-              className="stitch-input pl-9"
-              value={reportSearch}
-              onChange={(event) => setReportSearch(event.target.value)}
-              placeholder="Truck ID, user, driver, phone, or email"
-            />
-          </label>
-          {type === "users" && (
-            <label>
-              <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Select specific user</span>
-              <select className="stitch-input" value={reportUserId} onChange={(event) => setReportUserId(event.target.value)}>
-                <option value="">All users</option>
-                {(users.data?.data || []).map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} · {user.role} · {user.phone || user.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label>
-            <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Date from</span>
+      <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 print:hidden">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs font-semibold text-on-surface-variant">From</span>
             <input
               className="stitch-input"
               type="date"
               value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
               max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
             />
           </label>
-          <label>
-            <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Date to</span>
+          <label className="text-sm">
+            <span className="mb-1 block text-xs font-semibold text-on-surface-variant">To</span>
             <input
               className="stitch-input"
               type="date"
               value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
               min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
             />
           </label>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-on-surface-variant">
-            <span className="font-bold text-on-surface">{report.rows.length}</span> matching records
-            {dateFilterActive ? (
-              <span className="ml-2 text-xs text-secondary-container">
-                · {dateFrom || "…"} → {dateTo || "…"}
-              </span>
-            ) : null}
-          </p>
-          <Button type="button" variant="outline" onClick={resetReportFilters}>
-            <RotateCcw size={16} /> Reset Filters
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+            }}
+          >
+            <RotateCcw size={16} /> Reset
           </Button>
         </div>
       </section>
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {report.metrics.map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
-            <p className="text-sm text-on-surface-variant">{label}</p>
-            <p className="mt-2 text-2xl font-bold text-on-surface">{value}</p>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {metrics.map((item) => (
+          <div key={item.label} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm">
+            <p className="text-xs font-medium text-on-surface-variant">{item.label}</p>
+            <p className="mt-1 text-xl font-bold text-on-surface">{item.value}</p>
           </div>
         ))}
       </section>
 
-      {type === "users" && (
-        <div className="mb-6">
-          <UserActivityReport />
-        </div>
-      )}
-
-      <section className="mb-6 rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-sm">
-        <h2 className="mb-5 text-xl font-semibold text-on-surface">{report.chartTitle}</h2>
-        <div className="h-72 w-full">
+      <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold text-on-surface">Trips by status</h2>
+        <div className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={report.chartData} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
+            <BarChart data={tripChart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={type === "payments"} />
-              <Tooltip formatter={(value) => (type === "payments" ? money(value) : value)} />
-              <Bar dataKey="value" name={type === "payments" ? "Amount" : "Records"} fill="#fe6b00" radius={[8, 8, 0, 0]} />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Bar dataKey="value" name="Trips" fill="#fe6b00" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant px-6 py-5">
-          <div>
-            <h2 className="text-xl font-semibold text-on-surface">{REPORTS[type].label}</h2>
-            <p className="mt-1 text-sm text-on-surface-variant">
-              Generated {new Date().toLocaleString()} · {report.rows.length} records
-            </p>
+      <div className="inline-flex rounded-xl border border-outline-variant bg-surface-container-low p-1 print:hidden">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              tab === item.id
+                ? "bg-primary-container text-white shadow-sm"
+                : "text-on-surface-variant hover:text-primary-container"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "rankings" ? (
+        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 print:hidden">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Who</span>
+              <select className="stitch-input min-w-[10rem]" value={rankRole} onChange={(e) => setRankRole(e.target.value)}>
+                {RANK_ROLES.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Sort</span>
+              <select className="stitch-input min-w-[10rem]" value={rankSort} onChange={(e) => setRankSort(e.target.value)}>
+                <option value="most">Most first</option>
+                <option value="least">Least first</option>
+              </select>
+            </label>
           </div>
+        </section>
+      ) : null}
+
+      <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+        <div className="border-b border-outline-variant px-5 py-4">
+          <h2 className="text-lg font-semibold text-on-surface">
+            {tab === "rankings"
+              ? `${rankMeta.label} · ${rankSort === "most" ? "Most" : "Least"}`
+              : tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </h2>
+          <p className="mt-0.5 text-sm text-on-surface-variant">
+            {activeRows.length} records
+            {dateFrom || dateTo ? ` · ${dateFrom || "…"} → ${dateTo || "…"}` : ""}
+          </p>
         </div>
-        {report.loading ? (
-          <p className="px-6 py-10 text-center text-on-surface-variant">Preparing report…</p>
+        {loading ? (
+          <p className="px-5 py-10 text-center text-on-surface-variant">Loading…</p>
         ) : (
-          <DataTable columns={report.columns} rows={report.rows} empty="No data available for this report." />
+          <DataTable columns={activeColumns} rows={activeRows} empty="No records for this period." />
         )}
       </section>
-      <DeliveryFeedbackReport />
     </div>
   );
 }

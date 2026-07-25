@@ -42,17 +42,48 @@ const createSchema = z.object({
     verificationStatus: z.enum(["Pending", "Verified", "Rejected"]).optional().default("Pending"),
     accountStatus: z.enum(["Active", "Inactive", "Suspended"]).optional().default("Active")
   }).optional(),
+  customerProfile: z.object({
+    customerType: z.enum(["Individual", "Business"]).optional().default("Business"),
+    city: z.string().trim().min(1),
+    companyName: z.string().trim().optional(),
+    address: z.string().trim().min(1),
+    companyPhone: z.string().trim().optional(),
+    companyAddress: z.string().trim().optional(),
+    businessRegistrationNumber: z.string().trim().optional(),
+    profilePhotoUrl: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => value.startsWith("/uploads/") || /^https?:\/\//i.test(value), {
+        message: "Invalid profile photo URL"
+      })
+      .optional(),
+    profilePhotoPublicId: z.string().trim().min(1).optional()
+  }).optional(),
   truck: z
     .object({
       truckNumber: z.string().min(1),
       plateNumber: z.string().min(1),
       capacity: z.string().min(1),
       truckType: z.string().trim().min(1),
+      region: z.string().trim().min(1),
+      city: z.string().trim().min(1),
       photoUrl1: z.string().min(1),
       photoUrl2: z.string().min(1).optional(),
       documentUrls: z.array(z.string().min(1)).min(1)
     })
     .optional()
+}).superRefine((data, ctx) => {
+  if (data.role === "driver" && data.truck && (!data.truck.region?.trim() || !data.truck.city?.trim())) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["truck", "city"], message: "Region and city are required for driver registration" });
+  }
+  if (data.role !== "customer") return;
+  if (!data.phone?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: "Phone is required for customers" });
+  }
+  if (!data.customerProfile) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customerProfile"], message: "Customer profile is required" });
+  }
 });
 
 router.use(requireAuth);
@@ -61,18 +92,21 @@ router.use(requirePermission("users"));
 
 router.get("/", requireRole("admin", "dispatcher"), async (req, res, next) => {
   try {
+    let roleFilter = req.query.role;
     if (req.user.role === "dispatcher") {
-      const role = req.query.role;
-      if (role && !["driver", "customer"].includes(role)) {
+      if (roleFilter && !["driver", "customer"].includes(roleFilter)) {
         return res.status(403).json({ message: "Dispatchers can only list drivers or customers" });
       }
+      roleFilter = roleFilter || "driver";
     }
     res.json(
       await db.listUsers({
-        role: req.user.role === "dispatcher" ? "driver" : req.query.role,
+        role: roleFilter,
         search: req.query.search,
         page: req.query.page,
-        limit: req.query.limit
+        limit: req.query.limit,
+        scopedToDispatcherId:
+          req.user.role === "dispatcher" && roleFilter === "customer" ? req.user.sub : undefined
       })
     );
   } catch (error) {
@@ -80,9 +114,13 @@ router.get("/", requireRole("admin", "dispatcher"), async (req, res, next) => {
   }
 });
 
-router.get("/summary", requireRole("admin", "dispatcher"), async (_req, res, next) => {
+router.get("/summary", requireRole("admin", "dispatcher"), async (req, res, next) => {
   try {
-    res.json(await db.userSummary());
+    res.json(
+      await db.userSummary({
+        scopedToDispatcherId: req.user.role === "dispatcher" ? req.user.sub : undefined
+      })
+    );
   } catch (error) {
     next(error);
   }
@@ -100,7 +138,8 @@ router.post(
     { name: "nationalIdFront", maxCount: 1 },
     { name: "nationalIdBack", maxCount: 1 },
     { name: "dispatcherPhoto", maxCount: 1 },
-    { name: "dispatcherCv", maxCount: 1 }
+    { name: "dispatcherCv", maxCount: 1 },
+    { name: "profilePhoto", maxCount: 1 }
   ]),
   async (req, res, next) => {
     try {
@@ -112,12 +151,17 @@ router.post(
         }
       }
       if (req.user.role === "dispatcher") {
-        if (requestedRole && requestedRole !== "driver") {
-          return res.status(403).json({ message: "Dispatchers can only register drivers with their truck" });
+        if (requestedRole && !["driver", "customer"].includes(requestedRole)) {
+          return res.status(403).json({ message: "Dispatchers can only register drivers or customers" });
         }
       }
 
-      const role = req.user.role === "dispatcher" ? "driver" : requestedRole;
+      const role =
+        req.user.role === "dispatcher"
+          ? requestedRole === "customer"
+            ? "customer"
+            : "driver"
+          : requestedRole;
       const nationalIdBackUrl = await persistUploadedFile(req.files?.nationalIdBack?.[0], "dispatchers");
       const nationalIdFrontUrl =
         (await persistUploadedFile(req.files?.nationalIdFront?.[0], "dispatchers")) || nationalIdBackUrl;
@@ -132,6 +176,8 @@ router.post(
               plateNumber: req.body.plateNumber,
               capacity: req.body.capacity,
               truckType: req.body.truckType,
+              region: req.body.region,
+              city: req.body.city,
               photoUrl1: (await persistUploadedFile(req.files?.truckPhoto1?.[0], "trucks")) || undefined,
               photoUrl2: (await persistUploadedFile(req.files?.truckPhoto2?.[0], "trucks")) || undefined,
               documentUrls: (
@@ -140,6 +186,11 @@ router.post(
                 )
               ).filter(Boolean)
             }
+          : undefined;
+
+      const customerProfilePhotoUrl =
+        role === "customer"
+          ? (await persistUploadedFile(req.files?.profilePhoto?.[0], "customers")) || undefined
           : undefined;
 
       const parsed = createSchema.safeParse({
@@ -171,6 +222,15 @@ router.post(
           verificationStatus: req.body.verificationStatus || "Pending",
           accountStatus: req.body.accountStatus || "Active"
         } : undefined,
+        customerProfile:
+          role === "customer"
+            ? {
+                customerType: "Business",
+                city: req.body.city,
+                address: req.body.address,
+                profilePhotoUrl: customerProfilePhotoUrl
+              }
+            : undefined,
         truck: truckPayload
       });
 
@@ -222,6 +282,7 @@ router.post(
         driverLicenseUrl: parsed.data.driverLicenseUrl,
         driverImageUrl: parsed.data.driverImageUrl,
         dispatcherProfile: parsed.data.dispatcherProfile,
+        customerProfile: parsed.data.customerProfile,
         truck,
         mustChangePassword: true,
         actorId: req.user.sub

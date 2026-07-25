@@ -12,6 +12,7 @@ import { cargoRepository } from "./db/cargoRepository.js";
 import { tripRepository } from "./db/tripRepository.js";
 import { reportRepository } from "./db/reportRepository.js";
 import { pricingRepository } from "./db/pricingRepository.js";
+import { supportComplaintRepository } from "./db/supportComplaintRepository.js";
 
 // ─── DB Service ──────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export const db = {
   ...tripRepository,
   ...reportRepository,
   ...pricingRepository,
+  ...supportComplaintRepository,
 
   async ensureAdmin() {
     const existing = await prisma.user.findFirst({

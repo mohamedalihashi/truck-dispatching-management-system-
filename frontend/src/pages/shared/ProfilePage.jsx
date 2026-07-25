@@ -186,6 +186,8 @@ export function ProfilePage() {
               <dl className="grid gap-3 sm:grid-cols-2">
                 <Info label="Truck number" value={truck.truckNumber} />
                 <Info label="Plate" value={truck.plateNumber} />
+                <Info label="Region" value={truck.region || "—"} />
+                <Info label="City" value={truck.city || "—"} />
                 <Info label="Type" value={truck.type || truck.truckType} />
                 <Info label="Status" value={<StatusBadge status={truck.status} />} />
               </dl>

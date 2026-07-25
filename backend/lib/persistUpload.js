@@ -32,12 +32,4 @@ export async function persistUploadedFile(file, folder = "misc") {
   return null;
 }
 
-export function assertCloudinaryReadyForServerless() {
-  if (process.env.VERCEL && !isCloudinaryConfigured()) {
-    const error = new Error("Cloudinary is required when running on Vercel");
-    error.status = 503;
-    throw error;
-  }
-}
-
 export { uploadDir };

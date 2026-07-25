@@ -37,6 +37,8 @@ export function mapUser(row) {
     truckPhotoUrl1: row.truck?.photoUrl1 || null,
     truckPhotoUrl2: row.truck?.photoUrl2 || null,
     truckDocumentUrls: row.truck?.documentUrls || [],
+    region: row.truck?.region || null,
+    city: row.truck?.city || null,
     dispatcherProfile: row.dispatcherProfile
       ? { ...row.dispatcherProfile, commissionPercentage: Number(row.dispatcherProfile.commissionPercentage || 0) }
       : null,
@@ -61,6 +63,8 @@ export function mapTruck(row) {
     photoUrl2: row.photoUrl2 || null,
     documentUrls: row.documentUrls || [],
     registrationDocumentUrl: row.registrationDocumentUrl || null,
+    region: row.region || null,
+    city: row.city || null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

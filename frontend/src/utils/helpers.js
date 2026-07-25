@@ -61,8 +61,6 @@ export const TRIP_FLOW = [
 
 export const TRIP_STATUSES = [...TRIP_FLOW, "Delayed", "Cancelled"];
 
-export const DRIVER_TRIP_FLOW = ["Accepted", "Arrived Pickup", "In Transit", "Delivered"];
-
 /** Trip statuses where the driver phone should stream GPS to the server. */
 export const LIVE_TRACKING_STATUSES = [
   "Assigned",
@@ -113,12 +111,6 @@ export function nextTripStatus(current) {
   return TRIP_FLOW[Math.min(idx + 1, TRIP_FLOW.length - 1)];
 }
 
-export const DEMO_ACCOUNTS = [
-  { role: "admin", email: "wllhero145@gmail.com", label: "Admin" },
-];
-
-export const DEMO_PASSWORD = "Password123!";
-
 export function roleHome(role) {
   switch (role) {
     case "admin":
@@ -134,33 +126,35 @@ export function roleHome(role) {
 }
 
 export function navForRole(role) {
-  const common = [
-    { to: "", end: true, label: "Dashboard", icon: "dashboard" },
-    { to: "trips", label: "Trips", icon: "route" }
-  ];
+  const support = { to: "support", label: "Support", icon: "help" };
 
   if (role === "admin") {
     return [
-      ...common,
+      { to: "", end: true, label: "Dashboard", icon: "dashboard" },
       { to: "requests", label: "Requests", icon: "file" },
+      { to: "trips", label: "Trips", icon: "route" },
+      { to: "tracking", label: "Live Tracking", icon: "map" },
       { to: "users", label: "Users", icon: "users" },
       { to: "trucks", label: "Fleet / Drivers", icon: "truck" },
+      { to: "pricing", label: "Pricing", icon: "chart" },
       { to: "payments", label: "Finance", icon: "chart" },
       { to: "earnings", label: "Payouts", icon: "chart" },
-      { to: "tracking", label: "Live Tracking", icon: "map" },
       { to: "reports", label: "Reports", icon: "chart" },
       { to: "audit-logs", label: "Audit Logs", icon: "file" },
-      { to: "pricing", label: "Pricing", icon: "chart" },
+      { to: "support", label: "Support", icon: "help" },
       { to: "settings", label: "Settings", icon: "settings" }
     ];
   }
   if (role === "dispatcher") {
     return [
-      ...common,
+      { to: "", end: true, label: "Dashboard", icon: "dashboard" },
+      { to: "trips", label: "Trips", icon: "route" },
       { to: "requests", label: "Requests", icon: "file" },
+      { to: "customers", label: "Customers", icon: "users" },
       { to: "drivers", label: "Fleet / Drivers", icon: "truck" },
       { to: "tracking", label: "Live Tracking", icon: "map" },
-      { to: "earnings", label: "Earnings", icon: "chart" }
+      { to: "earnings", label: "Earnings", icon: "chart" },
+      support
     ];
   }
   if (role === "driver") {
@@ -168,7 +162,8 @@ export function navForRole(role) {
       { to: "", end: true, label: "Dashboard", icon: "dashboard" },
       { to: "jobs", label: "My Jobs", icon: "route" },
       { to: "truck", label: "My Truck", icon: "truck" },
-      { to: "earnings", label: "Earnings", icon: "chart" }
+      { to: "earnings", label: "Earnings", icon: "chart" },
+      support
     ];
   }
   return [
@@ -176,6 +171,7 @@ export function navForRole(role) {
     { to: "book", label: "Book Truck", icon: "plus" },
     { to: "shipments", label: "Shipments", icon: "package" },
     { to: "tracking", label: "Track", icon: "map" },
-    { to: "payments", label: "Payments", icon: "chart" }
+    { to: "payments", label: "Payments", icon: "chart" },
+    support
   ];
 }

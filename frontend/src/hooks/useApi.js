@@ -423,6 +423,14 @@ export function useSmsNotifications(params = {}) {
   });
 }
 
+export function useSupportComplaints(params = {}, options = {}) {
+  return useQuery({
+    queryKey: ["support-complaints", params],
+    queryFn: () => api.listSupportComplaints(params),
+    ...options
+  });
+}
+
 export function useCancelCargo() {
   const qc = useQueryClient();
   return useMutation({
@@ -434,6 +442,21 @@ export function useCancelCargo() {
       qc.invalidateQueries({ queryKey: ["trip-route"] });
       qc.invalidateQueries({ queryKey: ["trucks"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+    }
+  });
+}
+
+export function useRestoreCargo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.restoreCargoRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cargo-requests"] });
+      qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+      qc.invalidateQueries({ queryKey: ["trucks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     }
   });
 }
@@ -531,6 +554,10 @@ export function useTripActions() {
     }),
     reject: useMutation({
       mutationFn: (id) => api.rejectTrip(id),
+      onSuccess: invalidate
+    }),
+    restore: useMutation({
+      mutationFn: (id) => api.restoreTrip(id),
       onSuccess: invalidate
     }),
     shareLocation: useMutation({

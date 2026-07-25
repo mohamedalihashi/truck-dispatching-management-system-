@@ -31,6 +31,7 @@ import { TrackingPage } from "./pages/shared/TrackingPage";
 import { PaymentsPage } from "./pages/shared/PaymentsPage";
 import { EarningsPage } from "./pages/shared/EarningsPage";
 import { ProfilePage } from "./pages/shared/ProfilePage";
+import { SupportPage } from "./pages/shared/SupportPage";
 import { useAuth } from "./contexts/AuthContext";
 import { roleHome } from "./utils/helpers";
 
@@ -74,8 +75,11 @@ export default function App() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="audit-logs" element={<AuditLogsPage />} />
           <Route path="pricing" element={<PricingSettingsPage />} />
+          <Route path="communication" element={<Navigate to="/admin/support" replace />} />
+          <Route path="sms" element={<Navigate to="/admin/support" replace />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
       </Route>
@@ -85,10 +89,12 @@ export default function App() {
           <Route index element={<DispatcherDashboard />} />
           <Route path="requests" element={<RequestsPage />} />
           <Route path="trips" element={<TripsPage />} />
-          <Route path="drivers" element={<UsersPage />} />
+          <Route path="drivers" element={<UsersPage mode="fleet" />} />
+          <Route path="customers" element={<UsersPage mode="customers" />} />
           <Route path="tracking" element={<TrackingPage />} />
           <Route path="earnings" element={<EarningsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
       </Route>
@@ -102,6 +108,7 @@ export default function App() {
           <Route path="tracking" element={<TrackingPage />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
       </Route>
@@ -115,6 +122,7 @@ export default function App() {
           <Route path="truck" element={<DriverTruckPage />} />
           <Route path="earnings" element={<EarningsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
       </Route>

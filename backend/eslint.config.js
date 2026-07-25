@@ -5,7 +5,9 @@ export default [{
     sourceType: "module",
     globals: {
       process: "readonly", console: "readonly", Buffer: "readonly",
-      setTimeout: "readonly", clearTimeout: "readonly", URL: "readonly", fetch: "readonly",
+      setTimeout: "readonly", clearTimeout: "readonly",
+      setInterval: "readonly", clearInterval: "readonly",
+      URL: "readonly", fetch: "readonly", AbortSignal: "readonly",
     },
   },
   rules: {

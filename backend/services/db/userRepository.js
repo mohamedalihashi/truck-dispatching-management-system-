@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { prisma, withTransaction } from "../../lib/prisma.js";
 import { auditFields } from "../../lib/auditContext.js";
-import { mapUser, mapNotification, userInclude } from "./mappers.js";
+import { mapUser, userInclude } from "./mappers.js";
 
 export const userRepository = {
 async findUserByEmail(email) {
@@ -87,7 +87,7 @@ async findUserById(id) {
   return mapUser(row);
 },
 
-async listUsers({ role, search, page = 1, limit = 50 } = {}) {
+async listUsers({ role, search, page = 1, limit = 50, scopedToDispatcherId } = {}) {
   const where = {};
   if (role) where.role = role;
   if (search) {
@@ -98,6 +98,20 @@ async listUsers({ role, search, page = 1, limit = 50 } = {}) {
       ...(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(search) ? [{ id: search }] : []),
     ];
   }
+
+  if (scopedToDispatcherId && role === "customer") {
+    const visibleIds = await this.listDispatcherCustomerIds(scopedToDispatcherId);
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { createdById: scopedToDispatcherId },
+          ...(visibleIds.length ? [{ id: { in: visibleIds } }] : [])
+        ]
+      }
+    ];
+  }
+
   const offset = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     prisma.user.findMany({
@@ -112,19 +126,108 @@ async listUsers({ role, search, page = 1, limit = 50 } = {}) {
   return { data: data.map(mapUser), total, page: Number(page) };
 },
 
-async userSummary() {
-  const [total, active, inactive, customers, dispatchers, drivers, driverActive, trucks] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { status: "Active" } }),
-    prisma.user.count({ where: { status: "Inactive" } }),
-    prisma.user.count({ where: { role: "customer" } }),
-    prisma.user.count({ where: { role: "dispatcher" } }),
+async listDispatcherCustomerIds(dispatcherId) {
+  const [fromCargo, fromTrips, fromAudit] = await Promise.all([
+    prisma.cargoRequest.findMany({
+      where: { dispatcherId },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    }),
+    prisma.trip.findMany({
+      where: { dispatcherId },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    }),
+    prisma.auditLog.findMany({
+      where: {
+        userId: dispatcherId,
+        action: "user.created",
+        entityType: "users",
+      },
+      select: { entityId: true },
+    }),
+  ]);
+
+  return [
+    ...new Set([
+      ...fromCargo.map((row) => row.customerId),
+      ...fromTrips.map((row) => row.customerId),
+      ...fromAudit.map((row) => row.entityId).filter(Boolean),
+    ]),
+  ];
+},
+
+async isCustomerVisibleToDispatcher(customerId, dispatcherId) {
+  if (!customerId || !dispatcherId) return false;
+  const customer = await prisma.user.findFirst({
+    where: {
+      id: customerId,
+      role: "customer",
+      OR: [
+        { createdById: dispatcherId },
+        { cargoRequestsAsCustomer: { some: { dispatcherId } } },
+        { tripsAsCustomer: { some: { dispatcherId } } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (customer) return true;
+
+  const fromAudit = await prisma.auditLog.findFirst({
+    where: {
+      userId: dispatcherId,
+      action: "user.created",
+      entityType: "users",
+      entityId: customerId,
+    },
+    select: { id: true },
+  });
+  return Boolean(fromAudit);
+},
+
+async userSummary({ scopedToDispatcherId } = {}) {
+  if (!scopedToDispatcherId) {
+    const [total, active, inactive, customers, dispatchers, drivers, driverActive, trucks] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { status: "Active" } }),
+      prisma.user.count({ where: { status: "Inactive" } }),
+      prisma.user.count({ where: { role: "customer" } }),
+      prisma.user.count({ where: { role: "dispatcher" } }),
+      prisma.user.count({ where: { role: "driver" } }),
+      prisma.user.count({ where: { role: "driver", status: "Active" } }),
+      prisma.truck.count(),
+    ]);
+
+    return { total, active, inactive, customers, dispatchers, drivers, driverActive, trucks };
+  }
+
+  const visibleIds = await this.listDispatcherCustomerIds(scopedToDispatcherId);
+  const customerWhere = {
+    role: "customer",
+    OR: [
+      { createdById: scopedToDispatcherId },
+      ...(visibleIds.length ? [{ id: { in: visibleIds } }] : []),
+    ],
+  };
+  const [customers, active, inactive, drivers, driverActive, trucks] = await Promise.all([
+    prisma.user.count({ where: customerWhere }),
+    prisma.user.count({ where: { ...customerWhere, status: "Active" } }),
+    prisma.user.count({ where: { ...customerWhere, status: "Inactive" } }),
     prisma.user.count({ where: { role: "driver" } }),
     prisma.user.count({ where: { role: "driver", status: "Active" } }),
     prisma.truck.count(),
   ]);
 
-  return { total, active, inactive, customers, dispatchers, drivers, driverActive, trucks };
+  return {
+    total: customers,
+    active,
+    inactive,
+    customers,
+    dispatchers: 0,
+    drivers,
+    driverActive,
+    trucks,
+  };
 },
 
 async createUser({ name, username, email, password, passwordHash: suppliedPasswordHash, role, phone, customerProfile, nationalIdNumber, driverLicense, driverLicenseUrl, driverLicensePublicId, driverImageUrl, driverImagePublicId, dispatcherProfile, truck, mustChangePassword = false, actorId = null }) {
@@ -148,6 +251,7 @@ async createUser({ name, username, email, password, passwordHash: suppliedPasswo
         driverImagePublicId: role === "driver" ? driverImagePublicId : null,
         status: role === "driver" ? "Pending Verification" : "Active",
         mustChangePassword: Boolean(mustChangePassword),
+        createdById: actorId || null,
       },
     });
 
@@ -177,6 +281,8 @@ async createUser({ name, username, email, password, passwordHash: suppliedPasswo
           plateNumber: truck.plateNumber,
           capacity: truck.capacity,
           truckType: truck.truckType,
+          region: truck.region || "",
+          city: truck.city || "",
           photoUrl1: truck.photoUrl1,
           photoUrl2: truck.photoUrl2 || null,
           photoPublicId1: truck.photoPublicId1 || null,

@@ -17,6 +17,7 @@ import earningsRoutes from "./routes/earnings.routes.js";
 import feedbackRoutes from "./routes/feedback.routes.js";
 import pricingRoutes from "./routes/pricing.routes.js";
 import quotesRoutes from "./routes/quotes.routes.js";
+import supportRoutes from "./routes/support.routes.js";
 import { auditContextMiddleware } from "./lib/auditContext.js";
 import { isCloudinaryConfigured } from "./services/cloudinaryService.js";
 import { getWaafiPublicConfig } from "./services/waafiPayService.js";
@@ -193,6 +194,7 @@ export function createApp({ io } = {}) {
   app.use("/api/admin", adminRoutes);
   app.use("/api/pricing", pricingRoutes);
   app.use("/api/quotes", quotesRoutes);
+  app.use("/api/support", supportRoutes);
   app.use(notFound);
   app.use(errorHandler);
 

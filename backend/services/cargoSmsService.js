@@ -52,8 +52,8 @@ async function sendMany(cargo, entityType, entityId, event, messageFor, recipien
 }
 
 export async function sendBookingCreatedSms(request) {
-  // Notify the person who is NOT the booking customer (usually the receiver).
-  const recipients = cargoSmsRecipients(request, { prefer: "external" });
+  // Sender and receiver both get updates, so the booking customer is always included.
+  const recipients = cargoSmsRecipients(request);
   const sender = request.senderName || "Diraha";
   const receiver = request.receiverName || "qaataha";
   return sendMany(
@@ -70,16 +70,13 @@ export async function sendBookingCreatedSms(request) {
 }
 
 export async function sendCargoRequestEventSms(request, event) {
-  const recipients = cargoSmsRecipients(request, { prefer: "external" });
-  // Also keep receiver informed even if customerRole is missing/legacy.
-  const fallback = recipients.length
-    ? recipients
-    : cargoSmsRecipients(request, { prefer: "Receiver" });
+  const fallback = cargoSmsRecipients(request);
 
   const labels = {
     "booking.accepted": "Ballanka xamuulka waa la aqbalay, lacag-bixinta ayaa socota.",
     "booking.assigned": `Darawal ayaa loo qoondeeyay xamuulka ${request.id}.`,
     "booking.cancelled": `Gaarsiinta xamuulka ${request.id} waa la joojiyay.`,
+    "booking.restored": `Ballanka xamuulka ${request.id} waa dib loo soo celiyay oo mar kale waa firfircoon yahay.`,
   };
 
   let driverLine = "";
@@ -115,8 +112,7 @@ export async function sendTripEventSms(tripId, event, { feedbackToken } = {}) {
   if (!trip?.cargoRequest) return [];
 
   const cargo = trip.cargoRequest;
-  const recipients = cargoSmsRecipients(cargo, { prefer: "external" });
-  const list = recipients.length ? recipients : cargoSmsRecipients(cargo, { prefer: "Receiver" });
+  const list = cargoSmsRecipients(cargo);
   const driverName = trip.driver?.name?.split(/\s+/)[0] || "Darawal";
   const driverPhone = trip.driver?.phone || "";
   const driverContact = driverPhone ? ` Darawalka ${driverName}: ${driverPhone}.` : "";
@@ -145,6 +141,7 @@ export async function sendTripEventSms(tripId, event, { feedbackToken } = {}) {
     "cargo.in_transit": `Xamuulka ${trip.id} waa ku jiraa safarka oo ku socda ${safeLocation(cargo, "to")}.${driverContact}`,
     "cargo.near_destination": `Darawalku wuxuu u dhowyahay meesha loo wado xamuulka ${trip.id}.${driverContact}`,
     "cargo.cancelled": `Gaarsiinta xamuulka ${trip.id} waa la joojiyay.`,
+    "cargo.restored": `Gaarsiinta xamuulka ${trip.id} waa dib loo soo celiyay.`,
   };
 
   return sendMany(

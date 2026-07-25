@@ -118,10 +118,13 @@ model User {
   mustChangePassword Boolean @default(false) @map("must_change_password")
   failedLoginAttempts Int @default(0) @map("failed_login_attempts")
   lockedUntil DateTime? @map("locked_until") @db.Timestamptz()
+  createdById  String?  @map("created_by_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
   // Relations
+  createdBy             User?          @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers          User[]         @relation("UserCreatedBy")
   truck                 Truck?
   cargoRequestsAsCustomer  CargoRequest[] @relation("CargoRequestCustomer")
   cargoRequestsAsDriver    CargoRequest[] @relation("CargoRequestDriver")
@@ -138,6 +141,9 @@ model User {
   dispatcherProfile     DispatcherProfile? @relation("DispatcherProfileOwner")
   verifiedDispatcherProfiles DispatcherProfile[] @relation("DispatcherProfileVerifier")
   customerProfile       CustomerProfile?
+  smsNotificationsSent  SmsNotification[] @relation("SmsSentBy")
+  supportComplaintsFiled SupportComplaint[] @relation("SupportComplaintCustomer")
+  supportComplaintsAgainst SupportComplaint[] @relation("SupportComplaintAgainst")
 
   @@map("users")
 }
@@ -219,6 +225,8 @@ model Truck {
   registrationDocumentUrl String? @map("registration_document_url")
   registrationDocumentPublicId String? @map("registration_document_public_id")
   documentUrls String[]   @default([]) @map("document_urls")
+  region      String      @default("")
+  city        String      @default("")
   driverId    String      @unique @map("driver_id") @db.Uuid
   status      TruckStatus @default(Available)
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
@@ -514,6 +522,8 @@ model SmsNotification {
   recipientName     String?   @map("recipient_name")
   recipientPhone    String    @map("recipient_phone")
   message           String
+  sentByUserId      String?   @map("sent_by_user_id") @db.Uuid
+  sentByName        String?   @map("sent_by_name")
   status            String    @default("Pending")
   providerMessageId String?   @map("provider_message_id")
   failureReason     String?   @map("failure_reason")
@@ -523,7 +533,32 @@ model SmsNotification {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
+  sentBy User? @relation("SmsSentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+
   @@unique([event, recipientPhone, entityType, entityId], map: "uq_sms_event_recipient_entity")
   @@index([status, nextRetryAt], map: "idx_sms_retry_queue")
   @@map("sms_notifications")
+}
+
+model SupportComplaint {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId     String   @map("customer_id") @db.Uuid
+  againstRole    String   @map("against_role")
+  againstUserId  String?  @map("against_user_id") @db.Uuid
+  againstName    String?  @map("against_name")
+  referenceType  String   @map("reference_type")
+  referenceId    String   @map("reference_id")
+  subject        String?
+  message        String
+  status         String   @default("Open")
+  adminNote      String?  @map("admin_note")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  customer    User  @relation("SupportComplaintCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  againstUser User? @relation("SupportComplaintAgainst", fields: [againstUserId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt], map: "idx_support_complaints_customer")
+  @@index([status, createdAt], map: "idx_support_complaints_status")
+  @@map("support_complaints")
 }

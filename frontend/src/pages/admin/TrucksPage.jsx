@@ -10,6 +10,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { MetricCard } from "../../components/ui/MetricCard";
+import { somaliaLocations, somaliaRegions } from "../../data/somaliaLocations";
 
 export function TrucksPage() {
   const navigate = useNavigate();
@@ -21,9 +22,11 @@ export function TrucksPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm({
+  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: { truckType: "", capacity: "12 tons", status: "Available" }
   });
+  const truckRegion = watch("region");
+  const truckCities = somaliaLocations[truckRegion] || [];
 
   const assignedDriverIds = new Set((data?.data || []).map((t) => t.driverId));
   const availableDrivers = (drivers?.data || []).filter((d) => !assignedDriverIds.has(d.id) || editing?.driverId === d.id);
@@ -40,6 +43,8 @@ export function TrucksPage() {
       plateNumber: truck.plateNumber,
       capacity: truck.capacity,
       truckType: truck.type || truck.truckType,
+      region: truck.region || "",
+      city: truck.city || "",
       status: truck.status,
       driverId: truck.driverId
     });
@@ -57,6 +62,8 @@ export function TrucksPage() {
             plateNumber: values.plateNumber,
             capacity: values.capacity,
             truckType: values.truckType,
+            region: values.region,
+            city: values.city,
             status: values.status,
             driverId: values.driverId
           }
@@ -67,6 +74,8 @@ export function TrucksPage() {
           plateNumber: values.plateNumber,
           capacity: values.capacity,
           truckType: values.truckType,
+          region: values.region,
+          city: values.city,
           driverId: values.driverId,
           status: values.status || "Available"
         });
@@ -127,6 +136,7 @@ export function TrucksPage() {
             columns={[
               { key: "truckNumber", label: "Truck" },
               { key: "plateNumber", label: "Plate" },
+              { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
               { key: "type", label: "Type" },
               { key: "capacity", label: "Capacity" },
               { key: "driver", label: "Driver" },
@@ -184,6 +194,31 @@ export function TrucksPage() {
             <input className="stitch-input" placeholder="Plate number" {...register("plateNumber", { required: true })} />
             <input className="stitch-input" placeholder="Capacity" {...register("capacity", { required: true })} />
             <input className="stitch-input" placeholder="Write truck type" {...register("truckType", { required: true })} />
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-on-surface-variant">Region *</span>
+              <select
+                className="stitch-input"
+                {...register("region", { required: true, onChange: () => setValue("city", "") })}
+              >
+                <option value="">Select region</option>
+                {somaliaRegions.map((region) => (
+                  <option key={region} value={region}>{region}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-on-surface-variant">City / District *</span>
+              <select
+                className="stitch-input disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!truckRegion}
+                {...register("city", { required: true })}
+              >
+                <option value="">{truckRegion ? "Select city" : "Select region first"}</option>
+                {truckCities.map((city) => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </label>
             <select className="stitch-input sm:col-span-2" {...register("driverId", { required: true })}>
               <option value="">Select driver</option>
               {availableDrivers.map((driver) => (

@@ -74,10 +74,10 @@ export function AdminDashboard() {
       />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <MetricCard icon={Users} label="Total Users" value={stats?.totalUsers ?? "—"} hint="+12%" tone="orange" />
-        <MetricCard icon={Truck} label="Total Trucks" value={stats?.totalTrucks ?? "—"} hint="+5%" tone="blue" />
-        <MetricCard icon={Users} label="Active Drivers" value={stats?.totalDrivers ?? "—"} hint="Stable" tone="navy" />
-        <MetricCard icon={Wallet} label="Total Revenue" value={money(stats?.revenue)} hint="+10%" tone="green" />
+        <MetricCard icon={Users} label="Total Users" value={stats?.totalUsers ?? "—"} tone="orange" />
+        <MetricCard icon={Truck} label="Total Trucks" value={stats?.totalTrucks ?? "—"} tone="blue" />
+        <MetricCard icon={Users} label="Active Drivers" value={stats?.totalDrivers ?? "—"} tone="navy" />
+        <MetricCard icon={Wallet} label="Total Revenue" value={money(stats?.revenue)} tone="green" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-12">
