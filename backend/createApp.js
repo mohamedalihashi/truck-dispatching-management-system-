@@ -89,6 +89,12 @@ function buildAllowedOrigins() {
     ? `https://${process.env.VERCEL_BRANCH_URL}`
     : null;
 
+  // Known production frontends (Netlify / Vercel). Extra origins still come from CLIENT_ORIGIN.
+  const knownFrontends = [
+    "https://truck-dispatche.netlify.app",
+    "https://truck-dispa.vercel.app"
+  ];
+
   const isProd = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
   const localDev = isProd
     ? []
@@ -96,6 +102,7 @@ function buildAllowedOrigins() {
 
   return [...new Set([
     ...fromEnv,
+    ...knownFrontends,
     vercelOrigin,
     vercelBranch,
     ...localDev
