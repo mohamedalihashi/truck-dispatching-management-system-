@@ -73,10 +73,10 @@ export async function sendCargoRequestEventSms(request, event) {
   const fallback = cargoSmsRecipients(request);
 
   const labels = {
-    "booking.accepted": "Ballanka xamuulka waa la aqbalay, lacag-bixinta ayaa socota.",
-    "booking.assigned": `Darawal ayaa loo qoondeeyay xamuulka ${request.id}.`,
-    "booking.cancelled": `Gaarsiinta xamuulka ${request.id} waa la joojiyay.`,
-    "booking.restored": `Ballanka xamuulka ${request.id} waa dib loo soo celiyay oo mar kale waa firfircoon yahay.`,
+    "booking.accepted": "buukinka waa la aqbalay fadlan bixi lacagta 30%.",
+    "booking.assigned": `Darawalkan ayaa loo qoondeeyay xamuulka ${request.id}.`,
+    "booking.cancelled": `qaadista xamuulka   ${request.id} waa la joojiyay.`,
+    "booking.restored": `qaadista  xamuulka ${request.id} dib ayaa loosoo cusbooneysiiyay .`,
   };
 
   let driverLine = "";
@@ -139,9 +139,9 @@ export async function sendTripEventSms(tripId, event, { feedbackToken } = {}) {
     "cargo.arrived_pickup": `Darawalku wuxuu yimid goobta qaadista xamuulka ${trip.id}.${driverContact}`,
     "cargo.picked_up": `Xamuulka ${trip.id} waa la soo qaaday oo wuxuu ku socdaa ${safeLocation(cargo, "to")}.${driverContact}`,
     "cargo.in_transit": `Xamuulka ${trip.id} waa ku jiraa safarka oo ku socda ${safeLocation(cargo, "to")}.${driverContact}`,
-    "cargo.near_destination": `Darawalku wuxuu u dhowyahay meesha loo wado xamuulka ${trip.id}.${driverContact}`,
-    "cargo.cancelled": `Gaarsiinta xamuulka ${trip.id} waa la joojiyay.`,
-    "cargo.restored": `Gaarsiinta xamuulka ${trip.id} waa dib loo soo celiyay.`,
+    "cargo.near_destination": `Darawalku wuu usoo dhow yahay wax yar kadib wuu kusoo garaa  ${trip.id}.${driverContact}`,
+    "cargo.cancelled": `qaadista xamuulka ${trip.id} waa la joojiyay.`,
+    "cargo.restored": `qaadista xamuulka ${trip.id} waa dib loo soo celiyay.`,
   };
 
   return sendMany(
