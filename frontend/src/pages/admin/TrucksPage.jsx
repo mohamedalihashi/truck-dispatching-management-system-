@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { ChevronDown, Pencil, Plus, Trash2, Truck, Wrench, XCircle, CheckCircle2 } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Trash2, Truck, Wrench } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { useTruckMutations, useTruckSummary, useTrucks, useDrivers } from "../../hooks/useApi";
@@ -116,10 +116,8 @@ export function TrucksPage() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <MetricCard icon={Truck} label="Total Trucks" value={summary?.total ?? "—"} tone="navy" />
-        <MetricCard icon={CheckCircle2} label="Total Active" value={summary?.active ?? "—"} tone="green" />
-        <MetricCard icon={XCircle} label="Total Inactive" value={summary?.inactive ?? "—"} tone="orange" />
         <MetricCard icon={Truck} label="Total Busy" value={summary?.busy ?? "—"} tone="blue" />
         <MetricCard icon={Wrench} label="Total Maintenance" value={summary?.maintenance ?? "—"} tone="amber" />
       </section>

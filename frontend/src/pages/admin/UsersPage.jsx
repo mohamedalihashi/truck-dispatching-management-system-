@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Eye, Pencil, Plus, Trash2, Truck, UserCheck, UserCog, Users, UserX } from "lucide-react";
+import { Eye, Pencil, Plus, Trash2, Truck, UserCog, Users } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
@@ -45,8 +45,7 @@ export function UsersPage({ mode } = {}) {
     defaultValues: {
       role: isFleet ? "driver" : "customer",
       truckType: "",
-      capacity: "12 tons",
-      status: "Active"
+      capacity: "12 tons"
     }
   });
   const selectedRole = isFleet ? "driver" : isCustomersMode ? "customer" : watch("role");
@@ -68,8 +67,7 @@ export function UsersPage({ mode } = {}) {
     reset({
       role: isFleet ? "driver" : "customer",
       truckType: "",
-      capacity: "12 tons",
-      status: "Active"
+      capacity: "12 tons"
     });
     setOpen(true);
   }
@@ -92,8 +90,7 @@ export function UsersPage({ mode } = {}) {
       name: user.name,
       email: user.email,
       phone: user.phone || "",
-      role: user.role,
-      status: user.status || "Active"
+      role: user.role
     });
     setOpen(true);
   }
@@ -110,8 +107,7 @@ export function UsersPage({ mode } = {}) {
           name: values.name,
           email: values.email,
           phone: values.phone || undefined,
-          role: values.role,
-          status: values.status
+          role: values.role
         };
         if (values.password) payload.password = values.password;
         await mutations.update.mutateAsync({ id: editing.id, payload });
@@ -256,24 +252,19 @@ export function UsersPage({ mode } = {}) {
         </p>
       )}
 
-      <section className={`grid grid-cols-2 gap-3 ${isFleet || isCustomersMode ? "md:grid-cols-3" : "md:grid-cols-3 xl:grid-cols-6"}`}>
+      <section className={`grid grid-cols-2 gap-3 ${isFleet || isCustomersMode ? "md:grid-cols-2" : "md:grid-cols-3 xl:grid-cols-4"}`}>
         {isFleet ? (
           <>
             <MetricCard icon={Users} label="Total Drivers" value={summary?.drivers ?? "—"} tone="navy" />
-            <MetricCard icon={UserCheck} label="Active Drivers" value={summary?.driverActive ?? "—"} tone="green" />
             <MetricCard icon={Truck} label="Fleet Trucks" value={summary?.trucks ?? "—"} tone="soft" />
           </>
         ) : isCustomersMode ? (
           <>
             <MetricCard icon={Users} label="Total Customers" value={summary?.customers ?? "—"} tone="blue" />
-            <MetricCard icon={UserCheck} label="Active Users" value={summary?.active ?? "—"} tone="green" />
-            <MetricCard icon={UserX} label="Inactive Users" value={summary?.inactive ?? "—"} tone="orange" />
           </>
         ) : (
           <>
             <MetricCard icon={Users} label="Total Users" value={summary?.total ?? "—"} tone="navy" />
-            <MetricCard icon={UserCheck} label="Total Active" value={summary?.active ?? "—"} tone="green" />
-            <MetricCard icon={UserX} label="Total Inactive" value={summary?.inactive ?? "—"} tone="orange" />
             <MetricCard icon={Users} label="Total Customers" value={summary?.customers ?? "—"} tone="blue" />
             <MetricCard icon={UserCog} label="Total Dispatchers" value={summary?.dispatchers ?? "—"} tone="amber" />
             <MetricCard icon={Truck} label="Total Trucks" value={summary?.trucks ?? "—"} tone="soft" />
@@ -345,11 +336,6 @@ export function UsersPage({ mode } = {}) {
                 }
               ]),
               {
-                key: "status",
-                label: isFleet ? "Driver status" : "Status",
-                render: (row) => <StatusBadge status={row.status} />
-              },
-              {
                 key: "phone",
                 label: "Phone",
                 render: (row) => row.phone || "—"
@@ -392,7 +378,6 @@ export function UsersPage({ mode } = {}) {
             <Detail label="Email" value={viewing.email} />
             <Detail label="Phone" value={viewing.phone || "—"} />
             <Detail label="Role" value={viewing.isSuperAdmin ? "Super Admin" : viewing.role} />
-            <Detail label="Status" value={<StatusBadge status={viewing.status} />} />
             {viewing.role === "driver" ? (
               <>
                 <Detail label="Truck number" value={viewing.truckNumber || "—"} />
@@ -500,12 +485,6 @@ export function UsersPage({ mode } = {}) {
               </select>
             ) : (
               <input type="hidden" {...register("role")} value={isCustomersMode ? "customer" : "driver"} />
-            )}
-            {editing && !isDispatcher && (
-              <select className="stitch-input" {...register("status")}>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
             )}
             {!editing && selectedRole === "customer" && (
               <>

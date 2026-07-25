@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
 import { Download, Printer, RotateCcw } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
-import { useDeliveryFeedbackReport, usePayments, useTrips } from "../../hooks/useApi";
+import { useCargoRequests, useDeliveryFeedbackReport, useEarnings, usePayments, useTrips, useTrucks } from "../../hooks/useApi";
 import { money } from "../../utils/helpers";
 
 const TABS = [
   { id: "rankings", label: "Rankings" },
+  { id: "requests", label: "Requests" },
   { id: "trips", label: "Trips" },
   { id: "payments", label: "Payments" },
+  { id: "earnings", label: "Earnings" },
+  { id: "fleet", label: "Fleet" },
   { id: "feedback", label: "Feedback" }
 ];
 
@@ -101,6 +104,9 @@ export function ReportsPage() {
   const tripsQuery = useTrips({ limit: 500 });
   const paymentsQuery = usePayments({ limit: 500 });
   const feedbackQuery = useDeliveryFeedbackReport({ limit: 200 });
+  const requestsQuery = useCargoRequests({ limit: 500 });
+  const earningsQuery = useEarnings({ limit: 500 });
+  const trucksQuery = useTrucks({ limit: 500 });
 
   const trips = useMemo(
     () => (tripsQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
@@ -114,6 +120,15 @@ export function ReportsPage() {
     () => (feedbackQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
     [feedbackQuery.data, dateFrom, dateTo]
   );
+  const requests = useMemo(
+    () => (requestsQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
+    [requestsQuery.data, dateFrom, dateTo]
+  );
+  const earnings = useMemo(
+    () => (earningsQuery.data?.data || []).filter((row) => inDateRange(row.createdAt, dateFrom, dateTo)),
+    [earningsQuery.data, dateFrom, dateTo]
+  );
+  const fleet = trucksQuery.data?.data || [];
 
   const rankings = useMemo(() => {
     if (rankRole === "customer") return rankPeople(trips, "customerId", "customer", rankSort);
@@ -126,22 +141,29 @@ export function ReportsPage() {
   const metrics = useMemo(() => {
     const delivered = trips.filter((row) => row.status === "Delivered").length;
     const active = trips.filter((row) => !["Delivered", "Cancelled", "Pending"].includes(row.status)).length;
+    const cancelled = trips.filter((row) => row.status === "Cancelled").length;
     const collected = payments.reduce((sum, row) => sum + Number(row.amountPaid || 0), 0);
     const balance = payments.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0);
+    const paidOut = earnings
+      .filter((row) => row.status === "PaidOut")
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const avgRating = feedback.length
       ? (
           feedback.reduce((sum, row) => sum + Number(row.rating || 0), 0) / feedback.length
         ).toFixed(1)
       : "—";
     return [
+      { label: "Requests", value: requests.length },
       { label: "Trips", value: trips.length },
       { label: "Delivered", value: delivered },
       { label: "Active", value: active },
+      { label: "Cancelled", value: cancelled },
       { label: "Collected", value: money(collected) },
       { label: "Balance due", value: money(balance) },
+      { label: "Paid out", value: money(paidOut) },
       { label: "Avg rating", value: avgRating }
     ];
-  }, [trips, payments, feedback]);
+  }, [trips, payments, feedback, requests, earnings]);
 
   const tripChart = useMemo(
     () =>
@@ -151,6 +173,18 @@ export function ReportsPage() {
       })),
     [trips]
   );
+
+  const revenueChart = useMemo(() => {
+    const map = new Map();
+    for (const row of payments) {
+      const key = toLocalDateKey(row.createdAt).slice(0, 7);
+      if (!key) continue;
+      map.set(key, (map.get(key) || 0) + Number(row.amountPaid || 0));
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([month, revenue]) => ({ name: month, revenue: Math.round(revenue * 100) / 100 }));
+  }, [payments]);
 
   const rankingColumns = [
     { key: "rank", label: "#" },
@@ -191,28 +225,96 @@ export function ReportsPage() {
     { key: "createdAt", label: "Date", render: (row) => formatDate(row.createdAt), export: (row) => formatDate(row.createdAt) }
   ];
 
+  const requestColumns = [
+    { key: "id", label: "Request" },
+    { key: "customer", label: "Customer" },
+    { key: "route", label: "Route", render: (row) => `${row.pickup} → ${row.destination}`, export: (row) => `${row.pickup} → ${row.destination}` },
+    { key: "truckType", label: "Type" },
+    { key: "weight", label: "Weight" },
+    { key: "distanceKm", label: "Distance (km)", render: (row) => (row.distanceKm != null ? row.distanceKm : "—") },
+    {
+      key: "price",
+      label: "Price",
+      render: (row) => {
+        const price = row.finalPrice ?? row.calculatedPrice ?? row.quotedPrice;
+        return price != null ? money(price) : "—";
+      },
+      export: (row) => row.finalPrice ?? row.calculatedPrice ?? row.quotedPrice ?? ""
+    },
+    { key: "quotedEstimatedTime", label: "ETA", render: (row) => row.quotedEstimatedTime || "—" },
+    { key: "status", label: "Status", type: "status" },
+    { key: "createdAt", label: "Date", render: (row) => formatDate(row.createdAt), export: (row) => formatDate(row.createdAt) }
+  ];
+
+  const earningColumns = [
+    { key: "tripId", label: "Trip", render: (row) => row.tripId || "—" },
+    { key: "recipient", label: "Recipient", render: (row) => row.recipient || "—" },
+    { key: "recipientRole", label: "Role" },
+    { key: "amount", label: "Amount", render: (row) => money(row.amount), export: (row) => row.amount },
+    { key: "percent", label: "Share %", render: (row) => (row.percent != null ? `${row.percent}%` : "—") },
+    { key: "status", label: "Status", type: "status" },
+    { key: "payoutMethod", label: "Payout method", render: (row) => row.payoutMethod || "—" },
+    { key: "paidOutAt", label: "Paid out", render: (row) => formatDate(row.paidOutAt), export: (row) => formatDate(row.paidOutAt) },
+    { key: "createdAt", label: "Date", render: (row) => formatDate(row.createdAt), export: (row) => formatDate(row.createdAt) }
+  ];
+
+  const fleetColumns = [
+    { key: "truckNumber", label: "Truck" },
+    { key: "plateNumber", label: "Plate" },
+    { key: "driver", label: "Driver", render: (row) => row.driver || "—" },
+    { key: "driverPhone", label: "Driver phone", render: (row) => row.driverPhone || "—" },
+    { key: "type", label: "Type", render: (row) => row.truckType || row.type || "—" },
+    { key: "capacity", label: "Capacity", render: (row) => row.capacity || "—" },
+    { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
+    { key: "status", label: "Status", type: "status" }
+  ];
+
   const activeColumns =
     tab === "rankings"
       ? rankingColumns
-      : tab === "trips"
-        ? tripColumns
-        : tab === "payments"
-          ? paymentColumns
-          : feedbackColumns;
+      : tab === "requests"
+        ? requestColumns
+        : tab === "trips"
+          ? tripColumns
+          : tab === "payments"
+            ? paymentColumns
+            : tab === "earnings"
+              ? earningColumns
+              : tab === "fleet"
+                ? fleetColumns
+                : feedbackColumns;
   const activeRows =
-    tab === "rankings" ? rankings : tab === "trips" ? trips : tab === "payments" ? payments : feedback;
+    tab === "rankings"
+      ? rankings
+      : tab === "requests"
+        ? requests
+        : tab === "trips"
+          ? trips
+          : tab === "payments"
+            ? payments
+            : tab === "earnings"
+              ? earnings
+              : tab === "fleet"
+                ? fleet
+                : feedback;
   const loading =
     tab === "payments"
       ? paymentsQuery.isLoading
       : tab === "feedback"
         ? feedbackQuery.isLoading
-        : tripsQuery.isLoading;
+        : tab === "requests"
+          ? requestsQuery.isLoading
+          : tab === "earnings"
+            ? earningsQuery.isLoading
+            : tab === "fleet"
+              ? trucksQuery.isLoading
+              : tripsQuery.isLoading;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Rank drivers, customers, and dispatchers. Review trips, payments, and feedback."
+        subtitle="Rank drivers, customers, and dispatchers. Review requests, trips, payments, earnings, fleet, and feedback."
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
             <Button variant="outline" onClick={() => window.print()}>
@@ -260,7 +362,7 @@ export function ReportsPage() {
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9">
         {metrics.map((item) => (
           <div key={item.label} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm">
             <p className="text-xs font-medium text-on-surface-variant">{item.label}</p>
@@ -269,18 +371,40 @@ export function ReportsPage() {
         ))}
       </section>
 
-      <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-on-surface">Trips by status</h2>
-        <div className="h-56 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={tripChart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="value" name="Trips" fill="#fe6b00" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-on-surface">Trips by status</h2>
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={tripChart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="value" name="Trips" fill="#fe6b00" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-on-surface">Revenue collected by month</h2>
+          <div className="h-56 w-full">
+            {revenueChart.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={revenueChart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis />
+                  <Tooltip formatter={(value) => money(value)} />
+                  <Line type="monotone" dataKey="revenue" name="Collected" stroke="#27ae60" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="flex h-full items-center justify-center text-sm text-on-surface-variant">
+                No payments in this period.
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
