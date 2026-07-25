@@ -63,7 +63,7 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
         <div className="rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-100">
           <p className="font-semibold">Ka hor inta aadan bixin</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
-            <li>{payment.paymentStage === "Deposit Due" ? "Bixi 30% deposit-ka si trip-ka loo xaqiijiyo" : "Bixi 70% balance-ka kadib delivery confirmation"}</li>
+            <li>{payment.paymentStage === "Deposit Due" ? "Bixi 30% deposit-ka — safarka ma bilaaban karo ilaa deposit-ka la bixiyo" : "Bixi 70% balance-ka kadib delivery confirmation"}</li>
             <li>Isticmaal lambarka EVC Plus / ZAAD ee lacagta laga jarayo</li>
             <li>Marka aad taabato Pay now, taleefanka ayaa ku weydiinaya PIN / Approve</li>
           </ul>

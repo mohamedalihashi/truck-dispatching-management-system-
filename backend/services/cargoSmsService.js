@@ -74,7 +74,7 @@ export async function sendCargoRequestEventSms(request, event) {
 
   const labels = {
     "booking.accepted": "buukinka waa la aqbalay fadlan bixi lacagta 30%.",
-    "booking.assigned": `Darawalkan ayaa loo qoondeeyay xamuulka ${request.id}.`,
+    "booking.assigned": `Darawalkan ayaa loo qoondeeyay xamuulka ${request.id}. Fadlan bixi 30% deposit ka hor inta safarka uusan bilaaban.`,
     "booking.cancelled": `qaadista xamuulka   ${request.id} waa la joojiyay.`,
     "booking.restored": `qaadista  xamuulka ${request.id} dib ayaa loosoo cusbooneysiiyay .`,
   };

@@ -641,6 +641,24 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
       data: { status: "Busy" },
     });
 
+    const payment = await tx.payment.findFirst({ where: { tripId } });
+    if (!payment) {
+      await tx.payment.create({
+        data: {
+          tripId,
+          customerId: updated.customerId,
+          amount: tripFare,
+          amountPaid: 0,
+          status: "Pending",
+          method: "waafipay",
+          provider: "waafipay",
+          currency: process.env.WAAFI_CURRENCY || "SLSH",
+          referenceId: buildWaafiReferenceId(tripId),
+          description: `Shipment ${tripId} — 30% deposit required before trip can start`,
+        },
+      });
+    }
+
     const notification = await tx.notification.create({
       data: {
         userId: driverId,
@@ -653,7 +671,7 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
       data: {
         userId: updated.customerId,
         type: "driver.assigned",
-        message: `${id} assigned. Trip ${tripId} created`,
+        message: `${id} assigned. Trip ${tripId} created — pay 30% deposit before the trip starts.`,
       },
     });
 

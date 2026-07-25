@@ -97,7 +97,7 @@ export function DriverJobsPage() {
     <div className="space-y-8">
       <PageHeader
         title="My Jobs"
-        subtitle="GPS streams automatically on active jobs. You can also share location manually."
+        subtitle="Accept starts only after the customer pays the 30% deposit. GPS streams on active jobs."
       />
 
       {message && (

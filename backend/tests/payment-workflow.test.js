@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paymentSchedule } from "../lib/paymentWorkflow.js";
+import { hasDepositPaid, paymentSchedule } from "../lib/paymentWorkflow.js";
 
 describe("30/70 cargo payment workflow", () => {
   it("requires exactly 30% before trip confirmation", () => {
@@ -56,5 +56,20 @@ describe("30/70 cargo payment workflow", () => {
     expect(schedule.canPay).toBe(false);
     expect(schedule.requiredAmount).toBe(0);
     expect(schedule.stage).toBe("Awaiting Delivery Confirmation");
+  });
+});
+
+describe("hasDepositPaid (trip start gate)", () => {
+  it("blocks start when nothing is paid", () => {
+    expect(hasDepositPaid({ amount: 1000, amountPaid: 0 })).toBe(false);
+  });
+
+  it("allows start when 30% deposit is paid", () => {
+    expect(hasDepositPaid({ amount: 1000, amountPaid: 300 })).toBe(true);
+  });
+
+  it("falls back to fare when invoice amount is missing", () => {
+    expect(hasDepositPaid({ fare: 200, amountPaid: 60 })).toBe(true);
+    expect(hasDepositPaid({ fare: 200, amountPaid: 59 })).toBe(false);
   });
 });

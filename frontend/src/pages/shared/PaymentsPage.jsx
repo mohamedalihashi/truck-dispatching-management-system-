@@ -143,7 +143,7 @@ export function PaymentsPage() {
         subtitle={
           isAdmin
             ? "Track marketplace payments, Waafi settlements, and invoice status in real time."
-            : "Pay the required 30% deposit, then the remaining 70% after you confirm delivery."
+            : "Pay the 30% deposit before the trip can start, then the remaining 70% after you confirm delivery."
         }
         actions={
           isAdmin ? (
@@ -160,7 +160,7 @@ export function PaymentsPage() {
             <div>
               <p className="font-semibold text-on-surface">Lacag bixin sugaysa</p>
               <p className="text-sm text-on-surface-variant">
-                {payable.length} invoice(s) — pay the required deposit or final balance via Waafi.
+                {payable.length} invoice(s) — deposit must be paid before the trip starts; balance after delivery.
               </p>
             </div>
             {waafiEnabled && payable[0] ? (

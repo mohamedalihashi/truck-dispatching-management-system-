@@ -14,3 +14,22 @@ export function paymentSchedule({ amount, amountPaid = 0, deliveryConfirmedAt = 
     canPay: !completed && (depositDue || deliveryConfirmed),
   };
 }
+
+/** True when at least the 30% deposit has been paid for this fare/invoice. */
+export function hasDepositPaid({ amount, amountPaid = 0, fare } = {}) {
+  const total = Number(amount != null ? amount : fare || 0);
+  if (!Number.isFinite(total) || total <= 0) return false;
+  const paid = Number(amountPaid || 0);
+  const depositAmount = Math.round(total * 0.3 * 100) / 100;
+  return paid >= depositAmount - 0.01;
+}
+
+/** Statuses that mean the journey has started (blocked until deposit is paid). */
+export const TRIP_START_STATUSES = [
+  "Accepted",
+  "Arrived Pickup",
+  "Loaded",
+  "In Transit",
+  "Delayed",
+  "Delivered",
+];

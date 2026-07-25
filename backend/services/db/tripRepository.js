@@ -3,6 +3,7 @@ import { estimateEta, shouldRecordPoint } from "../../lib/somaliaGeo.js";
 import { auditFields } from "../../lib/auditContext.js";
 import { buildWaafiReferenceId } from "../waafiPayService.js";
 import { cargoStatusFromTripStatus, validateTripStatusChange } from "../../lib/tripStatus.js";
+import { hasDepositPaid, TRIP_START_STATUSES } from "../../lib/paymentWorkflow.js";
 import {
   mapTrip,
   mapFeedbackListItem,
@@ -83,6 +84,22 @@ async updateTripStatus(id, status, actorId, { driverId, role } = {}) {
     const error = new Error(validation.message);
     error.status = validation.status;
     throw error;
+  }
+
+  // Journey cannot start until the customer pays the 30% deposit.
+  if (TRIP_START_STATUSES.includes(status)) {
+    const payment = await prisma.payment.findFirst({
+      where: { tripId: id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!hasDepositPaid({ amount: payment?.amount, amountPaid: payment?.amountPaid, fare: existing.fare })) {
+      const deposit = Math.round(Number(payment?.amount ?? existing.fare ?? 0) * 0.3 * 100) / 100;
+      const error = new Error(
+        `Customer must pay the 30% deposit (${deposit}) before the trip can start. Status stays Assigned until deposit is paid.`
+      );
+      error.status = 409;
+      throw error;
+    }
   }
 
   const dbStatus = tripStatusToDb(status);
