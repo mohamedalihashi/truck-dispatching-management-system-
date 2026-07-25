@@ -9,7 +9,7 @@ import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { TripFeedbackForm } from "../../components/TripFeedbackForm";
 import { resolveUploadUrl } from "../../config/api.js";
-import { useCancelCargo, useCargoRequests, useQuoteMutations, useRestoreCargo, useTrips, useUpdateCargo } from "../../hooks/useApi";
+import { useCancelCargo, useCargoRequests, useRestoreCargo, useTrips, useUpdateCargo } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { api } from "../../services/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,7 +24,6 @@ export function ShipmentsPage() {
   const [viewingTrip, setViewingTrip] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
-  const [quoteError, setQuoteError] = useState("");
 
   const { data: trips, isLoading: tripsLoading } = useTrips({ search: search || undefined });
   const { data: requests, isLoading: requestsLoading } = useCargoRequests({
@@ -34,10 +33,7 @@ export function ShipmentsPage() {
   const updateCargo = useUpdateCargo();
   const cancelCargo = useCancelCargo();
   const restoreCargo = useRestoreCargo();
-  const quoteActions = useQuoteMutations();
   const qc = useQueryClient();
-
-  const pendingQuotes = (requests?.data || []).filter((r) => r.status === "Awaiting Approval");
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm();
 
@@ -106,26 +102,6 @@ export function ShipmentsPage() {
     qc.invalidateQueries({ queryKey: ["trip-feedback"] });
   }
 
-  async function acceptQuote(id) {
-    setQuoteError("");
-    try {
-      const updated = await quoteActions.accept.mutateAsync(id);
-      setViewingRequest((prev) => (prev?.id === id ? updated : prev));
-    } catch (err) {
-      setQuoteError(err.message);
-    }
-  }
-
-  async function rejectQuote(id, note) {
-    setQuoteError("");
-    try {
-      const updated = await quoteActions.reject.mutateAsync({ id, note });
-      setViewingRequest((prev) => (prev?.id === id ? updated : prev));
-    } catch (err) {
-      setQuoteError(err.message);
-    }
-  }
-
   return (
     <div className="space-y-8">
       <PageHeader
@@ -145,20 +121,6 @@ export function ShipmentsPage() {
           Cargo request {location.state.created} created successfully.
         </p>
       )}
-
-      {pendingQuotes.length > 0 ? (
-        <div className="rounded-xl border border-secondary-container/30 bg-secondary-container/10 p-4">
-          <p className="font-semibold text-on-surface">
-            {pendingQuotes.length} quotation(s) waiting for your approval
-          </p>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            Review price and delivery time, then accept or reject before dispatch assigns a driver.
-          </p>
-          <Button className="mt-3" onClick={() => setViewingRequest(pendingQuotes[0])}>
-            Review quote
-          </Button>
-        </div>
-      ) : null}
 
       <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant px-6 py-5">
@@ -295,16 +257,8 @@ export function ShipmentsPage() {
       </section>
 
       {viewingRequest && (
-        <Modal title={`Request ${viewingRequest.id}`} onClose={() => { setViewingRequest(null); setQuoteError(""); }} wide>
-          {viewingRequest.status === "Awaiting Approval" ? (
-            <QuoteReviewPanel
-              request={viewingRequest}
-              onAccept={acceptQuote}
-              onReject={rejectQuote}
-              loading={quoteActions.accept.isPending || quoteActions.reject.isPending}
-              error={quoteError}
-            />
-          ) : null}
+        <Modal title={`Request ${viewingRequest.id}`} onClose={() => setViewingRequest(null)} wide>
+          <QuoteReviewPanel request={viewingRequest} />
 
           <dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
             <Detail label="Route" value={`${viewingRequest.pickup} → ${viewingRequest.destination}`} className="sm:col-span-2" />
@@ -319,11 +273,17 @@ export function ShipmentsPage() {
             />
             <Detail label="Truck type" value={viewingRequest.truckType} />
             <Detail label="Weight" value={viewingRequest.weight} />
-            {viewingRequest.quotedPrice != null ? (
-              <Detail label="Quoted price" value={`$${Number(viewingRequest.quotedPrice).toLocaleString()}`} />
+            {(viewingRequest.finalPrice != null || viewingRequest.calculatedPrice != null || viewingRequest.quotedPrice != null) ? (
+              <Detail
+                label="Price"
+                value={`$${Number(viewingRequest.finalPrice ?? viewingRequest.calculatedPrice ?? viewingRequest.quotedPrice).toLocaleString()}`}
+              />
             ) : null}
             {viewingRequest.quotedEstimatedTime ? (
-              <Detail label="Quoted ETA" value={viewingRequest.quotedEstimatedTime} />
+              <Detail label="ETA" value={viewingRequest.quotedEstimatedTime} />
+            ) : null}
+            {viewingRequest.distanceKm != null ? (
+              <Detail label="Distance" value={`${viewingRequest.distanceKm} km`} />
             ) : null}
             <Detail label="Driver" value={viewingRequest.driver || "—"} />
             <Detail label="Truck" value={viewingRequest.truck || "—"} />

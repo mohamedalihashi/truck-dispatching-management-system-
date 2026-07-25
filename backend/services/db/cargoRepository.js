@@ -1,6 +1,5 @@
 import { prisma, withTransaction } from "../../lib/prisma.js";
 import { auditFields } from "../../lib/auditContext.js";
-import { coordsFromPlaceName } from "../../lib/somaliaGeo.js";
 import { buildWaafiReferenceId } from "../waafiPayService.js";
 import { payloadDistance, estimateFare } from "./helpers.js";
 import {
@@ -98,10 +97,12 @@ async createCargoRequest(payload) {
     weightTons: parseWeightTons(payload.weight),
     ...settings,
   });
+  const estimatedTime = estimateEtaLabel(calc.distanceKm);
   const pricingFields = {
     distanceKm: calc.distanceKm,
     calculatedPrice: calc.calculatedPrice,
     finalPrice: calc.calculatedPrice,
+    quotedEstimatedTime: estimatedTime,
   };
 
   return withTransaction(async (tx) => {
@@ -207,6 +208,40 @@ async updateCargoRequest(id, payload, { customerId } = {}) {
       : null;
   }
 
+  const routeChanged = [
+    "pickup",
+    "destination",
+    "weight",
+    "fromRegion",
+    "fromDistrict",
+    "toRegion",
+    "toDistrict",
+  ].some((key) => data[key] !== undefined);
+
+  if (routeChanged) {
+    const settings = await pricingRepository.getPricingSettings();
+    const pickup = data.pickup ?? existing.pickup;
+    const destination = data.destination ?? existing.destination;
+    const distanceKm = estimateDistanceKm(pickup, destination, {
+      fromRegion: data.fromRegion ?? existing.fromRegion,
+      fromDistrict: data.fromDistrict ?? existing.fromDistrict,
+      toRegion: data.toRegion ?? existing.toRegion,
+      toDistrict: data.toDistrict ?? existing.toDistrict,
+    });
+    const calc = calculateTransportPrice({
+      distanceKm,
+      weightTons: parseWeightTons(data.weight ?? existing.weight),
+      ...settings,
+    });
+    data.distanceKm = calc.distanceKm;
+    data.calculatedPrice = calc.calculatedPrice;
+    data.finalPrice = calc.calculatedPrice;
+    data.quotedEstimatedTime = estimateEtaLabel(calc.distanceKm);
+    data.adjustmentType = null;
+    data.adjustmentAmount = null;
+    data.adjustmentReason = null;
+  }
+
   if (Object.keys(data).length > 0) {
     await prisma.cargoRequest.update({ where: { id }, data });
   }
@@ -229,284 +264,26 @@ async updateCargoRequest(id, payload, { customerId } = {}) {
   return mapCargoRequest(updated);
 },
 
-async submitCargoQuote(id, { quotedPrice, quotedEstimatedTime, quoteNotes, driverId, dispatcherId }) {
-  return withTransaction(async (tx) => {
-    const existing = await tx.cargoRequest.findUnique({ where: { id } });
-    if (!existing) return null;
-
-    const apiStatus = reqStatusToApi(existing.status);
-    if (!["Pending", "Quote Rejected"].includes(apiStatus)) {
-      const error = new Error("Only pending or quote-rejected requests can receive a quotation");
-      error.status = 400;
-      throw error;
-    }
-    if (!quotedEstimatedTime?.trim()) {
-      const error = new Error("quotedEstimatedTime is required");
-      error.status = 400;
-      throw error;
-    }
-
-    const price =
-      quotedPrice != null
-        ? Number(quotedPrice)
-        : existing.finalPrice != null
-          ? Number(existing.finalPrice)
-          : existing.calculatedPrice != null
-            ? Number(existing.calculatedPrice)
-            : null;
-    if (price == null || !Number.isFinite(price) || price <= 0) {
-      const error = new Error("A calculated or adjusted final price is required before sending the quote");
-      error.status = 400;
-      throw error;
-    }
-
-    if (!driverId) {
-      const error = new Error("Select an available driver/truck before sending the quote");
-      error.status = 400;
-      throw error;
-    }
-
-    const truck = await tx.truck.findUnique({ where: { driverId } });
-    if (!truck || truck.status !== "Available") {
-      const error = new Error("An available truck is required to submit a quote");
-      error.status = 400;
-      throw error;
-    }
-    const normalizeType = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-    if (normalizeType(truck.truckType) !== normalizeType(existing.truckType)) {
-      const error = new Error("Your truck type does not match this cargo request");
-      error.status = 400;
-      throw error;
-    }
-
-    await tx.cargoRequest.update({
-      where: { id },
-      data: {
-        status: "Awaiting_Approval",
-        quotedPrice: price,
-        finalPrice: price,
-        calculatedPrice: existing.calculatedPrice ?? price,
-        quotedEstimatedTime: quotedEstimatedTime.trim(),
-        quoteNotes: quoteNotes?.trim() || null,
-        quotedAt: new Date(),
-        quoteVersion: (existing.quoteVersion || 0) + 1,
-        driverId,
-        truckId: truck.id,
-        dispatcherId: dispatcherId || existing.dispatcherId,
-        approvedByDispatcher: dispatcherId || existing.approvedByDispatcher || driverId,
-        approvedAt: existing.approvedAt || new Date(),
-        customerDecisionAt: null,
-        customerDecisionNote: null,
-      },
-    });
-
-    const notification = await tx.notification.create({
-      data: {
-        userId: existing.customerId,
-        type: "quote.sent",
-        message: `Quotation ready for ${id}: $${Number(price).toFixed(2)} — ${quotedEstimatedTime.trim()}`,
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        userId: dispatcherId || driverId,
-        action: "cargo.quote.sent",
-        entityType: "cargo_requests",
-        entityId: id,
-        meta: {
-          quotedPrice: Number(price),
-          calculatedPrice: existing.calculatedPrice != null ? Number(existing.calculatedPrice) : null,
-          adjustmentType: existing.adjustmentType,
-          quotedEstimatedTime,
-        },
-      },
-    });
-
-    const request = await tx.cargoRequest.findUnique({
-      where: { id },
-      include: cargoRequestInclude,
-    });
-
-    return { request: mapCargoRequest(request), notification: mapNotification(notification) };
-  });
+async submitCargoQuote() {
+  const error = new Error(
+    "Manual quotations are disabled. The system sets price and ETA from distance (km). Assign a driver instead."
+  );
+  error.status = 410;
+  throw error;
 },
 
-async acceptCargoQuote(id, { customerId }) {
-  return withTransaction(async (tx) => {
-    const existing = await tx.cargoRequest.findUnique({ where: { id } });
-    if (!existing) return null;
-
-    if (existing.customerId !== customerId) {
-      const error = new Error("Not allowed to approve this quotation");
-      error.status = 403;
-      throw error;
-    }
-    if (reqStatusToApi(existing.status) !== "Awaiting Approval") {
-      const error = new Error("This request is not waiting for customer approval");
-      error.status = 400;
-      throw error;
-    }
-    if (!existing.driverId || !existing.truckId || !(existing.quotedPrice ?? existing.finalPrice)) {
-      const error = new Error("The quotation must include a driver, truck, and price");
-      error.status = 400;
-      throw error;
-    }
-
-    const fare = Number(existing.finalPrice ?? existing.quotedPrice);
-
-    await tx.cargoRequest.update({
-      where: { id },
-      data: {
-        status: "Approved",
-        customerDecisionAt: new Date(),
-        customerDecisionNote: null,
-        quotedPrice: fare,
-        finalPrice: fare,
-      },
-    });
-
-    const existingTrip = await tx.trip.findFirst({
-      where: { cargoRequestId: id, status: { notIn: ["Delivered", "Cancelled"] } },
-      orderBy: { createdAt: "desc" },
-    });
-    const tripId = existingTrip?.id || `SHP-${Math.floor(10000 + Math.random() * 90000)}`;
-    const pickupCoords = coordsFromPlaceName(existing.pickup);
-    if (existingTrip) {
-      await tx.trip.update({
-        where: { id: tripId },
-        data: {
-          driverId: existing.driverId,
-          dispatcherId: existing.dispatcherId,
-          truckId: existing.truckId,
-          status: "Pending",
-          fare,
-          estimatedTime: existing.quotedEstimatedTime,
-          distance: existing.distanceKm != null ? `${existing.distanceKm} km` : payloadDistance(existing.pickup, existing.destination),
-        },
-      });
-    } else {
-      await tx.trip.create({
-        data: {
-          id: tripId,
-          cargoRequestId: id,
-          customerId,
-          driverId: existing.driverId,
-          dispatcherId: existing.dispatcherId,
-          truckId: existing.truckId,
-          pickup: existing.pickup,
-          destination: existing.destination,
-          distance: existing.distanceKm != null ? `${existing.distanceKm} km` : payloadDistance(existing.pickup, existing.destination),
-          estimatedTime: existing.quotedEstimatedTime,
-          status: "Pending",
-          fare,
-          lastLat: pickupCoords.lat,
-          lastLng: pickupCoords.lng,
-          lastLocationAt: new Date(),
-        },
-      });
-      await tx.tripLocationPoint.create({
-        data: { tripId, lat: pickupCoords.lat, lng: pickupCoords.lng },
-      });
-    }
-
-    const payment = await tx.payment.findFirst({ where: { tripId } });
-    if (!payment) {
-      await tx.payment.create({
-        data: {
-          tripId,
-          customerId,
-          amount: fare,
-          amountPaid: 0,
-          status: "Pending",
-          method: "waafipay",
-          provider: "waafipay",
-          currency: process.env.WAAFI_CURRENCY || "SLSH",
-          referenceId: buildWaafiReferenceId(tripId),
-          description: `Shipment ${tripId} — 30% deposit required to confirm`,
-        },
-      });
-    }
-    await tx.truck.update({ where: { id: existing.truckId }, data: { status: "Busy" } });
-
-    if (existing.driverId) {
-      await tx.notification.create({
-        data: {
-          userId: existing.driverId,
-          type: "quote.accepted",
-          message: `Customer approved quotation for ${id}`,
-        },
-      });
-    }
-
-    await tx.notification.create({
-      data: {
-        userId: customerId,
-        type: "quote.accepted",
-        message: `Quotation approved for ${id}. Pay the 30% deposit to confirm trip ${tripId}.`,
-      },
-    });
-
-    await tx.auditLog.create({
-      data: auditFields({
-        userId: customerId,
-        action: "cargo.quote.accepted",
-        entityType: "cargo_requests",
-        entityId: id,
-        description: `Customer accepted quote and deposit invoice was created for trip ${tripId}`,
-        newValues: { tripId, total: Number(existing.quotedPrice), depositPercent: 30 },
-      }),
-    });
-
-    const request = await tx.cargoRequest.findUnique({
-      where: { id },
-      include: cargoRequestInclude,
-    });
-    return mapCargoRequest(request);
-  });
+async acceptCargoQuote() {
+  const error = new Error(
+    "Quote acceptance is disabled. Pay the deposit after a driver is assigned."
+  );
+  error.status = 410;
+  throw error;
 },
 
-async rejectCargoQuote(id, { customerId, note }) {
-  return withTransaction(async (tx) => {
-    const existing = await tx.cargoRequest.findUnique({ where: { id } });
-    if (!existing) return null;
-
-    if (existing.customerId !== customerId) {
-      const error = new Error("Not allowed to reject this quotation");
-      error.status = 403;
-      throw error;
-    }
-    if (reqStatusToApi(existing.status) !== "Awaiting Approval") {
-      const error = new Error("This request is not waiting for customer approval");
-      error.status = 400;
-      throw error;
-    }
-
-    await tx.cargoRequest.update({
-      where: { id },
-      data: {
-        status: "Quote_Rejected",
-        customerDecisionAt: new Date(),
-        customerDecisionNote: note?.trim() || null,
-      },
-    });
-
-    if (existing.driverId) {
-      await tx.notification.create({
-        data: {
-          userId: existing.driverId,
-          type: "quote.rejected",
-          message: `Customer rejected quotation for ${id}${note ? `: ${note.trim()}` : ""}`,
-        },
-      });
-    }
-
-    const request = await tx.cargoRequest.findUnique({
-      where: { id },
-      include: cargoRequestInclude,
-    });
-    return mapCargoRequest(request);
-  });
+async rejectCargoQuote() {
+  const error = new Error("Quote rejection is disabled. Quotations are no longer used.");
+  error.status = 410;
+  throw error;
 },
 
 async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
@@ -533,7 +310,7 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
     }
 
     const currentStatus = reqStatusToApi(current.status);
-    const assignable = ["Pending", "Quote Rejected", "Approved", "Assigned"];
+    const assignable = ["Pending", "Awaiting Approval", "Quote Rejected", "Approved", "Assigned"];
     if (!assignable.includes(currentStatus)) {
       const error = new Error(
         `Cannot assign a driver while the request is "${currentStatus}"`
@@ -543,16 +320,16 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
     }
 
     const suggestedPrice =
-      current.quotedPrice != null
-        ? Number(current.quotedPrice)
-        : current.finalPrice != null
-          ? Number(current.finalPrice)
-          : current.calculatedPrice != null
-            ? Number(current.calculatedPrice)
+      current.finalPrice != null
+        ? Number(current.finalPrice)
+        : current.calculatedPrice != null
+          ? Number(current.calculatedPrice)
+          : current.quotedPrice != null
+            ? Number(current.quotedPrice)
             : null;
 
     if (suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0) {
-      const error = new Error("Request has no calculated price yet. Recalculate or send a quote first.");
+      const error = new Error("Request has no calculated price yet. Recalculate pricing before assigning.");
       error.status = 400;
       throw error;
     }
@@ -561,16 +338,13 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
       current.distanceKm != null
         ? Number(current.distanceKm)
         : estimateDistanceKm(current.pickup, current.destination);
-    const tripEta = current.quotedEstimatedTime || estimateEtaLabel(distanceKm);
+    const tripEta = estimateEtaLabel(distanceKm);
 
-    const quoteFields =
-      current.quotedPrice == null || !current.quotedEstimatedTime
-        ? {
-            quotedPrice: suggestedPrice,
-            quotedEstimatedTime: tripEta,
-            finalPrice: current.finalPrice != null ? Number(current.finalPrice) : suggestedPrice,
-          }
-        : {};
+    const quoteFields = {
+      quotedPrice: suggestedPrice,
+      quotedEstimatedTime: tripEta,
+      finalPrice: suggestedPrice,
+    };
 
     const tripFare = suggestedPrice;
 

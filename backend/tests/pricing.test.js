@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyPriceAdjustment,
   calculateTransportPrice,
+  estimateEtaLabel,
   parseWeightTons,
   roundMoney,
 } from "../services/pricingService.js";
@@ -78,5 +79,21 @@ describe("helpers", () => {
   it("parses weight tons and rounds money", () => {
     expect(parseWeightTons("2.5 tons")).toBe(2.5);
     expect(roundMoney(10.006)).toBe(10.01);
+  });
+});
+
+describe("estimateEtaLabel", () => {
+  it("uses minutes for short trips", () => {
+    expect(estimateEtaLabel(10)).toBe("15 minutes");
+  });
+
+  it("uses hours for same-day trips", () => {
+    expect(estimateEtaLabel(80)).toBe("2 hours");
+    expect(estimateEtaLabel(40)).toBe("1 hour");
+  });
+
+  it("uses days for longer trips", () => {
+    expect(estimateEtaLabel(1000)).toBe("2 days");
+    expect(estimateEtaLabel(960)).toBe("1 day");
   });
 });

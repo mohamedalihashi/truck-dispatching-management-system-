@@ -152,7 +152,7 @@ router.post("/:id/pay", requireRole("customer"), async (req, res, next) => {
     if (!request) return res.status(404).json({ message: "Quote not found" });
 
     if (!["Approved", "Assigned", "Accepted", "Arrived Pickup", "Loaded", "In Transit", "Delivered"].includes(request.status)) {
-      return res.status(400).json({ message: "Accept the quote before paying" });
+      return res.status(400).json({ message: "A driver must be assigned before payment" });
     }
 
     const trips = await db.listTrips({ customerId: req.user.sub, limit: 100 });

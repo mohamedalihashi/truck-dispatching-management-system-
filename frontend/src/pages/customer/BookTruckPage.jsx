@@ -363,7 +363,7 @@ export function BookTruckPage() {
                   {money(estimate.breakdown?.weightCharge)}
                 </p>
                 <p className="pt-2 text-xs text-on-surface-variant">
-                  This is an automatic estimate. Dispatcher may adjust before or when assigning a driver.
+                  This is an automatic estimate from distance (km). Dispatcher assigns a driver — no quote approval needed.
                 </p>
               </div>
             ) : (

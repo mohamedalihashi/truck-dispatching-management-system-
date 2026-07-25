@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { CheckCircle2, Clock, Eye, FileText, Hourglass, Pencil, Plus, RotateCcw, Trash2, Truck, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Eye, FileText, Pencil, Plus, RotateCcw, Trash2, Truck, XCircle } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
@@ -14,8 +14,6 @@ import {
   useCargoRequests,
   useCreateCargo,
   useCustomers,
-  usePricingMutations,
-  useQuoteMutations,
   useRestoreCargo,
   useTrucks,
   useUpdateCargo
@@ -23,35 +21,20 @@ import {
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
 import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES, money } from "../../utils/helpers";
-import { PriceBreakdown } from "../../components/PriceBreakdown";
-
-const ADJUSTMENT_REASONS = [
-  "Heavy Cargo",
-  "Remote Area",
-  "Night Delivery",
-  "Poor Road",
-  "Fuel Cost",
-  "Other"
-];
 
 const normalizeTruckType = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 export function RequestsPage() {
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState(null);
-  const [quoting, setQuoting] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [truckId, setTruckId] = useState("");
   const [error, setError] = useState("");
-  const [adjustmentType, setAdjustmentType] = useState("");
-  const [adjustmentAmount, setAdjustmentAmount] = useState("");
-  const [adjustmentReason, setAdjustmentReason] = useState("");
   const { user } = useAuth();
   const { search } = useDashboardSearch();
   const showCreate = user.role === "admin" || user.role === "dispatcher";
-  const canQuote = ["driver", "dispatcher", "admin"].includes(user.role);
   const canAssign = user.role === "admin" || user.role === "dispatcher";
   const canEdit = user.role === "admin" || user.role === "dispatcher";
   const canRestore = user.role === "admin" || user.role === "dispatcher";
@@ -60,8 +43,6 @@ export function RequestsPage() {
   const { data: trucks } = useTrucks();
   const { data: customers } = useCustomers({ enabled: showCreate });
   const assign = useAssignCargo();
-  const quote = useQuoteMutations();
-  const pricing = usePricingMutations();
   const cancel = useCancelCargo();
   const restore = useRestoreCargo();
   const create = useCreateCargo();
@@ -74,13 +55,6 @@ export function RequestsPage() {
         return Number(bMatch) - Number(aMatch);
       })
     : fleet;
-  const quoteFleet = quoting
-    ? fleet.filter(
-        (truck) =>
-          truck.status === "Available" &&
-          normalizeTruckType(truck.truckType || truck.type) === normalizeTruckType(quoting.truckType)
-      )
-    : [];
 
   const {
     register: registerCreate,
@@ -105,68 +79,6 @@ export function RequestsPage() {
     formState: { isSubmitting: editingForm }
   } = useForm();
 
-  const {
-    register: registerQuote,
-    handleSubmit: handleQuote,
-    reset: resetQuote,
-    watch: watchQuote,
-    setValue: setQuoteValue,
-    formState: { isSubmitting: quotingForm }
-  } = useForm({
-    defaultValues: {
-      quotedPrice: "",
-      quotedEstimatedTime: "",
-      quoteNotes: "",
-      driverId: ""
-    }
-  });
-
-  function openQuote(row) {
-    setQuoting(row);
-    setError("");
-    setAdjustmentType(row.adjustmentType || "");
-    setAdjustmentAmount(row.adjustmentAmount != null ? String(row.adjustmentAmount) : "");
-    setAdjustmentReason(row.adjustmentReason || "");
-    const price = row.finalPrice ?? row.calculatedPrice ?? row.quotedPrice;
-    resetQuote({
-      quotedPrice: price != null ? String(price) : "",
-      quotedEstimatedTime: row.quotedEstimatedTime || "",
-      quoteNotes: row.quoteNotes || "",
-      driverId: row.driverId || (user.role === "driver" ? user.id : "")
-    });
-  }
-
-  async function onRecalculate() {
-    setError("");
-    try {
-      const result = await pricing.calculate.mutateAsync(quoting.id);
-      const next = result.quote || result.request;
-      setQuoting((prev) => ({ ...prev, ...next }));
-      setQuoteValue("quotedPrice", String(next.finalPrice ?? next.calculatedPrice));
-      setAdjustmentType("");
-      setAdjustmentAmount("");
-      setAdjustmentReason("");
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onAdjustPrice() {
-    setError("");
-    try {
-      const updated = await pricing.adjust.mutateAsync({
-        id: quoting.id,
-        adjustmentType: adjustmentType || null,
-        adjustmentAmount: adjustmentType ? Number(adjustmentAmount || 0) : null,
-        adjustmentReason: adjustmentReason || null
-      });
-      setQuoting((prev) => ({ ...prev, ...updated }));
-      setQuoteValue("quotedPrice", String(updated.finalPrice ?? updated.calculatedPrice));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   function openAssign(row) {
     setSelected(row);
     const requiredType = normalizeTruckType(row.truckType);
@@ -190,26 +102,6 @@ export function RequestsPage() {
       receiver: row.receiver || "",
       specialInstructions: row.specialInstructions || ""
     });
-  }
-
-  async function onQuote(values) {
-    setError("");
-    try {
-      const driverId =
-        user.role === "driver" ? user.id || user.sub : values.driverId;
-      await quote.submit.mutateAsync({
-        id: quoting.id,
-        payload: {
-          quotedPrice: Number(values.quotedPrice),
-          quotedEstimatedTime: values.quotedEstimatedTime,
-          quoteNotes: values.quoteNotes,
-          driverId: driverId || undefined
-        }
-      });
-      setQuoting(null);
-    } catch (err) {
-      setError(err.message);
-    }
   }
 
   async function onAssign() {
@@ -273,7 +165,7 @@ export function RequestsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Cargo Requests"
-        subtitle="Auto-priced bookings, assign drivers, track cargo, and collect payment."
+        subtitle="Bookings are auto-priced with ETA from distance (km). Assign a driver — no quotation step."
         actions={
           showCreate ? (
             <Button onClick={() => { setCreating(true); setError(""); }}>
@@ -283,11 +175,10 @@ export function RequestsPage() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <MetricCard icon={FileText} label="Total Requests" value={summary?.total ?? "—"} tone="navy" />
         <MetricCard icon={Clock} label="Total Pending" value={summary?.pending ?? "—"} tone="amber" />
         <MetricCard icon={Truck} label="Total Active" value={summary?.active ?? "—"} tone="blue" />
-        <MetricCard icon={Hourglass} label="Awaiting Approval" value={summary?.awaitingApproval ?? "—"} tone="orange" />
         <MetricCard icon={CheckCircle2} label="Total Received" value={summary?.delivered ?? "—"} tone="green" />
         <MetricCard icon={XCircle} label="Total Cancelled" value={summary?.cancelled ?? "—"} tone="soft" />
       </section>
@@ -325,10 +216,10 @@ export function RequestsPage() {
               { key: "truckType", label: "Type" },
               { key: "weight", label: "Weight" },
               {
-                key: "quote",
-                label: "Quote",
+                key: "price",
+                label: "Price",
                 render: (row) => {
-                  const price = row.quotedPrice ?? row.finalPrice ?? row.calculatedPrice;
+                  const price = row.finalPrice ?? row.calculatedPrice ?? row.quotedPrice;
                   return price != null ? money(price) : "—";
                 }
               },
@@ -355,13 +246,8 @@ export function RequestsPage() {
                         <Pencil size={16} />
                       </button>
                     )}
-                    {canQuote && (row.status === "Pending" || row.status === "Quote Rejected") && (
-                      <Button className="px-2 py-1 text-xs" onClick={() => openQuote(row)}>
-                        {row.status === "Quote Rejected" ? "Revise quote" : "Send quote"}
-                      </Button>
-                    )}
                     {canAssign &&
-                      ["Pending", "Quote Rejected", "Approved", "Assigned"].includes(row.status) &&
+                      ["Pending", "Awaiting Approval", "Quote Rejected", "Approved", "Assigned"].includes(row.status) &&
                       (row.finalPrice != null || row.calculatedPrice != null || row.quotedPrice != null) && (
                       <Button className="px-2 py-1 text-xs" onClick={() => openAssign(row)}>
                         {row.status === "Assigned" ? "Reassign" : "Assign driver"}
@@ -391,136 +277,16 @@ export function RequestsPage() {
         )}
       </section>
 
-      {quoting && (
-        <Modal
-          title={`${quoting.status === "Quote Rejected" ? "Review & send quote" : "Review & send quote"} — ${quoting.id}`}
-          onClose={() => setQuoting(null)}
-        >
-          <form className="space-y-3" onSubmit={handleQuote(onQuote)}>
-            <p className="text-sm text-on-surface-variant">
-              {quoting.pickup} → {quoting.destination} · {quoting.weight}
-            </p>
-
-            <PriceBreakdown
-              distanceKm={quoting.distanceKm}
-              weight={quoting.weight}
-              calculatedPrice={quoting.calculatedPrice}
-              adjustmentType={quoting.adjustmentType}
-              adjustmentAmount={quoting.adjustmentAmount}
-              adjustmentReason={quoting.adjustmentReason}
-              finalPrice={quoting.finalPrice ?? Number(watchQuote("quotedPrice") || 0)}
-              status={quoting.status}
-            />
-
-            {(user.role === "dispatcher" || user.role === "admin") && (
-              <div className="space-y-2 rounded-xl border border-outline-variant/40 p-3">
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={onRecalculate} disabled={pricing.calculate.isPending}>
-                    {pricing.calculate.isPending ? "Calculating…" : "Recalculate"}
-                  </Button>
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">Adjust price</p>
-                <select
-                  className="stitch-input w-full"
-                  value={adjustmentType}
-                  onChange={(e) => setAdjustmentType(e.target.value)}
-                >
-                  <option value="">Accept calculated price</option>
-                  <option value="Increase">Increase</option>
-                  <option value="Discount">Discount</option>
-                  <option value="Fixed">Fixed price</option>
-                </select>
-                {adjustmentType ? (
-                  <>
-                    <input
-                      className="stitch-input w-full"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="Adjustment amount"
-                      value={adjustmentAmount}
-                      onChange={(e) => setAdjustmentAmount(e.target.value)}
-                    />
-                    <select
-                      className="stitch-input w-full"
-                      value={ADJUSTMENT_REASONS.includes(adjustmentReason) ? adjustmentReason : adjustmentReason ? "Other" : ""}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setAdjustmentReason(value === "Other" ? "" : value);
-                      }}
-                    >
-                      <option value="">Select reason</option>
-                      {ADJUSTMENT_REASONS.map((reason) => (
-                        <option key={reason} value={reason}>{reason}</option>
-                      ))}
-                    </select>
-                    {(adjustmentReason === "" || !ADJUSTMENT_REASONS.includes(adjustmentReason) || adjustmentReason === "Other") && (
-                      <input
-                        className="stitch-input w-full"
-                        placeholder="Describe reason"
-                        value={adjustmentReason === "Other" ? "" : adjustmentReason}
-                        onChange={(e) => setAdjustmentReason(e.target.value)}
-                      />
-                    )}
-                  </>
-                ) : null}
-                <Button type="button" variant="secondary" onClick={onAdjustPrice} disabled={pricing.adjust.isPending}>
-                  {pricing.adjust.isPending ? "Saving…" : "Apply adjustment"}
-                </Button>
-              </div>
-            )}
-
-            {(user.role === "dispatcher" || user.role === "admin") && (
-              <select className="stitch-input w-full" {...registerQuote("driverId", { required: true })}>
-                <option value="">Select available driver / truck</option>
-                {quoteFleet.map((truck) => (
-                  <option key={truck.id} value={truck.driverId}>
-                    {truck.driver || "Driver"} — {truck.truckNumber} ({truck.truckType || truck.type})
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <input
-              className="stitch-input w-full"
-              type="number"
-              step="0.01"
-              placeholder="Final transportation price"
-              {...registerQuote("quotedPrice", { required: true })}
-            />
-            <input
-              className="stitch-input w-full"
-              placeholder="Estimated delivery time (e.g. 2 days, 48 hours)"
-              {...registerQuote("quotedEstimatedTime", { required: true })}
-            />
-            <textarea
-              className="stitch-input min-h-20 w-full"
-              placeholder="Quote notes (optional)"
-              {...registerQuote("quoteNotes")}
-            />
-            {quoting.customerDecisionNote ? (
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                Customer note: {quoting.customerDecisionNote}
-              </p>
-            ) : null}
-            {error && <p className="text-sm text-error">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setQuoting(null)}>Cancel</Button>
-              <Button disabled={quotingForm || quote.submit.isPending}>Send to customer</Button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
       {selected && (
         <Modal title={`${["Assigned"].includes(selected.status) ? "Reassign" : "Assign driver"} ${selected.id}`} onClose={() => setSelected(null)}>
           {(selected.finalPrice != null || selected.calculatedPrice != null || selected.quotedPrice != null) ? (
             <p className="mb-3 text-sm text-on-surface-variant">
-              Price: {money(selected.quotedPrice ?? selected.finalPrice ?? selected.calculatedPrice)}
-              {selected.quotedEstimatedTime || selected.distanceKm
-                ? ` · ETA ${selected.quotedEstimatedTime || "auto"}`
-                : ""}
-              {selected.status === "Pending" ? " · will confirm quote on assign" : ""}
+              Price: {money(selected.finalPrice ?? selected.calculatedPrice ?? selected.quotedPrice)}
+              {selected.quotedEstimatedTime
+                ? ` · ETA ${selected.quotedEstimatedTime}`
+                : selected.distanceKm != null
+                  ? ` · ${selected.distanceKm} km (ETA auto)`
+                  : ""}
             </p>
           ) : null}
           <p className="mb-2 text-sm font-medium text-on-surface-variant">
@@ -585,9 +351,9 @@ export function RequestsPage() {
             />
             <Detail label="Truck type" value={viewing.truckType} />
             <Detail label="Weight" value={viewing.weight} />
-            <Detail label="Quoted price" value={viewing.quotedPrice != null ? money(viewing.quotedPrice) : "—"} />
-            <Detail label="Quoted ETA" value={viewing.quotedEstimatedTime || "—"} />
-            <Detail label="Driver" value={viewing.driver || "—"} />
+            <Detail label="Price" value={viewing.finalPrice != null || viewing.calculatedPrice != null || viewing.quotedPrice != null ? money(viewing.finalPrice ?? viewing.calculatedPrice ?? viewing.quotedPrice) : "—"} />
+            <Detail label="ETA" value={viewing.quotedEstimatedTime || "—"} />
+            <Detail label="Distance" value={viewing.distanceKm != null ? `${viewing.distanceKm} km` : "—"} />            <Detail label="Driver" value={viewing.driver || "—"} />
             <Detail label="Truck" value={viewing.truck || "—"} />
             <Detail label="Description" value={viewing.description} className="sm:col-span-2" />
             <Detail label="Booking customer role" value={viewing.customerRole ? `Customer is the ${viewing.customerRole.toLowerCase()}` : "—"} />

@@ -146,7 +146,7 @@ router.get("/", async (req, res, next) => {
       limit: req.query.limit
     };
     if (req.user.role === "customer") filters.customerId = req.user.sub;
-    if (req.user.role === "driver") filters.statuses = ["Pending", "Quote Rejected"];
+    if (req.user.role === "driver") filters.statuses = ["Pending"];
     const result = await db.listCargoRequests(filters);
     res.json(result);
   } catch (error) {
@@ -158,7 +158,7 @@ router.get("/summary", async (req, res, next) => {
   try {
     const filters = {};
     if (req.user.role === "customer") filters.customerId = req.user.sub;
-    if (req.user.role === "driver") filters.statuses = ["Pending", "Quote Rejected"];
+    if (req.user.role === "driver") filters.statuses = ["Pending"];
     res.json(await db.cargoRequestSummary(filters));
   } catch (error) {
     next(error);

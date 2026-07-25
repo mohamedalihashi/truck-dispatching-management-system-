@@ -1,18 +1,17 @@
-import { useState } from "react";
+import { CreditCard } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Check, CreditCard, X } from "lucide-react";
 import { Button } from "./ui/Button";
 import { PriceBreakdown } from "./PriceBreakdown";
 import { usePricingMutations } from "../hooks/useApi";
 
-export function QuoteReviewPanel({ request, onAccept, onReject, loading, error }) {
-  const [note, setNote] = useState("");
+/** Shows auto price / ETA and payment CTA (quotations removed). */
+export function QuoteReviewPanel({ request }) {
   const navigate = useNavigate();
   const pricing = usePricingMutations();
 
   if (!request) return null;
 
-  const canPay = ["Approved", "Assigned", "Accepted", "Arrived Pickup", "Loaded", "In Transit", "Delivered"].includes(
+  const canPay = ["Assigned", "Accepted", "Arrived Pickup", "Loaded", "In Transit", "Delivered", "Approved"].includes(
     request.status
   );
 
@@ -23,9 +22,9 @@ export function QuoteReviewPanel({ request, onAccept, onReject, loading, error }
 
   return (
     <div className="rounded-xl border border-secondary-container/30 bg-secondary-container/10 p-4">
-      <p className="text-sm font-semibold text-on-surface">Quotation for review</p>
+      <p className="text-sm font-semibold text-on-surface">Trip price & ETA</p>
       <p className="mt-1 text-xs text-on-surface-variant">
-        Review the calculated price, any dispatcher adjustment, and estimated delivery time.
+        Price and travel time are calculated automatically from distance (km). No quotation approval is required.
       </p>
 
       <div className="mt-4">
@@ -39,15 +38,6 @@ export function QuoteReviewPanel({ request, onAccept, onReject, loading, error }
           finalPrice={request.finalPrice ?? request.quotedPrice}
           quotedPrice={request.quotedPrice}
           status={request.status}
-          quoteStatus={
-            request.status === "Awaiting Approval"
-              ? "Waiting for Approval"
-              : request.status === "Quote Rejected"
-                ? "Rejected"
-                : request.status === "Approved"
-                  ? "Accepted"
-                  : undefined
-          }
         />
       </div>
 
@@ -55,38 +45,6 @@ export function QuoteReviewPanel({ request, onAccept, onReject, loading, error }
         <p className="mt-3 text-sm text-on-surface-variant">
           Estimated time: <strong className="text-on-surface">{request.quotedEstimatedTime}</strong>
         </p>
-      ) : null}
-      {request.quoteNotes ? (
-        <p className="mt-2 text-sm text-on-surface-variant">
-          Notes: <span className="text-on-surface">{request.quoteNotes}</span>
-        </p>
-      ) : null}
-
-      {request.status === "Awaiting Approval" ? (
-        <>
-          <label className="mt-4 block text-sm">
-            <span className="mb-1.5 block font-medium text-on-surface-variant">
-              Rejection note (optional)
-            </span>
-            <textarea
-              className="stitch-input min-h-16 w-full"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Tell dispatch what should change…"
-            />
-          </label>
-          {error ? <p className="mt-2 text-sm text-error">{error}</p> : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" onClick={() => onAccept(request.id)} disabled={loading}>
-              <Check size={16} />
-              Accept quote
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => onReject(request.id, note)} disabled={loading}>
-              <X size={16} />
-              Reject quote
-            </Button>
-          </div>
-        </>
       ) : null}
 
       {canPay ? (
