@@ -19,9 +19,29 @@ const pricingSchema = z.object({
   automaticPricing: z.coerce.boolean(),
 });
 
-router.get("/", requireRole("admin", "dispatcher"), async (_req, res, next) => {
+router.get("/", requireRole("admin", "dispatcher", "customer"), async (_req, res, next) => {
   try {
     res.json(await db.getPricingSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+const estimateSchema = z.object({
+  pickup: z.string().min(1),
+  destination: z.string().min(1),
+  weight: z.union([z.string(), z.number()]),
+});
+
+router.post("/estimate", requireRole("admin", "dispatcher", "customer"), validate(estimateSchema), async (req, res, next) => {
+  try {
+    res.json(
+      await db.estimateTransportPrice({
+        pickup: req.body.pickup,
+        destination: req.body.destination,
+        weight: req.body.weight,
+      })
+    );
   } catch (error) {
     next(error);
   }

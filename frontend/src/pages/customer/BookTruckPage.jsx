@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { MapPin, Package, Truck, UserRound } from "lucide-react";
@@ -6,6 +6,8 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { useCreateCargo } from "../../hooks/useApi";
 import { useAuth } from "../../contexts/AuthContext";
+import { api } from "../../services/api";
+import { money } from "../../utils/helpers";
 import {
   formatSomaliaLocation,
   somaliaLocations,
@@ -33,6 +35,8 @@ export function BookTruckPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [serverError, setServerError] = useState("");
+  const [estimate, setEstimate] = useState(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
   const submissionKey = useRef(crypto.randomUUID());
   const {
     register,
@@ -112,6 +116,28 @@ export function BookTruckPage() {
 
   const fromPreview = formatSomaliaLocation(values.fromNeighborhood, values.fromDistrict, values.fromRegion);
   const toPreview = formatSomaliaLocation(values.toNeighborhood, values.toDistrict, values.toRegion);
+
+  useEffect(() => {
+    if (!fromPreview || !toPreview || !values.weight || Number(values.weight) <= 0) {
+      setEstimate(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setEstimateLoading(true);
+      api
+        .estimatePricing({
+          pickup: fromPreview,
+          destination: toPreview,
+          weight: values.weight
+        })
+        .then((result) => setEstimate(result))
+        .catch(() => setEstimate(null))
+        .finally(() => setEstimateLoading(false));
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [fromPreview, toPreview, values.weight]);
 
   return (
     <div className="space-y-8">
@@ -316,6 +342,31 @@ export function BookTruckPage() {
               <p className="flex items-center gap-2"><UserRound size={16} className="text-secondary-fixed" /> {values.customerRole === "SENDER" ? "You are the sender" : values.customerRole === "RECEIVER" ? "You are the receiver" : "Customer role"}</p>
               <p className="flex items-center gap-2"><MapPin size={16} className="text-secondary-fixed" /> Somalia marketplace dispatch</p>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-secondary-container/30 bg-secondary-fixed/15 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Suggested price</p>
+            {estimateLoading ? (
+              <p className="mt-2 text-sm text-on-surface-variant">Calculating…</p>
+            ) : estimate ? (
+              <div className="mt-2 space-y-1">
+                <p className="text-2xl font-bold text-primary-container">{money(estimate.calculatedPrice)}</p>
+                <p className="text-sm text-on-surface-variant">
+                  ~{estimate.distanceKm} km · ETA {estimate.estimatedTime}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  Base {money(estimate.breakdown?.baseFee)} + distance {money(estimate.breakdown?.distanceCharge)} + weight{" "}
+                  {money(estimate.breakdown?.weightCharge)}
+                </p>
+                <p className="pt-2 text-xs text-on-surface-variant">
+                  This is an automatic estimate. Dispatcher may adjust before or when assigning a driver.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-on-surface-variant">
+                Select pickup, delivery, and weight to see the automatic price.
+              </p>
+            )}
           </div>
         </aside>
       </div>

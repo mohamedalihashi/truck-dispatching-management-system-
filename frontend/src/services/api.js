@@ -147,6 +147,7 @@ export const api = {
   updateSettings: (key, value) => apiClient.put(`/admin/settings/${key}`, value),
   updateRolePermissions: (value) => apiClient.put("/admin/settings/rolePermissions", value),
   getPricing: () => apiClient.get("/pricing"),
+  estimatePricing: (payload) => apiClient.post("/pricing/estimate", payload),
   updatePricing: (payload) => apiClient.put("/pricing", payload),
   calculateQuote: (id) => apiClient.post(`/quotes/${encodeURIComponent(id)}/calculate`),
   adjustQuotePrice: (id, payload) => apiClient.patch(`/quotes/${encodeURIComponent(id)}/adjust-price`, payload),

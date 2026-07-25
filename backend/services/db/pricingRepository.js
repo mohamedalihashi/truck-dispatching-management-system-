@@ -5,6 +5,7 @@ import {
   applyPriceAdjustment,
   calculateTransportPrice,
   estimateDistanceKm,
+  estimateEtaLabel,
   mapPricingSettings,
   parseWeightTons,
 } from "../pricingService.js";
@@ -68,6 +69,27 @@ export const pricingRepository = {
     });
 
     return mapPricingSettings(row);
+  },
+
+  async estimateTransportPrice({ pickup, destination, weight }) {
+    const settings = await this.getPricingSettings();
+    const distanceKm = estimateDistanceKm(pickup, destination);
+    const calc = calculateTransportPrice({
+      distanceKm,
+      weightTons: parseWeightTons(weight),
+      ...settings,
+    });
+    return {
+      ...calc,
+      estimatedTime: estimateEtaLabel(calc.distanceKm),
+      rates: {
+        baseFee: settings.baseFee,
+        pricePerKm: settings.pricePerKm,
+        pricePerTon: settings.pricePerTon,
+        minimumCharge: settings.minimumCharge,
+        maximumCharge: settings.maximumCharge,
+      },
+    };
   },
 
   async calculateQuotePrice(id, { actorId, force = false } = {}) {

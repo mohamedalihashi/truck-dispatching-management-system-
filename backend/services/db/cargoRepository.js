@@ -7,6 +7,7 @@ import {
   estimateDistanceKm,
   calculateTransportPrice,
   parseWeightTons,
+  estimateEtaLabel,
 } from "../pricingService.js";
 import { pricingRepository } from "./pricingRepository.js";
 import {
@@ -85,20 +86,18 @@ async createCargoRequest(payload) {
   const id = `REQ-${Math.floor(9000 + Math.random() * 1000)}`;
 
   const settings = await pricingRepository.getPricingSettings();
-  let pricingFields = {};
-  if (settings.automaticPricing) {
-    const distanceKm = estimateDistanceKm(payload.pickup, payload.destination);
-    const calc = calculateTransportPrice({
-      distanceKm,
-      weightTons: parseWeightTons(payload.weight),
-      ...settings,
-    });
-    pricingFields = {
-      distanceKm: calc.distanceKm,
-      calculatedPrice: calc.calculatedPrice,
-      finalPrice: calc.calculatedPrice,
-    };
-  }
+  // Always suggest a calculated price on booking so customers and dispatchers see it immediately.
+  const distanceKm = estimateDistanceKm(payload.pickup, payload.destination);
+  const calc = calculateTransportPrice({
+    distanceKm,
+    weightTons: parseWeightTons(payload.weight),
+    ...settings,
+  });
+  const pricingFields = {
+    distanceKm: calc.distanceKm,
+    calculatedPrice: calc.calculatedPrice,
+    finalPrice: calc.calculatedPrice,
+  };
 
   return withTransaction(async (tx) => {
     const request = await tx.cargoRequest.create({
@@ -529,33 +528,46 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
     }
 
     const currentStatus = reqStatusToApi(current.status);
-    if (currentStatus !== "Approved" && currentStatus !== "Assigned") {
+    const assignable = ["Pending", "Quote Rejected", "Approved", "Assigned"];
+    if (!assignable.includes(currentStatus)) {
       const error = new Error(
-        "Customer must approve the quotation before assigning a driver"
+        `Cannot assign a driver while the request is "${currentStatus}"`
       );
       error.status = 400;
       throw error;
     }
-    if (currentStatus === "Approved" && (!current.quotedPrice || !current.quotedEstimatedTime)) {
-      const error = new Error("Approved request is missing quotation details");
+
+    const suggestedPrice =
+      current.quotedPrice != null
+        ? Number(current.quotedPrice)
+        : current.finalPrice != null
+          ? Number(current.finalPrice)
+          : current.calculatedPrice != null
+            ? Number(current.calculatedPrice)
+            : null;
+
+    if (suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0) {
+      const error = new Error("Request has no calculated price yet. Recalculate or send a quote first.");
       error.status = 400;
       throw error;
     }
-    if (currentStatus === "Approved") {
-      const pendingTrip = await tx.trip.findFirst({ where: { cargoRequestId: id }, orderBy: { createdAt: "desc" } });
-      const payment = pendingTrip ? await tx.payment.findFirst({ where: { tripId: pendingTrip.id } }) : null;
-      const requiredDeposit = Number(current.quotedPrice || 0) * 0.3;
-      if (!payment || Number(payment.amountPaid || 0) < requiredDeposit - 0.01) {
-        const error = new Error("The customer must pay the 30% deposit before the trip can be confirmed or assigned");
-        error.status = 409;
-        throw error;
-      }
-    }
 
-    const tripFare = current.quotedPrice != null
-      ? current.quotedPrice
-      : estimateFare(current.weight);
-    const tripEta = current.quotedEstimatedTime || "8h 00m";
+    const distanceKm =
+      current.distanceKm != null
+        ? Number(current.distanceKm)
+        : estimateDistanceKm(current.pickup, current.destination);
+    const tripEta = current.quotedEstimatedTime || estimateEtaLabel(distanceKm);
+
+    const quoteFields =
+      current.quotedPrice == null || !current.quotedEstimatedTime
+        ? {
+            quotedPrice: suggestedPrice,
+            quotedEstimatedTime: tripEta,
+            finalPrice: current.finalPrice != null ? Number(current.finalPrice) : suggestedPrice,
+          }
+        : {};
+
+    const tripFare = suggestedPrice;
 
     // Release previous truck if reassigning
     if (current.truckId && current.truckId !== truckId) {
@@ -572,10 +584,11 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
         driverId,
         truckId,
         dispatcherId,
+        ...quoteFields,
       },
     });
 
-    // Find or create trip
+    // Find or create trip — real GPS comes only from the driver's phone.
     const existingTrip = await tx.trip.findFirst({
       where: {
         cargoRequestId: id,
@@ -583,13 +596,6 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
       },
       orderBy: { createdAt: "desc" },
     });
-
-    const pickupCoords = coordsFromPlaceName(updated.pickup);
-    const locationFields = {
-      lastLat: pickupCoords.lat,
-      lastLng: pickupCoords.lng,
-      lastLocationAt: new Date()
-    };
 
     let tripId;
     if (existingTrip) {
@@ -603,7 +609,6 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
           status: "Assigned",
           fare: tripFare,
           estimatedTime: tripEta,
-          ...locationFields
         },
       });
     } else {
@@ -622,18 +627,9 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
           estimatedTime: tripEta,
           status: "Assigned",
           fare: tripFare,
-          ...locationFields
         },
       });
     }
-
-    await tx.tripLocationPoint.create({
-      data: {
-        tripId,
-        lat: pickupCoords.lat,
-        lng: pickupCoords.lng,
-      },
-    });
 
     await tx.truck.update({
       where: { id: truckId },

@@ -273,7 +273,7 @@ export function RequestsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Cargo Requests"
-        subtitle="Send quotations, assign drivers, track cargo, confirm delivery, and collect payment."
+        subtitle="Auto-priced bookings, assign drivers, track cargo, and collect payment."
         actions={
           showCreate ? (
             <Button onClick={() => { setCreating(true); setError(""); }}>
@@ -327,7 +327,10 @@ export function RequestsPage() {
               {
                 key: "quote",
                 label: "Quote",
-                render: (row) => (row.quotedPrice != null ? money(row.quotedPrice) : "—")
+                render: (row) => {
+                  const price = row.quotedPrice ?? row.finalPrice ?? row.calculatedPrice;
+                  return price != null ? money(price) : "—";
+                }
               },
               {
                 key: "eta",
@@ -357,9 +360,11 @@ export function RequestsPage() {
                         {row.status === "Quote Rejected" ? "Revise quote" : "Send quote"}
                       </Button>
                     )}
-                    {canAssign && (row.status === "Approved" || row.status === "Assigned") && (
+                    {canAssign &&
+                      ["Pending", "Quote Rejected", "Approved", "Assigned"].includes(row.status) &&
+                      (row.finalPrice != null || row.calculatedPrice != null || row.quotedPrice != null) && (
                       <Button className="px-2 py-1 text-xs" onClick={() => openAssign(row)}>
-                        {row.status === "Approved" ? "Assign driver" : "Reassign"}
+                        {row.status === "Assigned" ? "Reassign" : "Assign driver"}
                       </Button>
                     )}
                     {CANCELABLE_REQUEST_STATUSES.includes(row.status) && (
@@ -508,10 +513,14 @@ export function RequestsPage() {
       )}
 
       {selected && (
-        <Modal title={`${selected.status === "Approved" ? "Assign driver" : "Reassign"} ${selected.id}`} onClose={() => setSelected(null)}>
-          {selected.quotedPrice != null ? (
+        <Modal title={`${["Assigned"].includes(selected.status) ? "Reassign" : "Assign driver"} ${selected.id}`} onClose={() => setSelected(null)}>
+          {(selected.finalPrice != null || selected.calculatedPrice != null || selected.quotedPrice != null) ? (
             <p className="mb-3 text-sm text-on-surface-variant">
-              Approved quote: {money(selected.quotedPrice)} · ETA {selected.quotedEstimatedTime}
+              Price: {money(selected.quotedPrice ?? selected.finalPrice ?? selected.calculatedPrice)}
+              {selected.quotedEstimatedTime || selected.distanceKm
+                ? ` · ETA ${selected.quotedEstimatedTime || "auto"}`
+                : ""}
+              {selected.status === "Pending" ? " · will confirm quote on assign" : ""}
             </p>
           ) : null}
           <p className="mb-2 text-sm font-medium text-on-surface-variant">

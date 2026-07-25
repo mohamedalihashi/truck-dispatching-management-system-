@@ -26,6 +26,15 @@ export function roundMoney(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+/** Rough road ETA for Somalia corridors (~40 km/h average). */
+export function estimateEtaLabel(distanceKm) {
+  const km = Math.max(1, Number(distanceKm) || 1);
+  const hours = Math.max(1, Math.ceil(km / 40));
+  const minutes = hours === 1 && km < 40 ? Math.max(30, Math.round((km / 40) * 60)) : 0;
+  if (hours === 1 && minutes > 0 && minutes < 60) return `0h ${minutes}m`;
+  return `${hours}h 00m`;
+}
+
 /**
  * Total = base + (distance × perKm) + (weight × perTon), clamped to min/max.
  */
