@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch --watch-path=./index.js --watch-path=./createApp.js --watch-path=./routes --watch-path=./services --watch-path=./middleware --watch-path=./lib --watch-path=./config index.js",
+    "build": "prisma generate",
     "start": "node index.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
@@ -34,13 +35,13 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^9.0.3",
+    "prisma": "^6.9.0",
     "socket.io": "^4.8.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "eslint": "^10.7.0",
     "prettier": "^3.9.6",
-    "prisma": "^6.9.0",
     "supertest": "^7.2.2",
     "vitest": "^4.1.10"
   }
