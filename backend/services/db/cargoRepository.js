@@ -87,7 +87,12 @@ async createCargoRequest(payload) {
 
   const settings = await pricingRepository.getPricingSettings();
   // Always suggest a calculated price on booking so customers and dispatchers see it immediately.
-  const distanceKm = estimateDistanceKm(payload.pickup, payload.destination);
+  const distanceKm = estimateDistanceKm(payload.pickup, payload.destination, {
+    fromRegion: payload.fromRegion,
+    fromDistrict: payload.fromDistrict,
+    toRegion: payload.toRegion,
+    toDistrict: payload.toDistrict,
+  });
   const calc = calculateTransportPrice({
     distanceKm,
     weightTons: parseWeightTons(payload.weight),

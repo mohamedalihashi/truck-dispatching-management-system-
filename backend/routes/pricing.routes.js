@@ -31,6 +31,10 @@ const estimateSchema = z.object({
   pickup: z.string().min(1),
   destination: z.string().min(1),
   weight: z.union([z.string(), z.number()]),
+  fromRegion: z.string().optional(),
+  fromDistrict: z.string().optional(),
+  toRegion: z.string().optional(),
+  toDistrict: z.string().optional(),
 });
 
 router.post("/estimate", requireRole("admin", "dispatcher", "customer"), validate(estimateSchema), async (req, res, next) => {
@@ -40,6 +44,10 @@ router.post("/estimate", requireRole("admin", "dispatcher", "customer"), validat
         pickup: req.body.pickup,
         destination: req.body.destination,
         weight: req.body.weight,
+        fromRegion: req.body.fromRegion,
+        fromDistrict: req.body.fromDistrict,
+        toRegion: req.body.toRegion,
+        toDistrict: req.body.toDistrict,
       })
     );
   } catch (error) {

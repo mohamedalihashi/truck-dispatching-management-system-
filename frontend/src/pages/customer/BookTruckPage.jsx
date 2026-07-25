@@ -129,7 +129,11 @@ export function BookTruckPage() {
         .estimatePricing({
           pickup: fromPreview,
           destination: toPreview,
-          weight: values.weight
+          weight: values.weight,
+          fromRegion: values.fromRegion,
+          fromDistrict: values.fromDistrict,
+          toRegion: values.toRegion,
+          toDistrict: values.toDistrict
         })
         .then((result) => setEstimate(result))
         .catch(() => setEstimate(null))

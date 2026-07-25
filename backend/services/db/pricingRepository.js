@@ -71,9 +71,22 @@ export const pricingRepository = {
     return mapPricingSettings(row);
   },
 
-  async estimateTransportPrice({ pickup, destination, weight }) {
+  async estimateTransportPrice({
+    pickup,
+    destination,
+    weight,
+    fromRegion,
+    fromDistrict,
+    toRegion,
+    toDistrict,
+  }) {
     const settings = await this.getPricingSettings();
-    const distanceKm = estimateDistanceKm(pickup, destination);
+    const distanceKm = estimateDistanceKm(pickup, destination, {
+      fromRegion,
+      fromDistrict,
+      toRegion,
+      toDistrict,
+    });
     const calc = calculateTransportPrice({
       distanceKm,
       weightTons: parseWeightTons(weight),

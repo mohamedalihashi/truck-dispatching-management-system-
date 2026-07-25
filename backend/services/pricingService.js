@@ -1,4 +1,4 @@
-import { coordsFromPlaceName, haversineKm } from "../lib/somaliaGeo.js";
+import { resolveLocationCoords, roadDistanceKm } from "../lib/somaliaGeo.js";
 
 export const DEFAULT_PRICING = {
   baseFee: 20,
@@ -14,12 +14,22 @@ export function parseWeightTons(weight) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
-export function estimateDistanceKm(pickup, destination) {
-  const from = coordsFromPlaceName(pickup);
-  const to = coordsFromPlaceName(destination);
-  const km = haversineKm(from.lat, from.lng, to.lat, to.lng);
-  // Same-city / unknown places can yield ~0; keep a small floor for pricing.
-  return Math.max(1, Math.round(km * 10) / 10);
+/**
+ * Estimate road distance (km) between pickup and destination.
+ * Accepts free-text places and/or structured region/district fields.
+ */
+export function estimateDistanceKm(pickup, destination, options = {}) {
+  const from = resolveLocationCoords({
+    text: pickup,
+    region: options.fromRegion,
+    district: options.fromDistrict,
+  });
+  const to = resolveLocationCoords({
+    text: destination,
+    region: options.toRegion,
+    district: options.toDistrict,
+  });
+  return roadDistanceKm(from, to);
 }
 
 export function roundMoney(value) {
