@@ -15,11 +15,11 @@ function isLocalBackendUrl(url) {
 }
 
 export function getApiBaseUrl() {
-  // Production must never call a developer machine — ignore baked localhost env vars.
-  if (!isLocalDevHost()) return "/api";
-
   const configured = import.meta.env.VITE_API_URL?.trim();
-  if (configured && !isLocalBackendUrl(configured)) return configured;
+  // Netlify/static hosts: set VITE_API_URL to the Render (or other) API origin.
+  if (configured && !isLocalBackendUrl(configured)) return configured.replace(/\/$/, "");
+  // Same-origin API (Vercel fullstack / local Vite proxy).
+  if (!isLocalDevHost()) return "/api";
   if (configured) return configured;
   return "/api";
 }
