@@ -3,20 +3,32 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Clearing all database tables…");
+  console.log("Clearing all database records (schema kept)…");
 
+  // Child / dependent tables first (FK-safe order)
+  await prisma.sharedTripBooking.deleteMany();
+  await prisma.sharedTrip.deleteMany();
+  await prisma.bid.deleteMany();
+  await prisma.deliveryFeedbackToken.deleteMany();
+  await prisma.tripFeedback.deleteMany();
+  await prisma.tripLocationPoint.deleteMany();
+  await prisma.earning.deleteMany();
   await prisma.payment.deleteMany();
+  await prisma.supportComplaint.deleteMany();
+  await prisma.smsNotification.deleteMany();
   await prisma.trip.deleteMany();
   await prisma.cargoRequest.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.verificationCode.deleteMany();
   await prisma.truck.deleteMany();
+  await prisma.customerProfile.deleteMany();
+  await prisma.dispatcherProfile.deleteMany();
   await prisma.setting.deleteMany();
   await prisma.user.deleteMany();
   await prisma.truckType.deleteMany();
 
-  console.log("Database cleared successfully.");
+  console.log("Database records cleared successfully. Tables and schema unchanged.");
 }
 
 main()

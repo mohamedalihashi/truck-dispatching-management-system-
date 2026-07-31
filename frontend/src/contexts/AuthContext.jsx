@@ -52,7 +52,7 @@ export function AuthProvider({ children }) {
       },
       async register(payload) {
         const result = await api.register(payload);
-        if (result.verificationRequired) return result;
+        if (result.verificationRequired || result.verificationPending) return result;
         return completeAuth(result);
       },
       async verifyRegister(payload) {

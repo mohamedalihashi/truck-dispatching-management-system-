@@ -1,0 +1,279 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>Truck Dispatch System — Step-by-Step Explanation</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+  body { font-family: Calibri, Arial, sans-serif; font-size: 12pt; line-height: 1.45; color: #1a1a1a; max-width: 800px; margin: 40px auto; }
+  h1 { font-size: 22pt; color: #0f2744; border-bottom: 2px solid #0f2744; padding-bottom: 8px; }
+  h2 { font-size: 16pt; color: #143d66; margin-top: 28px; page-break-after: avoid; }
+  h3 { font-size: 13pt; color: #1b4f7a; margin-top: 18px; }
+  p, li { margin: 6px 0; }
+  ol.steps > li { margin-bottom: 10px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px; }
+  th, td { border: 1px solid #999; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #e8eef5; }
+  .note { background: #fff8e6; border-left: 4px solid #e6a800; padding: 10px 12px; margin: 12px 0; }
+  .box { background: #f4f7fb; border: 1px solid #c5d3e3; padding: 12px 14px; margin: 12px 0; }
+  .cover { text-align: center; margin: 60px 0 40px; }
+  .cover h1 { border: none; font-size: 26pt; }
+  .muted { color: #555; }
+  ul { margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Truck Dispatch System</h1>
+  <p style="font-size:14pt;"><b>Step-by-Step System Explanation</b></p>
+  <p class="muted">FTL · Shared Trips · Marketplace Bids · Payments · Admin</p>
+  <p class="muted">Document for reading in Microsoft Word</p>
+  <p class="muted">Date: 31 July 2026</p>
+</div>
+
+<h2>1. What this system is</h2>
+<p>
+Truck Dispatch is an online marketplace for truck transport in Somalia.
+Customers book cargo transport; drivers offer trucks; admins manage the platform and phone bookings.
+</p>
+<p>There are two main transport products:</p>
+<ul>
+  <li><b>FTL (Full Truck Load)</b> — customer books the whole truck. Payment is <b>30% then 70%</b>.</li>
+  <li><b>Shared trip</b> — customer books space by the ton on a trip the driver already published. Payment is <b>100% once</b> before pickup.</li>
+</ul>
+
+<div class="note">
+  <b>Short Somali summary:</b> System-kan waa marketplace gaadiidka. FTL = gaadhi oo dhan (30% + 70%). Shared = awood ton ah (lacagta oo dhan hal mar ka hor pickup).
+</div>
+
+<h2>2. Who uses the system (roles)</h2>
+<table>
+  <tr>
+    <th>Role</th>
+    <th>What they do</th>
+  </tr>
+  <tr>
+    <td><b>Customer</b></td>
+    <td>FTL Book, Shared Book, view Trips, Tracking, Payment, Support</td>
+  </tr>
+  <tr>
+    <td><b>FTL Driver</b></td>
+    <td>Register truck, quote prices, bid on open loads, run FTL trips, GPS tracking, earnings</td>
+  </tr>
+  <tr>
+    <td><b>SHARED Driver</b></td>
+    <td>Publish shared trips, manage bookings/pickup/delivery, truck profile, earnings. Cannot bid on FTL marketplace.</td>
+  </tr>
+  <tr>
+    <td><b>Admin</b></td>
+    <td>Users, fleet, phone bookings, trips, payments, reports, support, settings</td>
+  </tr>
+</table>
+
+<h2>3. Customer journey — overview</h2>
+<ol class="steps">
+  <li>Register / login as customer.</li>
+  <li>Choose <b>FTL Book</b> (full truck) or <b>Shared Book</b> (shared capacity).</li>
+  <li>Complete booking and agree price.</li>
+  <li>Pay through <b>Waafi</b> (EVC / ZAAD) according to the product rules.</li>
+  <li>Follow the trip in <b>Trips</b> and <b>Tracking</b>.</li>
+  <li>After delivery: confirm (FTL unlocks 70%), leave feedback if asked, use Support if needed.</li>
+</ol>
+
+<h2>4. FTL flow — bid by bid (step by step)</h2>
+
+<h3>4.1 Path A — Book a specific truck</h3>
+<ol class="steps">
+  <li><b>Browse trucks</b> — Customer opens FTL Book / Find Trucks. Filter by region, district, truck type.</li>
+  <li><b>Create booking</b> — Customer selects a truck and submits cargo details (pickup, destination, weight, description, sender/receiver).</li>
+  <li><b>Driver quote</b> — FTL driver sets price and estimated time. Status becomes <b>Awaiting Approval</b>.</li>
+  <li><b>Customer decision</b>
+    <ul>
+      <li><b>Accept</b> → system creates a Trip (status Assigned) and a payment invoice.</li>
+      <li><b>Reject</b> → booking goes to Quote Rejected (driver may quote again or decline with reason).</li>
+    </ul>
+  </li>
+  <li><b>Pay 30% deposit</b> — Customer pays 30% via Waafi. Trip cannot start until deposit is paid.</li>
+  <li><b>Driver runs the trip</b> — statuses move one by one:
+    <br>Assigned → Accepted → Arrived Pickup → Loaded → In Transit → Delivered
+    <br>(Proof of delivery is required before Delivered.)</li>
+  <li><b>Customer confirms delivery</b> — unlocks the remaining <b>70%</b>.</li>
+  <li><b>Pay 70% balance</b> — Customer pays the rest via Waafi. Earnings settle after full payment.</li>
+</ol>
+
+<h3>4.2 Path B — Open request + marketplace bids</h3>
+<ol class="steps">
+  <li>Customer posts an <b>open FTL request</b> (no preferred truck) — open for bids.</li>
+  <li>FTL drivers see the load in <b>Marketplace</b>.</li>
+  <li>Drivers place bids (amount, optional days/notes). One pending bid per driver per request.</li>
+  <li>Customer opens <b>Bids</b> for that request, compares offers.</li>
+  <li>Customer <b>accepts one bid</b> → that driver is assigned; other bids become Rejected; trip + 30% invoice are created.</li>
+  <li>From here: same as Path A — pay 30% → run trip → confirm delivery → pay 70%.</li>
+</ol>
+
+<div class="box">
+  <b>FTL payment rule:</b> Always two payments — <b>30% before start</b>, <b>70% after delivery confirmation</b>.
+</div>
+
+<h2>5. Shared trip flow — bid by bid (step by step)</h2>
+
+<h3>5.1 Driver publishes a shared trip</h3>
+<ol class="steps">
+  <li>SHARED driver opens <b>New shared trip</b>.</li>
+  <li>Enters: From / To (labels + region/district), <b>departure date</b>, <b>duration</b> (hours or days), <b>price per ton</b>.</li>
+  <li>Capacity comes automatically from the registered truck (not typed freely).</li>
+  <li>Trip status: <b>Open for booking</b>.</li>
+</ol>
+
+<div class="note">
+  <b>Important rules (F.G.):</b>
+  <ul>
+    <li>Driver cannot publish <b>two trips on the same date</b>.</li>
+    <li>Driver must <b>finish the current active trip</b> before publishing a new one.</li>
+  </ul>
+</div>
+
+<h3>5.2 Customer books shared capacity</h3>
+<ol class="steps">
+  <li>Customer opens <b>Shared Book</b> and filters by region/district.</li>
+  <li>Selects an open trip and enters weight (kg or tons) + pickup/delivery location details.</li>
+  <li>If the customer agrees with price, duration, and route, they book.</li>
+  <li>System creates: cargo request + shared booking + child trip + <b>full payment invoice</b>.</li>
+  <li>Available tons decrease. When capacity is used up → trip becomes <b>Full</b>.</li>
+</ol>
+
+<h3>5.3 Payment for shared (once)</h3>
+<ol class="steps">
+  <li>Customer goes to <b>Payment</b> and pays the <b>full fare once</b> via Waafi (not 30/70).</li>
+  <li>Until payment is complete, the driver <b>cannot start pickup</b>.</li>
+</ol>
+
+<h3>5.4 Pickup → In Transit → Delivered</h3>
+<ol class="steps">
+  <li>Driver clicks <b>Start pickup</b> only when every customer on that trip has paid in full → status <b>Pickup</b>.</li>
+  <li>Driver marks <b>In Transit</b>.</li>
+  <li>Driver marks <b>Delivered</b> when finished. Trip ends. Driver can then publish a new shared trip.</li>
+</ol>
+
+<div class="box">
+  <b>Shared payment rule:</b> Customer pays <b>100% one time</b> before pickup. No second payment after delivery for the shared schedule.
+</div>
+
+<table>
+  <tr>
+    <th>Shared status</th>
+    <th>Meaning</th>
+  </tr>
+  <tr><td>Open for booking</td><td>Customers can still book remaining tons</td></tr>
+  <tr><td>Full</td><td>No capacity left; waiting for payments / pickup</td></tr>
+  <tr><td>Pickup</td><td>Driver started pickup (all paid)</td></tr>
+  <tr><td>In Transit</td><td>Trip is moving</td></tr>
+  <tr><td>Delivered</td><td>Finished</td></tr>
+  <tr><td>Cancelled</td><td>Stopped while still open/full</td></tr>
+</table>
+
+<h2>6. Payment comparison</h2>
+<table>
+  <tr>
+    <th>Product</th>
+    <th>When to pay</th>
+    <th>How much</th>
+  </tr>
+  <tr>
+    <td>FTL</td>
+    <td>Before trip starts + after delivery confirmed</td>
+    <td>30% then 70%</td>
+  </tr>
+  <tr>
+    <td>Shared</td>
+    <td>After booking, before pickup</td>
+    <td>100% once</td>
+  </tr>
+</table>
+<p>Payment provider: <b>WaafiPay</b> (EVC Plus / ZAAD). Currency is typically SLSH.</p>
+
+<h2>7. Admin phone-assisted booking</h2>
+<ol class="steps">
+  <li>Admin opens <b>Admin Booking (Telefoon)</b>.</li>
+  <li>Creates a booking for an existing customer (customer called by phone).</li>
+  <li>Assigns either an FTL truck or an open shared trip.</li>
+  <li><b>FTL phone path:</b> driver still quotes price/time → customer accepts → pay 30% → trip → pay 70% after delivery (same as online FTL).</li>
+  <li>Drivers see phone jobs on their Jobs page; SMS/notifications may notify customers.</li>
+</ol>
+
+<h2>8. Tracking</h2>
+<ul>
+  <li>All roles can open <b>Tracking</b> for active trips.</li>
+  <li>While an FTL trip is active, the driver app can send live GPS updates.</li>
+  <li>Map shows the latest location; location history is stored for the trip.</li>
+</ul>
+
+<h2>9. Support / complaints</h2>
+<ol class="steps">
+  <li>Customer opens Support.</li>
+  <li>Chooses the shipment (which trip) and who the complaint is about (driver / dispatcher).</li>
+  <li>Writes the message and submits.</li>
+  <li>Admin reviews: Open → In Review → Resolved → Closed.</li>
+</ol>
+
+<h2>10. Driver dashboards (quick map)</h2>
+<table>
+  <tr>
+    <th>FTL driver hub</th>
+    <th>SHARED driver hub</th>
+  </tr>
+  <tr>
+    <td>
+      Available Loads · My Offers · FTL Trips · Tracking · Earnings
+    </td>
+    <td>
+      Shared Trips (create/manage) · Bookings/Jobs · Tracking · Earnings
+    </td>
+  </tr>
+</table>
+
+<h2>11. End-to-end picture</h2>
+<pre style="font-family: Consolas, monospace; font-size: 10pt; background:#f7f7f7; padding:14px; border:1px solid #ddd; white-space: pre-wrap;">
+CUSTOMER
+  ├─ FTL Book ──► Driver quote ──► Accept ──► Pay 30% ──► Trip ──► Confirm ──► Pay 70%
+  ├─ Post for Bids ──► Drivers bid ──► Accept bid ──► (same FTL payment / trip)
+  └─ Shared Book ──► Book tons ──► Pay 100% once ──► Driver Pickup ──► In Transit ──► Delivered
+
+FTL DRIVER
+  └─ Quote / Bid ──► Run trip statuses ──► Upload POD ──► Earnings
+
+SHARED DRIVER
+  └─ Publish trip ──► Wait bookings + full payments ──► Pickup ──► In Transit ──► Delivered
+
+ADMIN
+  └─ Phone booking · Users · Fleet · Payments · Reports · Support
+</pre>
+
+<h2>12. Glossary</h2>
+<table>
+  <tr><th>Term</th><th>Meaning</th></tr>
+  <tr><td>FTL</td><td>Full Truck Load — whole truck for one shipment</td></tr>
+  <tr><td>Shared</td><td>Several customers share truck capacity by tons</td></tr>
+  <tr><td>Bid</td><td>Driver’s price offer on an open customer request</td></tr>
+  <tr><td>Quote</td><td>Driver’s price/time on a preferred-truck booking</td></tr>
+  <tr><td>Deposit</td><td>FTL 30% paid before the trip can start</td></tr>
+  <tr><td>POD</td><td>Proof of Delivery photo/document</td></tr>
+  <tr><td>Waafi</td><td>Mobile money payment (EVC / ZAAD)</td></tr>
+</table>
+
+<p style="margin-top:36px;" class="muted">
+— End of document —<br>
+Truck Dispatch System · Step-by-step explanation for reading in Microsoft Word
+</p>
+
+</body>
+</html>

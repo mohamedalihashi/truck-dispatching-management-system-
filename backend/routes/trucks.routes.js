@@ -22,7 +22,7 @@ router.use(requireAuth);
 router.use(requirePasswordChanged);
 
 // Dispatchers need truck lists to assign drivers even without full fleet admin access.
-router.get("/", requireRole("admin", "dispatcher", "driver"), async (req, res, next) => {
+router.get("/", requireRole("admin", "driver"), async (req, res, next) => {
   try {
     const result = await db.listTrucks({
       status: req.query.status,
@@ -36,7 +36,7 @@ router.get("/", requireRole("admin", "dispatcher", "driver"), async (req, res, n
   }
 });
 
-router.get("/summary", requireRole("admin", "dispatcher", "driver"), async (_req, res, next) => {
+router.get("/summary", requireRole("admin", "driver"), async (_req, res, next) => {
   try {
     res.json(await db.truckSummary());
   } catch (error) {
@@ -66,7 +66,7 @@ router.post("/", requireRole("admin"), validate(truckSchema), async (req, res, n
   }
 });
 
-router.patch("/:id", requireRole("admin", "dispatcher", "driver"), async (req, res, next) => {
+router.patch("/:id", requireRole("admin", "driver"), async (req, res, next) => {
   try {
     const options = req.user.role === "driver" ? { driverId: req.user.sub } : {};
     const truck = await db.updateTruck(req.params.id, req.body, options);

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { LockKeyhole, Truck } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/Button";
+import { BrandLogo } from "../components/BrandLogo";
 import { roleHome } from "../utils/helpers";
 
 export function ChangePasswordPage() {
@@ -56,9 +57,7 @@ export function ChangePasswordPage() {
       <div className="relative mx-auto flex min-h-screen max-w-lg items-center px-4 py-10">
         <div className="auth-card w-full p-6 md:p-8">
           <div className="mb-6 flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary-container text-on-secondary">
-              <Truck size={22} />
-            </span>
+            <BrandLogo size="sm" linkToHome={false} />
             <div>
               <h1 className="text-2xl font-bold text-primary">Set a new password</h1>
               <p className="text-sm text-on-surface-variant">

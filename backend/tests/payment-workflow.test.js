@@ -9,6 +9,7 @@ describe("30/70 cargo payment workflow", () => {
       requiredAmount: 300,
       stage: "Deposit Due",
       canPay: true,
+      fullPaymentOnce: false,
     });
   });
 
@@ -57,6 +58,21 @@ describe("30/70 cargo payment workflow", () => {
     expect(schedule.requiredAmount).toBe(0);
     expect(schedule.stage).toBe("Awaiting Delivery Confirmation");
   });
+  it("requires full payment once for shared trips", () => {
+    expect(paymentSchedule({ amount: 1000, fullPaymentOnce: true })).toEqual({
+      depositAmount: 1000,
+      balance: 1000,
+      requiredAmount: 1000,
+      stage: "Payment Due",
+      canPay: true,
+      fullPaymentOnce: true,
+    });
+    expect(paymentSchedule({ amount: 1000, amountPaid: 1000, fullPaymentOnce: true })).toMatchObject({
+      requiredAmount: 0,
+      stage: "Completed",
+      canPay: false,
+    });
+  });
 });
 
 describe("hasDepositPaid (trip start gate)", () => {
@@ -71,5 +87,13 @@ describe("hasDepositPaid (trip start gate)", () => {
   it("falls back to fare when invoice amount is missing", () => {
     expect(hasDepositPaid({ fare: 200, amountPaid: 60 })).toBe(true);
     expect(hasDepositPaid({ fare: 200, amountPaid: 59 })).toBe(false);
+  });
+});
+
+describe("shared full payment gate", () => {
+  it("requires 100% before shared pickup", async () => {
+    const { hasStartPaymentPaid } = await import("../lib/paymentWorkflow.js");
+    expect(hasStartPaymentPaid({ amount: 1000, amountPaid: 300, fullPaymentOnce: true })).toBe(false);
+    expect(hasStartPaymentPaid({ amount: 1000, amountPaid: 1000, fullPaymentOnce: true })).toBe(true);
   });
 });

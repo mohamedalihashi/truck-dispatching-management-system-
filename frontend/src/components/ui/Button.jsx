@@ -1,4 +1,15 @@
+import { Children } from "react";
+import { useLanguage } from "../../contexts/LanguageContext";
+
+function translateChild(child, t) {
+  if (typeof child !== "string") return child;
+  const trimmed = child.trim();
+  if (!trimmed) return child;
+  return child.replace(trimmed, t(trimmed));
+}
+
 export function Button({ children, variant = "primary", className = "", ...props }) {
+  const { t } = useLanguage();
   const variants = {
     primary:
       "bg-secondary-container text-on-secondary shadow-md hover:opacity-90 hover:shadow-lg active:scale-[0.98]",
@@ -14,7 +25,7 @@ export function Button({ children, variant = "primary", className = "", ...props
       className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
       {...props}
     >
-      {children}
+      {Children.map(children, (child) => translateChild(child, t))}
     </button>
   );
 }

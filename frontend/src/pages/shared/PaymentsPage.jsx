@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useLocation, useNavigate } from "react-router-dom";
 import { CreditCard, DollarSign, Edit3, Plus, Smartphone, Trash2, Wallet } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "../../components/ui/PageHeader";
@@ -9,6 +10,7 @@ import { MetricCard } from "../../components/ui/MetricCard";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { WaafiPayModal } from "../../components/WaafiPayModal";
+import { TripPaymentJourney } from "../../components/TripPaymentJourney";
 import {
   useCustomers,
   usePaymentMutations,
@@ -18,9 +20,13 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../services/api";
 import { isPayablePayment, money, paymentBalance } from "../../utils/helpers";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 export function PaymentsPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
   const isAdmin = user.role === "admin";
   const isCustomer = user.role === "customer";
   const { data, isLoading } = usePayments();
@@ -55,6 +61,23 @@ export function PaymentsPage() {
   const totalOutstanding = rows.reduce((sum, row) => sum + paymentBalance(row), 0);
   const waafiEnabled = waafiConfig?.enabled !== false;
   const currency = waafiConfig?.currency || "SLSH";
+
+  useEffect(() => {
+    const paymentId = location.state?.paymentId;
+    const openDeposit = location.state?.openDeposit;
+    if (!isCustomer || !rows.length) return;
+    if (!paymentId && !openDeposit) return;
+    const target =
+      (paymentId && rows.find((row) => row.id === paymentId)) ||
+      payable.find((row) => row.paymentStage === "Payment Due" || row.fullPaymentOnce) ||
+      payable.find((row) => row.paymentStage === "Deposit Due") ||
+      payable[0];
+    if (target && isPayablePayment(target)) {
+      setPaying(target);
+      setPayError("");
+      navigate(".", { replace: true, state: {} });
+    }
+  }, [isCustomer, location.state, rows, payable, navigate]);
 
   function openEdit(row) {
     setEditing(row);
@@ -139,11 +162,11 @@ export function PaymentsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title={isAdmin ? "Finance" : "Payment History"}
+        title={isAdmin ? "Finance" : t("customer.paymentPageTitle")}
         subtitle={
           isAdmin
             ? "Track marketplace payments, Waafi settlements, and invoice status in real time."
-            : "Pay the 30% deposit before the trip can start, then the remaining 70% after you confirm delivery."
+            : t("customer.paymentPageSubtitle")
         }
         actions={
           isAdmin ? (
@@ -154,19 +177,27 @@ export function PaymentsPage() {
         }
       />
 
+      {isCustomer ? <TripPaymentJourney /> : null}
+
       {isCustomer && payable.length > 0 ? (
         <div className="rounded-xl border border-secondary-container/30 bg-secondary-container/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-semibold text-on-surface">Lacag bixin sugaysa</p>
+              <p className="font-semibold text-on-surface">
+                {payable.some((row) => row.fullPaymentOnce || row.loadType === "SHARED")
+                  ? t("payments.paySharedFull")
+                  : t("payments.payFtlDeposit")}
+              </p>
               <p className="text-sm text-on-surface-variant">
-                {payable.length} invoice(s) — deposit must be paid before the trip starts; balance after delivery.
+                {payable.some((row) => row.fullPaymentOnce || row.loadType === "SHARED")
+                  ? `${payable.length} ${t("payments.sharedHint")}`
+                  : `${payable.length} ${t("payments.ftlHint")}`}
               </p>
             </div>
             {waafiEnabled && payable[0] ? (
               <Button onClick={() => { setPaying(payable[0]); setPayError(""); }}>
                 <Smartphone size={16} />
-                Pay with Waafi
+                {t("payments.payWithWaafi")}
               </Button>
             ) : null}
           </div>

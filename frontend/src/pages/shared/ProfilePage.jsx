@@ -13,11 +13,21 @@ import { resolveUploadUrl } from "../../config/api.js";
 import { roleHome } from "../../utils/helpers";
 
 const roleLabels = {
-  admin: "System Administrator",
-  dispatcher: "Senior Dispatcher",
-  customer: "Fleet Manager",
-  driver: "Driver Account"
+  admin: "Admin",
+  dispatcher: "Dispatcher",
+  customer: "Customer",
+  driver: "Driver"
 };
+
+function roleLabel(role) {
+  return roleLabels[role] || String(role || "User").replace(/_/g, " ");
+}
+
+function driverServiceLabel(serviceType) {
+  if (serviceType === "FTL") return "FTL (Full Truck)";
+  if (serviceType === "SHARED") return "Shared Load";
+  return "Not selected";
+}
 
 export function ProfilePage() {
   const { user, refreshUser } = useAuth();
@@ -35,7 +45,6 @@ export function ProfilePage() {
       ? (trucks?.data || []).find((item) => item.driverId === user.id)
       : null;
   const avatarSrc = user.avatarUrl ? resolveUploadUrl(user.avatarUrl) : null;
-  const dispatcher = user.dispatcherProfile || null;
   const truckDocs = truck?.documentUrls?.length
     ? truck.documentUrls
     : user.truckDocumentUrls || [];
@@ -138,7 +147,14 @@ export function ProfilePage() {
             {uploadingAvatar ? "Uploading photo…" : "Tap camera icon to change your photo"}
           </p>
           <h2 className="mt-4 text-2xl font-bold text-white">{user.name}</h2>
-          <p className="mt-1 text-sm text-white/70">{roleLabels[user.role]}</p>
+          <p className="mt-2 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-sm font-semibold text-white">
+            Role: {roleLabel(user.role)}
+          </p>
+          {user.role === "driver" && (
+            <p className="ml-2 mt-2 inline-flex rounded-full border border-secondary-container/60 bg-secondary-container/20 px-3 py-1 text-sm font-semibold text-white">
+              Service: {driverServiceLabel(user.serviceType)}
+            </p>
+          )}
           <div className="mt-6 space-y-3 text-sm text-white/80">
             <p className="flex items-center gap-2">
               <Mail size={16} className="text-secondary-container" /> {user.email}
@@ -159,20 +175,13 @@ export function ProfilePage() {
           <dl className="grid gap-4 sm:grid-cols-2">
             <Info label="Full name" value={user.name} icon={User} />
             <Info label="Email" value={user.email} icon={Mail} />
-            <Info label="Role" value={roleLabels[user.role]} icon={Shield} />
+            <Info label="Role" value={roleLabel(user.role)} icon={Shield} />
             <Info label="Phone" value={user.phone || "—"} icon={Phone} />
             {user.role === "driver" && (
               <>
+                <Info label="Driver service type" value={driverServiceLabel(user.serviceType)} icon={Truck} />
                 <Info label="License number" value={user.driverLicense || "—"} icon={FileText} />
                 <Info label="National ID" value={user.nationalIdNumber || "—"} icon={FileText} />
-              </>
-            )}
-            {user.role === "dispatcher" && dispatcher && (
-              <>
-                <Info label="Dispatcher code" value={dispatcher.dispatcherCode || "—"} icon={FileText} />
-                <Info label="National ID" value={dispatcher.nationalIdNumber || "—"} icon={FileText} />
-                <Info label="City" value={dispatcher.city || "—"} />
-                <Info label="Years of experience" value={dispatcher.yearsOfExperience ?? "—"} />
               </>
             )}
           </dl>
@@ -238,19 +247,6 @@ export function ProfilePage() {
                 : (
                     <DocumentCard label="Truck documents" url={null} />
                   )}
-            </DocumentsGrid>
-          )}
-
-          {user.role === "dispatcher" && (
-            <DocumentsGrid title="Dispatcher documents">
-              <DocumentCard
-                label="National ID front"
-                url={dispatcher?.nationalIdFrontUrl}
-                meta={dispatcher?.nationalIdNumber ? `ID ${dispatcher.nationalIdNumber}` : undefined}
-              />
-              <DocumentCard label="National ID back" url={dispatcher?.nationalIdBackUrl} />
-              <DocumentCard label="Profile photo" url={dispatcher?.profilePhotoUrl || user.avatarUrl} />
-              <DocumentCard label="CV" url={dispatcher?.cvUrl} />
             </DocumentsGrid>
           )}
         </section>

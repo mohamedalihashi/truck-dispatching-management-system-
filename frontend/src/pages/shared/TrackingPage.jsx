@@ -4,23 +4,23 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Button } from "../../components/ui/Button";
-import { FleetMap } from "../../components/map/FleetMap";
+import { LazyFleetMap } from "../../components/map/LazyFleetMap";
 import { useTripActions, useTripRoute, useTrips } from "../../hooks/useApi";
 import { useAuth } from "../../contexts/AuthContext";
 import { LIVE_MAP_STATUSES, nextTripStatus, roleHome } from "../../utils/helpers";
 import { matchSomaliaCity, resolveTripMapPosition } from "../../utils/geo";
 
-const LIVE_POLL_MS = 5_000;
+const LIVE_POLL_MS = 15_000;
 
 export function TrackingPage() {
   const { user } = useAuth();
   const { data, dataUpdatedAt, refetch, isFetching } = useTrips(
     {},
-    { refetchInterval: LIVE_POLL_MS }
+    { refetchInterval: LIVE_POLL_MS, refetchIntervalInBackground: false }
   );
   const actions = useTripActions();
   const [selectedId, setSelectedId] = useState(null);
-  const canManage = user.role === "dispatcher" || user.role === "admin";
+  const canManage = user.role === "admin";
   const base = roleHome(user.role);
   const live = (data?.data || []).filter((trip) => LIVE_MAP_STATUSES.includes(trip.status));
   const liveGpsCount = live.filter((trip) => resolveTripMapPosition(trip).live).length;
@@ -43,11 +43,13 @@ export function TrackingPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Live Tracking"
+        title={user.role === "customer" ? "Tracking" : "Tracking"}
         subtitle={
           user.role === "customer"
-            ? "Track your active shipments across Somalia in real time."
-            : "Realtime trip positions and dispatcher status controls."
+            ? "Live location for your active trips until delivery."
+            : user.role === "driver"
+              ? "Step 4 — share live location while the load is on the road."
+              : "Realtime trip positions and admin status controls."
         }
         actions={
           canManage ? (
@@ -92,7 +94,7 @@ export function TrackingPage() {
             </div>
           </div>
           <div className="relative min-h-[480px] flex-1">
-            <FleetMap
+            <LazyFleetMap
               trips={live}
               selectedId={selected?.id}
               onSelect={setSelectedId}

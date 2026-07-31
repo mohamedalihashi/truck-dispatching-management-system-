@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Truck } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { OtpCodeBanner } from "../components/ui/OtpCodeBanner";
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
+import { BrandLogo } from "../components/BrandLogo";
 import { api } from "../services/api";
 
 export function ForgotPasswordPage() {
@@ -77,11 +77,8 @@ export function ForgotPasswordPage() {
       <div className="hero-gradient absolute inset-0" />
       <div className="relative mx-auto flex min-h-screen max-w-lg items-center px-4 pb-[env(safe-area-inset-bottom)] pt-[calc(5rem+env(safe-area-inset-top))] lg:py-10">
         <div className="auth-card w-full p-6 md:p-8">
-          <Link to="/" className="mb-6 inline-flex items-center gap-2 text-xl font-bold text-primary">
-            <span className="rounded-lg bg-secondary-container p-2 text-white">
-              <Truck size={18} />
-            </span>
-            TruckDispatch
+          <Link to="/" className="mb-6 inline-flex items-center">
+            <BrandLogo size="sm" linkToHome={false} />
           </Link>
           <h1 className="text-3xl font-bold text-primary">Reset password</h1>
           <p className="mt-2 text-sm text-on-surface-variant">

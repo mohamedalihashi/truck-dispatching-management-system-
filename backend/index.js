@@ -28,7 +28,7 @@ const io = new Server(server, {
 app.set("io", io);
 
 io.on("connection", (socket) => {
-  socket.emit("system.ready", { message: "TruckDispatch realtime connected" });
+  socket.emit("system.ready", { message: "GaariHel realtime connected" });
   socket.on("location.updated", (payload) => {
     socket.broadcast.emit("location.updated", payload);
   });
@@ -38,7 +38,7 @@ io.on("connection", (socket) => {
 });
 
 server.listen(port, () => {
-  console.log(`TruckDispatch API running on http://127.0.0.1:${port}`);
+  console.log(`GaariHel API running on http://127.0.0.1:${port}`);
   console.log(`Health + integrations: http://127.0.0.1:${port}/api/health`);
 });
 

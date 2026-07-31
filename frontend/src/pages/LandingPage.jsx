@@ -1,9 +1,8 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import {
   ArrowRight,
   BookOpen,
-  ChevronLeft,
-  ChevronRight,
   ClipboardEdit,
   FileText,
   Globe,
@@ -11,13 +10,16 @@ import {
   Navigation,
   Shield,
   Share2,
-  Star,
   Truck,
   User,
-  UserCog,
   Video
 } from "lucide-react";
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
+import { PublicTrucksCatalog } from "../components/PublicTrucksCatalog";
+import { CustomerTestimonials } from "../components/CustomerTestimonials";
+import { BrandLogo } from "../components/BrandLogo";
+import { APP_NAME, APP_TAGLINE } from "../brand";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const HERO_IMG =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuD-PtSvT2g9IZwLnN_PKPkoAo1HIWoase3vkYDZZGwouK-l2S1hu7RPs__gfEY0MpbJPsac9i1smuEi2_Wc2Pu_B74WpiwnSGCbKnjXd5syzbcESK9mhfo6810W18L_UJWOnUL68mGj8bzl4hNAPWiTRr9gTZK9C3Hfukrm7nQucgn--mW2LBPrYh9_EkC2EpRpL2G9ba6EurGqbDWpSGYfu0KfQHe2CwKkvPqsO1YbSgeM3lPBLA7jSZQctcWKh95UBlz_-omM_c8";
@@ -28,36 +30,58 @@ const AVATARS = [
 ];
 
 export function LandingPage() {
+  const { hash } = useLocation();
+  const { t } = useLanguage();
+
+  useEffect(() => {
+    if (!hash) return;
+    const id = hash.replace("#", "");
+    const element = document.getElementById(id);
+    if (!element) return;
+
+    const timer = window.setTimeout(() => {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [hash]);
+
   return (
     <div className="bg-background text-on-surface selection:bg-secondary-fixed selection:text-on-secondary-fixed">
       <PublicSiteHeader variant="landing" />
 
       <main className="pt-[calc(4rem+env(safe-area-inset-top))] sm:pt-20">
-        <section className="hero-gradient relative flex min-h-[870px] items-center overflow-hidden">
+        <section className="hero-gradient relative flex min-h-[min(100svh,720px)] items-start overflow-hidden sm:min-h-[760px]">
           <div className="pointer-events-none absolute inset-0 opacity-10">
             <div className="absolute right-[-10%] top-20 h-[600px] w-[600px] rounded-full bg-secondary-container blur-[120px]" />
             <div className="absolute bottom-[-10%] left-[-5%] h-[400px] w-[400px] rounded-full bg-tertiary-fixed-dim blur-[100px]" />
           </div>
-          <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-8 px-6 py-20 lg:grid-cols-2 lg:px-6">
+          <div className="relative z-10 mx-auto grid w-full max-w-7xl items-center gap-8 px-6 pb-14 pt-8 sm:pt-10 lg:grid-cols-2 lg:px-6 lg:pb-16 lg:pt-12">
             <div className="space-y-4 text-white">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-on-primary-fixed-variant/20 px-4 py-1.5 backdrop-blur-md">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-secondary-container" />
-                <span className="text-xs font-medium uppercase tracking-widest text-secondary-fixed">Truck Dispatcher Platform</span>
+                <span className="text-xs font-medium uppercase tracking-widest text-secondary-fixed">{t("landing.badge")}</span>
               </div>
               <h1 className="text-5xl font-extrabold leading-[1.1] md:text-6xl">
-                Smart Truck Dispatching
+                {t("landing.title")}
                 <br />
-                <span className="text-secondary-fixed-dim">Simplified for You</span>
+                <span className="text-secondary-fixed-dim">{t("landing.titleAccent")}</span>
               </h1>
               <p className="max-w-lg text-lg text-on-primary-container">
-                Connect with trusted truck owners and drivers for fast, reliable, and affordable deliveries. Real-time monitoring and advanced fleet management at your fingertips.
+                {t("landing.subtitle")}
               </p>
               <div className="flex flex-wrap gap-4 pt-2">
                 <Link
                   to="/register"
                   className="group flex items-center gap-2 rounded-xl bg-secondary-container px-8 py-4 text-sm font-semibold text-on-secondary transition hover:shadow-xl"
                 >
-                  Book a Truck <ArrowRight className="transition group-hover:translate-x-1" size={18} />
+                  {t("landing.registerCta")} <ArrowRight className="transition group-hover:translate-x-1" size={18} />
+                </Link>
+                <Link
+                  to="/trucks"
+                  className="rounded-xl border border-white/20 bg-white/10 px-8 py-4 text-sm font-semibold text-white backdrop-blur-md hover:bg-white/20"
+                >
+                  {t("landing.browseCta")}
                 </Link>
                 <Link
                   to="/login"
@@ -66,14 +90,14 @@ export function LandingPage() {
                   Explore Platform
                 </Link>
               </div>
-              <div className="flex items-center gap-8 border-t border-white/10 pt-12">
+              <div className="flex items-center gap-8 border-t border-white/10 pt-8">
                 <div className="flex -space-x-3">
                   {AVATARS.map((src) => (
                     <img key={src} src={src} alt="" className="h-10 w-10 rounded-full border-2 border-[#0d1c32] object-cover" />
                   ))}
                 </div>
                 <p className="text-xs text-on-primary-container">
-                  Trusted by <span className="font-bold text-white">10,000+</span> Truck Dispatcher professionals worldwide
+                  Trusted by <span className="font-bold text-white">10,000+</span> GaariHel professionals worldwide
                 </p>
               </div>
             </div>
@@ -124,10 +148,10 @@ export function LandingPage() {
         <section id="features" className="px-6 py-24">
           <div className="mx-auto max-w-7xl">
             <div className="mb-16 space-y-4 text-center">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-secondary">Platform Excellence</p>
-              <h2 className="text-[32px] font-bold tracking-tight text-primary">Why Choose TruckDispatch?</h2>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-secondary">{t("Platform Excellence")}</p>
+              <h2 className="text-[32px] font-bold tracking-tight text-primary">{t("landing.featuresTitle")}</h2>
               <p className="mx-auto max-w-2xl text-on-surface-variant">
-                We provide the most robust infrastructure for modern truck dispatch, built for precision and speed.
+                {t("We provide the most robust infrastructure for modern truck dispatch, built for precision and speed.")}
               </p>
             </div>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -136,8 +160,8 @@ export function LandingPage() {
                   <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary-fixed text-secondary">
                     <Shield size={28} />
                   </div>
-                  <h3 className="mb-4 text-xl font-semibold text-primary">Reliable & Safe</h3>
-                  <p className="text-on-surface-variant">Every truck and driver on our platform undergoes a rigorous 5-step verification process to ensure safety.</p>
+                  <h3 className="mb-4 text-xl font-semibold text-primary">{t("Reliable & Safe")}</h3>
+                  <p className="text-on-surface-variant">{t("Every truck and driver on our platform undergoes a rigorous 5-step verification process to ensure safety.")}</p>
                 </div>
               </article>
               <article className="bento-card relative min-h-[300px] overflow-hidden rounded-3xl bg-primary-container p-6 text-white md:col-span-2">
@@ -146,8 +170,8 @@ export function LandingPage() {
                     <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur">
                       <Navigation size={28} />
                     </div>
-                    <h3 className="mb-4 text-xl font-semibold">Real-time Tracking</h3>
-                    <p className="max-w-md text-on-primary-container">GPS integration across all fleet vehicles provides sub-meter accuracy for real-time shipment monitoring and predictive ETA.</p>
+                    <h3 className="mb-4 text-xl font-semibold">{t("Real-time Tracking")}</h3>
+                    <p className="max-w-md text-on-primary-container">{t("GPS integration across all fleet vehicles provides sub-meter accuracy for real-time shipment monitoring and predictive ETA.")}</p>
                   </div>
                   <div className="mt-8 flex gap-2">
                     <div className="h-1.5 w-12 rounded-full bg-secondary-container" />
@@ -162,8 +186,8 @@ export function LandingPage() {
                   <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-on-tertiary-container/10 text-on-tertiary-container">
                     <BookOpen size={28} />
                   </div>
-                  <h3 className="mb-4 text-xl font-semibold text-primary">Easy Booking</h3>
-                  <p className="max-w-sm text-on-surface-variant">Book a truck in just a few taps. Our intelligent dispatch engine matches you with the best nearby available driver instantly.</p>
+                  <h3 className="mb-4 text-xl font-semibold text-primary">{t("Easy Booking")}</h3>
+                  <p className="max-w-sm text-on-surface-variant">{t("Browse FTL trucks and shared loads, view details first, then book directly with the driver in a few taps.")}</p>
                 </div>
                 <div className="hidden w-1/3 rotate-3 aspect-square rounded-2xl border border-outline-variant/20 bg-surface-container-lowest p-4 shadow-inner sm:block">
                   <div className="flex h-full w-full flex-col gap-2 rounded-lg bg-surface-container-high p-2">
@@ -178,8 +202,8 @@ export function LandingPage() {
                   <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-green-50 text-green-600">
                     <FileText size={28} />
                   </div>
-                  <h3 className="mb-4 text-xl font-semibold text-primary">Secure Payments</h3>
-                  <p className="text-on-surface-variant">Multi-layer encryption and escrow-based payment releases ensure every transaction is protected and transparent.</p>
+                  <h3 className="mb-4 text-xl font-semibold text-primary">{t("Secure Payments")}</h3>
+                  <p className="text-on-surface-variant">{t("Multi-layer encryption and escrow-based payment releases ensure every transaction is protected and transparent.")}</p>
                 </div>
               </article>
             </div>
@@ -189,24 +213,26 @@ export function LandingPage() {
         <section id="process" className="bg-surface-container-lowest py-24">
           <div className="mx-auto max-w-7xl px-6">
             <div className="mb-20 text-center">
-              <h2 className="text-[32px] font-bold text-primary">How It Works</h2>
-              <p className="mt-4 text-on-surface-variant">Streamlining truck dispatch in four simple steps</p>
+              <h2 className="text-[32px] font-bold text-primary">{t("landing.processTitle")}</h2>
+              <p className="mt-4 text-on-surface-variant">
+                {t("From browsing to delivery — customers and drivers connect directly on one marketplace")}
+              </p>
             </div>
             <div className="relative">
               <div className="absolute left-0 top-12 hidden h-[2px] w-full border-t border-dashed border-outline-variant lg:block" />
               <div className="relative z-10 grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
                 {[
-                  [ClipboardEdit, "1. Book a Truck", "Select your pickup and delivery locations."],
-                  [User, "2. We Assign", "We find the best truck for your shipment."],
-                  [Navigation, "3. Track in Real-time", "Track your shipment live on the map."],
-                  [Shield, "4. Delivered", "Your shipment is delivered safely."]
+                  [Truck, "1. Browse Trucks & Loads", "See FTL trucks and shared trips together. Filter by type, view full details, then choose what fits."],
+                  [ClipboardEdit, "2. Book with the Driver", "Book a full truck or shared capacity. Tell us if you are sending or receiving the cargo — no middleman."],
+                  [Navigation, "3. Track in Real Time", "Follow live GPS from pickup to delivery. Drivers update status and share location across Somalia."],
+                  [Shield, "4. Deliver & Pay", "Confirm delivery, pay securely with WaafiPay, and the driver receives their share automatically."]
                 ].map(([Icon, title, text]) => (
                   <div key={title} className="group text-center">
                     <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-4 border-background bg-surface-container-lowest shadow-md transition duration-300 group-hover:border-secondary-container">
                       <Icon className="text-primary" size={36} />
                     </div>
-                    <h4 className="mb-2 text-xl font-semibold">{title}</h4>
-                    <p className="text-sm text-on-surface-variant">{text}</p>
+                    <h4 className="mb-2 text-xl font-semibold">{t(title)}</h4>
+                    <p className="text-sm text-on-surface-variant">{t(text)}</p>
                   </div>
                 ))}
               </div>
@@ -214,81 +240,55 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="testimonials" className="overflow-hidden py-24">
+        <section id="trucks" className="bg-surface-container-low py-24">
           <div className="mx-auto max-w-7xl px-6">
-            <div className="mb-16 flex flex-col items-end justify-between gap-4 lg:flex-row">
-              <div className="max-w-xl">
-                <h2 className="text-[32px] font-bold text-primary">What Our Customers Say</h2>
-                <p className="mt-4 text-on-surface-variant">
-                  Join thousands of satisfied business owners who have transformed their supply chain with TruckDispatch.
+            <div className="mb-10 flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
+              <div>
+                <h2 className="text-[32px] font-bold text-primary">Browse Trucks & Loads</h2>
+                <p className="mt-3 max-w-2xl text-on-surface-variant">
+                  FTL trucks and shared loads together. Filter by service type, view full details, then book when ready.
                 </p>
               </div>
-              <div className="flex gap-4">
-                <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full border border-outline-variant hover:bg-secondary-container hover:text-white"><ChevronLeft /></button>
-                <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full border border-outline-variant hover:bg-secondary-container hover:text-white"><ChevronRight /></button>
-              </div>
+              <Link to="/trucks" className="text-sm font-semibold text-secondary-container hover:underline">
+                Open full browser
+              </Link>
             </div>
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
-              {[
-                ["Great service! My goods were delivered on time and in perfect condition. The driver was professional.", "Sarah Johnson", "CEO, Retail Solutions", AVATARS[0]],
-                ["TruckDispatch made truck dispatch so easy and transparent. Real-time tracking is very accurate and helpful for our operations.", "Michael Brown", "Operations Manager, FabLink", AVATARS[1]],
-                ["Excellent support and the platform is very intuitive. Our fleet efficiency has increased by 40% since we joined.", "Priya Sharma", "Director, Global Supply", AVATARS[2]]
-              ].map(([quote, name, role, img]) => (
-                <article key={name} className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-sm">
-                  <div className="mb-4 flex gap-1 text-secondary-container">
-                    {Array.from({ length: 5 }).map((_, i) => <Star key={i} size={18} fill="currentColor" />)}
-                  </div>
-                  <p className="mb-8 text-lg italic text-primary">"{quote}"</p>
-                  <div className="flex items-center gap-4">
-                    <img src={img} alt="" className="h-12 w-12 rounded-full object-cover" />
-                    <div>
-                      <p className="text-sm font-semibold text-primary">{name}</p>
-                      <p className="text-xs text-on-surface-variant">{role}</p>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <PublicTrucksCatalog limit={6} compact showViewAll />
           </div>
         </section>
+
+        <CustomerTestimonials />
 
         <section className="relative overflow-hidden bg-primary-container py-24">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(254,107,0,0.08),transparent)]" />
           <div className="relative z-10 mx-auto max-w-7xl px-6 text-center text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary-fixed-dim">
-              Somalia Truck Dispatcher Network
+              Somalia Truck Marketplace
             </p>
-            <h2 className="mt-3 text-[32px] font-bold">Join the TruckDispatch Marketplace</h2>
+            <h2 className="mt-3 text-[32px] font-bold">Join the GaariHel Marketplace</h2>
             <p className="mx-auto mt-4 max-w-2xl text-on-primary-container">
-              Book shipments, assign drivers, and track deliveries across Somalia — one platform for every role in your supply chain.
+              Browse FTL trucks and shared loads, book directly with drivers, and track every shipment across Somalia.
             </p>
-            <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
               {[
                 {
                   icon: User,
                   title: "Customer",
-                  text: "Book trucks, track shipments, and manage payments from one dashboard.",
+                  text: "Browse trucks, book FTL or shared capacity, track shipments, and pay after delivery.",
                   to: "/register",
                   cta: "Create Account"
                 },
                 {
                   icon: Truck,
                   title: "Driver",
-                  text: "View assigned jobs, update trip status, and upload proof of delivery.",
-                  to: "/login",
-                  cta: "Driver Sign In"
-                },
-                {
-                  icon: UserCog,
-                  title: "Dispatcher",
-                  text: "Match cargo with available trucks and monitor fleet operations in real time.",
-                  to: "/login",
-                  cta: "Dispatch Console"
+                  text: "Register with your truck, accept FTL jobs, post shared trips, and get paid when customers pay.",
+                  to: "/register",
+                  cta: "Register as Driver"
                 },
                 {
                   icon: Shield,
                   title: "Admin",
-                  text: "Manage users, trucks, reports, and platform settings for your organization.",
+                  text: "Verify drivers, manage fleet and users, handle payouts, and run platform reports.",
                   to: "/login",
                   cta: "Admin Portal"
                 }
@@ -322,11 +322,15 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-16 grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-4">
             <div>
-              <div className="mb-6 flex items-center gap-2">
-                <div className="rounded-lg bg-secondary-container p-1.5 text-white"><Truck size={18} /></div>
-                <span className="text-xl font-semibold text-primary">TruckDispatch</span>
+              <div className="mb-6">
+                <BrandLogo size="md" linkToHome={false} />
               </div>
-              <p className="mb-8 text-sm text-on-surface-variant">A smart Truck Dispatcher platform connecting shippers, drivers and truck owners for seamless deliveries.</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-secondary">
+                {APP_TAGLINE}
+              </p>
+              <p className="mb-8 text-sm text-on-surface-variant">
+                {APP_NAME} connects shippers and drivers for seamless deliveries across Somalia.
+              </p>
               <div className="flex gap-4">
                 {[Share2, Globe, Video].map((Icon) => (
                   <span key={Icon.name} className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-container text-primary">
@@ -354,7 +358,7 @@ export function LandingPage() {
             </div>
             <div>
               <h5 className="mb-6 text-sm font-semibold text-primary">Get started</h5>
-              <p className="mb-4 text-sm text-on-surface-variant">Book a truck or sign in to your dispatcher dashboard.</p>
+              <p className="mb-4 text-sm text-on-surface-variant">Book a truck or register as a customer or driver.</p>
               <div className="flex flex-wrap gap-2">
                 <Link to="/register" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Register</Link>
                 <Link to="/login" className="rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold">Sign in</Link>
@@ -362,7 +366,7 @@ export function LandingPage() {
             </div>
           </div>
           <div className="flex flex-col items-center justify-between gap-4 border-t border-outline-variant pt-8 md:flex-row">
-            <p className="text-sm text-on-surface-variant">© {new Date().getFullYear()} TruckDispatch. All rights reserved.</p>
+            <p className="text-sm text-on-surface-variant">© {new Date().getFullYear()} GaariHel. All rights reserved.</p>
             <div className="flex gap-6 text-sm text-on-surface-variant">
               <Link to="/privacy" className="hover:text-primary">Privacy</Link>
               <Link to="/terms" className="hover:text-primary">Terms</Link>

@@ -1,43 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
-import { MapPin, Package, Truck, UserRound } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ImagePlus, Package, Truck, X } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { useCreateCargo } from "../../hooks/useApi";
-import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../services/api";
-import { money } from "../../utils/helpers";
 import {
   formatSomaliaLocation,
   somaliaLocations,
   somaliaRegions
 } from "../../data/somaliaLocations";
 
-const SOMALI_PHONE_PATTERN = /^(?:(?:\+|00)?252|0)?(?:6[1-9]|7\d|9\d)\d{7}$/;
-const LOOSE_PHONE_PATTERN = /^\+?\d{7,15}$/;
-
-function isValidPhone(value) {
-  const cleaned = String(value || "").replace(/[\s()-]/g, "");
-  return SOMALI_PHONE_PATTERN.test(cleaned) || LOOSE_PHONE_PATTERN.test(cleaned);
-}
-
-function getLocalDateValue(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export function BookTruckPage() {
-  const today = getLocalDateValue();
   const create = useCreateCargo();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [serverError, setServerError] = useState("");
-  const [estimate, setEstimate] = useState(null);
-  const [estimateLoading, setEstimateLoading] = useState(false);
+  const location = useLocation();
   const submissionKey = useRef(crypto.randomUUID());
+  const selectionProcessed = useRef(false);
+  const [preferredTruckId, setPreferredTruckId] = useState("");
+  const [truckLabel, setTruckLabel] = useState("");
+  const [cargoPhotos, setCargoPhotos] = useState([]);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [serverError, setServerError] = useState("");
+
   const {
     register,
     handleSubmit,
@@ -46,385 +33,249 @@ export function BookTruckPage() {
     formState: { errors, isSubmitting }
   } = useForm({
     defaultValues: {
-      customerRole: "",
       fromRegion: "",
       fromDistrict: "",
-      fromNeighborhood: "",
+      fromLocation: "",
       toRegion: "",
       toDistrict: "",
-      toNeighborhood: "",
+      toLocation: "",
       truckType: "",
-      weight: "",
-      preferredPickupDate: "",
-      description: "",
-      senderName: "",
-      senderPhone: "",
-      receiverName: "",
-      receiverPhone: ""
+      weightAmount: "",
+      weightUnit: "tons"
     }
   });
-
   const values = watch();
   const fromDistricts = somaliaLocations[values.fromRegion] || [];
   const toDistricts = somaliaLocations[values.toRegion] || [];
-  const profileReady = Boolean(user?.name?.trim() && isValidPhone(user?.phone));
-
-  function changeRole(role) {
-    setValue("customerRole", role, { shouldValidate: true });
-    ["senderName", "senderPhone", "receiverName", "receiverPhone"].forEach((field) => {
-      setValue(field, "", { shouldValidate: false });
-    });
-  }
-
-  async function onSubmit(formValues) {
-    setServerError("");
-    if (!profileReady) {
-      setServerError("Add your name and a phone number (at least 7 digits) in Profile before booking.");
-      return;
-    }
-    try {
-      const payload = {
-        customerRole: formValues.customerRole,
-        fromRegion: formValues.fromRegion,
-        fromDistrict: formValues.fromDistrict,
-        fromNeighborhood: formValues.fromNeighborhood.trim(),
-        toRegion: formValues.toRegion,
-        toDistrict: formValues.toDistrict,
-        toNeighborhood: formValues.toNeighborhood.trim(),
-        truckType: formValues.truckType.trim(),
-        weight: String(formValues.weight).trim(),
-        preferredPickupDate: formValues.preferredPickupDate,
-        description: formValues.description.trim(),
-        submissionKey: submissionKey.current
-      };
-
-      if (formValues.customerRole === "SENDER") {
-        payload.receiverName = formValues.receiverName.trim();
-        payload.receiverPhone = formValues.receiverPhone.trim();
-      } else {
-        payload.senderName = formValues.senderName.trim();
-        payload.senderPhone = formValues.senderPhone.trim();
-      }
-
-      const request = await create.mutateAsync(payload);
-      navigate("/customer/shipments", { state: { created: request.id } });
-    } catch (err) {
-      const issueMessage = err.details?.issues?.[0]?.message || err.issues?.[0]?.message;
-      setServerError(issueMessage || err.message);
-    }
-  }
-
-  const fromPreview = formatSomaliaLocation(values.fromNeighborhood, values.fromDistrict, values.fromRegion);
-  const toPreview = formatSomaliaLocation(values.toNeighborhood, values.toDistrict, values.toRegion);
 
   useEffect(() => {
-    if (!fromPreview || !toPreview || !values.weight || Number(values.weight) <= 0) {
-      setEstimate(null);
+    if (selectionProcessed.current) return;
+    selectionProcessed.current = true;
+    const selectedTruck = location.state;
+    if (!selectedTruck?.preferredTruckId) {
+      navigate("/customer/find-trucks", { replace: true });
       return;
     }
+    setPreferredTruckId(selectedTruck.preferredTruckId);
+    setTruckLabel(selectedTruck.truckLabel || selectedTruck.truckType || "Selected truck");
+    setValue("truckType", selectedTruck.truckType || "General");
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate, setValue]);
 
-    const timer = setTimeout(() => {
-      setEstimateLoading(true);
-      api
-        .estimatePricing({
-          pickup: fromPreview,
-          destination: toPreview,
-          weight: values.weight,
-          fromRegion: values.fromRegion,
-          fromDistrict: values.fromDistrict,
-          toRegion: values.toRegion,
-          toDistrict: values.toDistrict
-        })
-        .then((result) => setEstimate(result))
-        .catch(() => setEstimate(null))
-        .finally(() => setEstimateLoading(false));
-    }, 350);
+  function selectPhotos(event) {
+    const files = [...(event.target.files || [])].slice(0, 1);
+    photoPreviews.forEach((url) => URL.revokeObjectURL(url));
+    setCargoPhotos(files);
+    setPhotoPreviews(files.map((file) => URL.createObjectURL(file)));
+  }
 
-    return () => clearTimeout(timer);
-  }, [fromPreview, toPreview, values.weight]);
+  function clearPhotos() {
+    photoPreviews.forEach((url) => URL.revokeObjectURL(url));
+    setCargoPhotos([]);
+    setPhotoPreviews([]);
+  }
+
+  async function onSubmit(values) {
+    if (!preferredTruckId || create.isPending || uploadingImage) return;
+    setServerError("");
+    try {
+      const unit = values.weightUnit === "kg" ? "kg" : "tons";
+      const request = await create.mutateAsync({
+        pickup: formatSomaliaLocation(values.fromLocation, values.fromDistrict, values.fromRegion),
+        destination: formatSomaliaLocation(values.toLocation, values.toDistrict, values.toRegion),
+        truckType: values.truckType,
+        weight: `${values.weightAmount} ${unit}`,
+        description: `Cargo shipment weighing ${values.weightAmount} ${unit}`,
+        preferredTruckId,
+        loadType: "FTL",
+        submissionKey: submissionKey.current
+      });
+
+      if (cargoPhotos[0] && request?.id) {
+        setUploadingImage(true);
+        try {
+          const formData = new FormData();
+          formData.append("cargoImage", cargoPhotos[0]);
+          await api.uploadCargoImage(request.id, formData);
+        } catch {
+          // Photo upload is optional and must not invalidate a successfully created booking.
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+
+      navigate("/customer/shipments", { state: { created: request.id } });
+    } catch (error) {
+      setServerError(error.details?.issues?.[0]?.message || error.message);
+    }
+  }
+
+  if (!preferredTruckId) {
+    return <p className="py-16 text-center text-sm text-on-surface-variant">Choose an FTL truck to book…</p>;
+  }
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Book a Truck" subtitle="Create a cargo request for pickup and delivery." />
+      <PageHeader
+        title="FTL Booking"
+        subtitle="Enter the route, cargo weight, and optional cargo photos."
+      />
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="space-y-7 rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] sm:p-6 lg:col-span-8"
-        >
-          <FormSection title="Customer Role">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                ["SENDER", "I am the Sender"],
-                ["RECEIVER", "I am the Receiver"]
-              ].map(([value, label]) => (
-                <label
-                  key={value}
-                  className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-outline-variant px-4 py-3 text-sm font-medium hover:bg-surface-container-low"
-                >
-                  <input
-                    type="radio"
-                    value={value}
-                    checked={values.customerRole === value}
-                    onChange={() => changeRole(value)}
-                    className="h-5 w-5"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <input type="hidden" {...register("customerRole", { required: "Select whether you are the sender or receiver" })} />
-            <ErrorText message={errors.customerRole?.message} />
-          </FormSection>
+      <form
+        className="mx-auto max-w-3xl space-y-6 rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] sm:p-7"
+        onSubmit={handleSubmit(onSubmit)}
+      >
+        <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Selected Truck</p>
+          <p className="mt-1 flex items-center gap-2 font-semibold text-primary">
+            <Truck size={18} /> {truckLabel}
+          </p>
+        </div>
 
-          <div className="grid gap-7 md:grid-cols-2">
-            <FormSection title="From">
-              <div className="space-y-4">
-                <Field label="From Region" error={errors.fromRegion?.message}>
-                  <select
-                    className="stitch-input"
-                    {...register("fromRegion", {
-                      required: "From region is required",
-                      onChange: () => setValue("fromDistrict", "", { shouldValidate: true })
-                    })}
-                  >
-                    <option value="">Select region</option>
-                    {somaliaRegions.map((region) => <option key={region}>{region}</option>)}
-                  </select>
-                </Field>
-                <Field label="From District" error={errors.fromDistrict?.message}>
-                  <select
-                    className="stitch-input disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={!values.fromRegion}
-                    {...register("fromDistrict", { required: "From district is required" })}
-                  >
-                    <option value="">Select district</option>
-                    {fromDistricts.map((district) => <option key={district}>{district}</option>)}
-                  </select>
-                </Field>
-                <Field label="Xaafadda" error={errors.fromNeighborhood?.message}>
-                  <input
-                    className="stitch-input"
-                    placeholder="Enter pickup neighborhood or detailed address"
-                    {...register("fromNeighborhood", {
-                      required: "From neighborhood is required",
-                      validate: (value) => value.trim().length > 0 || "From neighborhood cannot be blank"
-                    })}
-                  />
-                </Field>
-              </div>
-            </FormSection>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <LocationFields
+            title="From"
+            locationLabel="Pickup location"
+            prefix="from"
+            register={register}
+            errors={errors}
+            region={values.fromRegion}
+            districts={fromDistricts}
+            setValue={setValue}
+          />
+          <LocationFields
+            title="To"
+            locationLabel="Delivery location"
+            prefix="to"
+            register={register}
+            errors={errors}
+            region={values.toRegion}
+            districts={toDistricts}
+            setValue={setValue}
+          />
+        </div>
 
-            <FormSection title="To">
-              <div className="space-y-4">
-                <Field label="To Region" error={errors.toRegion?.message}>
-                  <select
-                    className="stitch-input"
-                    {...register("toRegion", {
-                      required: "To region is required",
-                      onChange: () => setValue("toDistrict", "", { shouldValidate: true })
-                    })}
-                  >
-                    <option value="">Select region</option>
-                    {somaliaRegions.map((region) => <option key={region}>{region}</option>)}
-                  </select>
-                </Field>
-                <Field label="To District" error={errors.toDistrict?.message}>
-                  <select
-                    className="stitch-input disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={!values.toRegion}
-                    {...register("toDistrict", { required: "To district is required" })}
-                  >
-                    <option value="">Select district</option>
-                    {toDistricts.map((district) => <option key={district}>{district}</option>)}
-                  </select>
-                </Field>
-                <Field label="Xaafadda" error={errors.toNeighborhood?.message}>
-                  <input
-                    className="stitch-input"
-                    placeholder="Enter delivery neighborhood or detailed address"
-                    {...register("toNeighborhood", {
-                      required: "To neighborhood is required",
-                      validate: (value) => value.trim().length > 0 || "To neighborhood cannot be blank"
-                    })}
-                  />
-                </Field>
-              </div>
-            </FormSection>
+        <Field label="Truck Type" error={errors.truckType?.message}>
+          <div className="relative">
+            <Truck className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" size={17} />
+            <input
+              className="stitch-input w-full bg-surface-container-low pl-10"
+              readOnly
+              {...register("truckType", { required: "Truck type is required" })}
+            />
           </div>
+        </Field>
 
-          <FormSection title="Cargo Details">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Required Truck Type" error={errors.truckType?.message}>
-                <input className="stitch-input" placeholder="Write the truck type you need" {...register("truckType", { required: "Truck type is required" })} />
-              </Field>
-              <Field label="Cargo Weight" error={errors.weight?.message}>
-                <input
-                  className="stitch-input"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="Weight in tons"
-                  {...register("weight", {
-                    required: "Cargo weight is required",
-                    validate: (value) => Number(value) > 0 || "Cargo weight must be positive"
-                  })}
-                />
-              </Field>
-              <Field label="Preferred Pickup Date" error={errors.preferredPickupDate?.message}>
-                <input
-                  className="stitch-input"
-                  type="date"
-                  min={today}
-                  {...register("preferredPickupDate", {
-                    required: "Preferred pickup date is required",
-                    validate: (value) => value >= getLocalDateValue() || "Pickup date cannot be in the past"
-                  })}
-                />
-              </Field>
-              <Field label="Cargo Description" error={errors.description?.message} className="sm:col-span-2">
-                <textarea
-                  className="stitch-input min-h-24"
-                  {...register("description", {
-                    required: "Cargo description is required",
-                    validate: (value) => value.trim().length > 0 || "Description cannot be blank"
-                  })}
-                />
-              </Field>
+        <Field label="Weight" error={errors.weightAmount?.message}>
+          <div className="grid grid-cols-[1fr_130px] gap-3">
+            <div className="relative">
+              <Package className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" size={17} />
+              <input
+                className="stitch-input w-full pl-10"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="Enter amount"
+                {...register("weightAmount", {
+                  required: "Weight is required",
+                  validate: (value) => Number(value) > 0 || "Weight must be greater than zero"
+                })}
+              />
             </div>
-          </FormSection>
+            <select className="stitch-input w-full" {...register("weightUnit")}>
+              <option value="kg">Kilograms (kg)</option>
+              <option value="tons">Tons</option>
+            </select>
+          </div>
+        </Field>
 
-          <FormSection title="Contact Details">
-            {values.customerRole ? (
-              <div className="space-y-4">
-                <div className="rounded-lg bg-surface-container-low p-4 text-sm">
-                  <p className="font-semibold text-primary-container">
-                    {values.customerRole === "SENDER" ? "Sender" : "Receiver"} (your profile)
-                  </p>
-                  <p className="mt-1 text-on-surface-variant">{user?.name || "Name missing"} · {user?.phone || "Phone missing"}</p>
-                </div>
-                {values.customerRole === "SENDER" ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <ContactFields party="Receiver" register={register} errors={errors} />
-                  </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <ContactFields party="Sender" register={register} errors={errors} />
-                  </div>
-                )}
+        <Field label="Cargo Photos">
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant bg-surface-container p-6 text-center transition hover:border-primary hover:bg-primary/5">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              onChange={selectPhotos}
+            />
+            <ImagePlus className="text-primary" size={30} />
+            <span className="mt-2 text-sm font-semibold text-on-surface">Select cargo photos</span>
+            <span className="mt-1 text-xs text-on-surface-variant">JPG, PNG or WebP</span>
+          </label>
+
+          {photoPreviews.length > 0 && (
+            <div className="mt-3">
+              <div className="grid grid-cols-3 gap-3">
+                {photoPreviews.map((url, index) => (
+                  <img key={url} src={url} alt={`Cargo ${index + 1}`} className="aspect-square w-full rounded-lg object-cover" />
+                ))}
               </div>
-            ) : (
-              <p className="text-sm text-on-surface-variant">Select your customer role to enter the other contact.</p>
-            )}
-          </FormSection>
-
-          {!profileReady && (
-            <p className="rounded-lg bg-error/10 p-3 text-sm text-error">
-              Profile name/phone is missing or too short. Open{" "}
-              <a className="font-semibold underline" href="/customer/profile">
-                Profile
-              </a>{" "}
-              and save a phone with at least 7 digits, then try again.
-            </p>
+              <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-error" onClick={clearPhotos}>
+                <X size={14} /> Remove photos
+              </button>
+            </div>
           )}
-          {serverError && <p className="rounded-lg bg-error/10 p-3 text-sm text-error">{serverError}</p>}
-          <Button disabled={isSubmitting || create.isPending || !profileReady}>
-            {create.isPending ? "Submitting…" : "Submit Cargo Request"}
-          </Button>
-        </form>
+        </Field>
 
-        <aside className="space-y-4 lg:col-span-4">
-          <div className="rounded-xl border border-outline-variant bg-primary-container p-6 text-white shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
-            <p className="text-xs font-medium uppercase tracking-wider text-on-primary-container">Route preview</p>
-            <div className="mt-3 space-y-3">
-              <p><span className="font-semibold">From:</span> {fromPreview || "Select pickup location"}</p>
-              <p><span className="font-semibold">To:</span> {toPreview || "Select delivery location"}</p>
-            </div>
-            <div className="mt-6 space-y-3 text-sm text-on-primary-container">
-              <p className="flex items-center gap-2"><Truck size={16} className="text-secondary-fixed" /> {values.truckType || "Truck type"}</p>
-              <p className="flex items-center gap-2"><Package size={16} className="text-secondary-fixed" /> {values.weight ? `${values.weight} tons` : "Cargo weight"}</p>
-              <p className="flex items-center gap-2"><UserRound size={16} className="text-secondary-fixed" /> {values.customerRole === "SENDER" ? "You are the sender" : values.customerRole === "RECEIVER" ? "You are the receiver" : "Customer role"}</p>
-              <p className="flex items-center gap-2"><MapPin size={16} className="text-secondary-fixed" /> Somalia marketplace dispatch</p>
-            </div>
-          </div>
+        {serverError && <p className="rounded-lg bg-error/10 p-3 text-sm text-error">{serverError}</p>}
 
-          <div className="rounded-xl border border-secondary-container/30 bg-secondary-fixed/15 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Suggested price</p>
-            {estimateLoading ? (
-              <p className="mt-2 text-sm text-on-surface-variant">Calculating…</p>
-            ) : estimate ? (
-              <div className="mt-2 space-y-1">
-                <p className="text-2xl font-bold text-primary-container">{money(estimate.calculatedPrice)}</p>
-                <p className="text-sm text-on-surface-variant">
-                  ~{estimate.distanceKm} km · ETA {estimate.estimatedTime}
-                </p>
-                <p className="text-xs text-on-surface-variant">
-                  Base {money(estimate.breakdown?.baseFee)} + distance {money(estimate.breakdown?.distanceCharge)} + weight{" "}
-                  {money(estimate.breakdown?.weightCharge)}
-                </p>
-                <p className="pt-2 text-xs text-on-surface-variant">
-                  This is an automatic estimate from distance (km). Dispatcher assigns a driver — no quote approval needed.
-                </p>
-              </div>
-            ) : (
-              <p className="mt-2 text-sm text-on-surface-variant">
-                Select pickup, delivery, and weight to see the automatic price.
-              </p>
-            )}
-          </div>
-        </aside>
-      </div>
+        <Button className="w-full" disabled={isSubmitting || create.isPending || uploadingImage}>
+          {uploadingImage ? "Uploading photo…" : create.isPending ? "Sending request…" : "Request"}
+        </Button>
+      </form>
     </div>
   );
 }
 
-function ContactFields({ party, register, errors }) {
-  const key = party.toLowerCase();
-  return (
-    <>
-      <Field label={`${party} Name`} error={errors[`${key}Name`]?.message}>
-        <input
-          className="stitch-input"
-          {...register(`${key}Name`, {
-            required: `${party} name is required`,
-            validate: (value) => value.trim().length > 0 || `${party} name cannot be blank`
-          })}
-        />
-      </Field>
-      <Field label={`${party} Phone Number`} error={errors[`${key}Phone`]?.message}>
-        <input
-          className="stitch-input"
-          type="tel"
-          placeholder="0612345678 or any 7+ digit phone"
-          {...register(`${key}Phone`, {
-            required: `${party} phone is required`,
-            validate: (value) => isValidPhone(value) || "Enter a phone number with at least 7 digits"
-          })}
-        />
-      </Field>
-    </>
-  );
-}
+function LocationFields({ title, locationLabel, prefix, register, errors, region, districts, setValue }) {
+  const regionField = `${prefix}Region`;
+  const districtField = `${prefix}District`;
+  const locationField = `${prefix}Location`;
 
-function FormSection({ title, children }) {
   return (
-    <section>
-      <h2 className="mb-4 border-b border-outline-variant pb-2 text-lg font-semibold text-primary-container">{title}</h2>
-      {children}
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-on-surface">{title}</h2>
+      <Field label="Region" error={errors[regionField]?.message}>
+        <select
+          className="stitch-input w-full"
+          {...register(regionField, {
+            required: `${title} region is required`,
+            onChange: () => setValue(districtField, "", { shouldValidate: true })
+          })}
+        >
+          <option value="">Select region</option>
+          {somaliaRegions.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </Field>
+      <Field label="District" error={errors[districtField]?.message}>
+        <select
+          className="stitch-input w-full disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!region}
+          {...register(districtField, { required: `${title} district is required` })}
+        >
+          <option value="">Select district</option>
+          {districts.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </Field>
+      <Field label={locationLabel} error={errors[locationField]?.message}>
+        <input
+          className="stitch-input w-full"
+          placeholder={`Enter ${locationLabel.toLowerCase()}`}
+          {...register(locationField, {
+            required: `${locationLabel} is required`,
+            validate: (value) => value.trim().length > 0 || `${locationLabel} cannot be blank`
+          })}
+        />
+      </Field>
     </section>
   );
 }
 
-function Field({ label, children, error, className = "" }) {
+function Field({ label, children, error }) {
   return (
-    <label className={`block text-sm ${className}`}>
+    <label className="block text-sm">
       <span className="mb-1.5 block font-medium text-on-surface-variant">{label}</span>
       {children}
-      <ErrorText message={error} />
+      {error && <span className="mt-1 block text-xs text-error">{error}</span>}
     </label>
   );
-}
-
-function ErrorText({ message }) {
-  return message ? <span className="mt-1 block text-xs text-error">{message}</span> : null;
 }

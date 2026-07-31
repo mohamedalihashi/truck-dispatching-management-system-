@@ -5,13 +5,13 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAuth } from "../../contexts/AuthContext";
-import { useSettings, useSupportComplaints, useTrips } from "../../hooks/useApi";
+import { useSupportContact, useSupportComplaints, useTrips } from "../../hooks/useApi";
 import { api } from "../../services/api";
 
 export function SupportPage({ embedded = false }) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const { data: settings } = useSettings({ enabled: user.role === "admin" });
+  const { data: supportContact } = useSupportContact();
   const canComplaint = user.role === "customer" || user.role === "admin";
   const complaintsQuery = useSupportComplaints({}, { enabled: canComplaint });
   const tripsQuery = useTrips({ limit: 100 }, { enabled: user.role === "customer" });
@@ -35,11 +35,11 @@ export function SupportPage({ embedded = false }) {
     : [];
 
   const email =
-    settings?.general?.supportEmail ||
+    supportContact?.supportEmail ||
     import.meta.env.VITE_SUPPORT_EMAIL ||
     "support@truckdispatch.so";
   const phone =
-    settings?.general?.supportPhone ||
+    supportContact?.supportPhone ||
     import.meta.env.VITE_SUPPORT_PHONE ||
     "+252 61 XXX XXXX";
   const phoneHref = `tel:${String(phone).replace(/\s+/g, "")}`;
@@ -113,7 +113,7 @@ export function SupportPage({ embedded = false }) {
       return;
     }
     if (!form.againstRole) {
-      setError("Choose whether the complaint is about the driver or dispatcher.");
+      setError("Choose whether the complaint is about the driver.");
       return;
     }
     createComplaint.mutate({
@@ -146,13 +146,13 @@ export function SupportPage({ embedded = false }) {
             <div className="max-w-2xl">
               <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-secondary-fixed">
                 <Headphones size={14} />
-                TruckDispatch Support
+                GaariHel Support
               </p>
               <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                 We are here when operations need a clear answer.
               </h2>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/75 sm:text-base">
-                Reach the operations team by email, phone, or WhatsApp. Customers can also file a formal complaint against a driver or dispatcher straight from one of their shipments.
+                Reach the operations team by email, phone, or WhatsApp. Customers can also file a formal complaint against a driver from one of their shipments.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -175,11 +175,43 @@ export function SupportPage({ embedded = false }) {
         </div>
       </section>
 
+      <section>
+        <div className="mb-4">
+          <h3 className="text-xl font-semibold text-primary-container">Contact support</h3>
+          <p className="mt-1 text-sm text-on-surface-variant">Use the email address, phone number, or WhatsApp below to contact support.</p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {channels.map((channel) => {
+            const Icon = channel.icon;
+            return (
+              <a
+                key={channel.label}
+                href={channel.href}
+                target={channel.external ? "_blank" : undefined}
+                rel={channel.external ? "noreferrer" : undefined}
+                className="group flex h-full flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.04)] transition duration-200 hover:-translate-y-0.5 hover:border-secondary-container hover:shadow-[0px_10px_28px_rgba(13,28,50,0.08)]"
+              >
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-secondary-container/10 text-secondary-container">
+                  <Icon size={20} />
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">{channel.label}</p>
+                <p className="mt-2 break-all text-lg font-semibold text-primary-container">{channel.value}</p>
+                <p className="mt-2 flex-1 text-sm leading-relaxed text-on-surface-variant">{channel.detail}</p>
+                <span className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-secondary-container">
+                  {channel.action}
+                  <ArrowUpRight size={16} className="transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                </span>
+              </a>
+            );
+          })}
+        </div>
+      </section>
+
       {user.role === "customer" ? (
         <section className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.04)]">
           <h3 className="text-xl font-semibold text-primary-container">File a complaint</h3>
           <p className="mt-1 text-sm text-on-surface-variant">
-            Pick one of your shipments below. The driver and dispatcher who worked on it are filled in automatically.
+            Pick one of your shipments below. The driver who worked on it is filled in automatically.
           </p>
           <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={onSubmitComplaint}>
             <label className="block text-sm sm:col-span-2">
@@ -283,7 +315,7 @@ export function SupportPage({ embedded = false }) {
             </h3>
             <p className="mt-1 text-sm text-on-surface-variant">
               {user.role === "admin"
-                ? "Review complaints filed by customers against drivers or dispatchers."
+                ? "Review complaints filed by customers against drivers."
                 : "Track the status of complaints you have submitted."}
             </p>
           </div>
@@ -347,37 +379,6 @@ export function SupportPage({ embedded = false }) {
         </section>
       ) : null}
 
-      <section>
-        <div className="mb-4">
-          <h3 className="text-xl font-semibold text-primary-container">Contact channels</h3>
-          <p className="mt-1 text-sm text-on-surface-variant">Choose the channel that matches how urgent your issue is.</p>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-3">
-          {channels.map((channel) => {
-            const Icon = channel.icon;
-            return (
-              <a
-                key={channel.label}
-                href={channel.href}
-                target={channel.external ? "_blank" : undefined}
-                rel={channel.external ? "noreferrer" : undefined}
-                className="group flex h-full flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.04)] transition duration-200 hover:-translate-y-0.5 hover:border-secondary-container hover:shadow-[0px_10px_28px_rgba(13,28,50,0.08)]"
-              >
-                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-secondary-container/10 text-secondary-container">
-                  <Icon size={20} />
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">{channel.label}</p>
-                <p className="mt-2 break-all text-lg font-semibold text-primary-container">{channel.value}</p>
-                <p className="mt-2 flex-1 text-sm leading-relaxed text-on-surface-variant">{channel.detail}</p>
-                <span className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-secondary-container">
-                  {channel.action}
-                  <ArrowUpRight size={16} className="transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </span>
-              </a>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 }

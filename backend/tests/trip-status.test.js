@@ -62,13 +62,13 @@ describe("driver trip status chain", () => {
   });
 });
 
-describe("dispatcher trip status rules", () => {
-  it("only allows Delayed or Cancelled", () => {
+describe("admin trip status rules", () => {
+  it("allows Delayed or Cancelled from In Transit", () => {
     expect(
       validateTripStatusChange({
         currentStatus: "In Transit",
         nextStatus: "Delayed",
-        role: "dispatcher",
+        role: "admin",
       })
     ).toEqual({ ok: true });
 
@@ -76,16 +76,9 @@ describe("dispatcher trip status rules", () => {
       validateTripStatusChange({
         currentStatus: "In Transit",
         nextStatus: "Cancelled",
-        role: "dispatcher",
+        role: "admin",
       })
     ).toEqual({ ok: true });
-
-    const blocked = validateTripStatusChange({
-      currentStatus: "Accepted",
-      nextStatus: "Loaded",
-      role: "dispatcher",
-    });
-    expect(blocked).toMatchObject({ ok: false, status: 403 });
   });
 });
 

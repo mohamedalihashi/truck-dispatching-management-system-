@@ -41,11 +41,32 @@ describe("registration persistence", () => {
     };
     await db.createUser({
       name: "Driver", email: "driver@example.com", phone: "+252610000003", passwordHash: "hash", role: "driver",
+      serviceType: "FTL",
       nationalIdNumber: "NID-1", driverLicense: "LIC-1", driverLicenseUrl: "https://cdn/lic.jpg",
       driverLicensePublicId: "lic", driverImageUrl: "https://cdn/profile.jpg", driverImagePublicId: "profile", truck,
     });
     expect(mocks.tx.user.create).toHaveBeenCalledOnce();
     expect(mocks.tx.truck.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ driverId: "user-1", status: "Pending_Verification" }) }));
+  });
+
+  it("auto-verifies drivers created by admin", async () => {
+    const truck = {
+      truckNumber: "TR-2", plateNumber: "PL-2", capacity: "10 tons", truckType: "Box",
+      photoUrl1: "https://cdn/1.jpg", registrationDocumentUrl: "https://cdn/doc.pdf",
+      documentUrls: ["https://cdn/doc.pdf"],
+    };
+    await db.createUser({
+      name: "Admin Driver", email: "admin-driver@example.com", phone: "+252610000099", passwordHash: "hash", role: "driver",
+      serviceType: "SHARED",
+      nationalIdNumber: "NID-2", driverLicense: "LIC-2", driverLicenseUrl: "https://cdn/lic.jpg",
+      driverImageUrl: "https://cdn/profile.jpg", truck, actorId: "admin-1", autoVerify: true,
+    });
+    expect(mocks.tx.user.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "Active", createdById: "admin-1" }),
+    }));
+    expect(mocks.tx.truck.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "Available" }),
+    }));
   });
 
   it("detects email, phone, national ID and plate conflicts", async () => {

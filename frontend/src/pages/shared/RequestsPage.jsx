@@ -34,10 +34,10 @@ export function RequestsPage() {
   const [error, setError] = useState("");
   const { user } = useAuth();
   const { search } = useDashboardSearch();
-  const showCreate = user.role === "admin" || user.role === "dispatcher";
-  const canAssign = user.role === "admin" || user.role === "dispatcher";
-  const canEdit = user.role === "admin" || user.role === "dispatcher";
-  const canRestore = user.role === "admin" || user.role === "dispatcher";
+  const showCreate = user.role === "admin";
+  const canAssign = user.role === "admin";
+  const canEdit = user.role === "admin";
+  const canRestore = user.role === "admin";
   const { data, isLoading } = useCargoRequests({ status: status || undefined, search: search || undefined });
   const { data: summary } = useCargoRequestSummary();
   const { data: trucks } = useTrucks();
@@ -114,7 +114,7 @@ export function RequestsPage() {
     try {
       await assign.mutateAsync({
         id: selected.id,
-        payload: { driverId: truck.driverId, truckId: truck.id, dispatcherId: user.id }
+        payload: { driverId: truck.driverId, truckId: truck.id }
       });
       setSelected(null);
     } catch (err) {
@@ -219,7 +219,7 @@ export function RequestsPage() {
                 key: "price",
                 label: "Price",
                 render: (row) => {
-                  const price = row.finalPrice ?? row.calculatedPrice ?? row.quotedPrice;
+                  const price = row.finalPrice ?? row.quotedPrice;
                   return price != null ? money(price) : "—";
                 }
               },
@@ -247,10 +247,12 @@ export function RequestsPage() {
                       </button>
                     )}
                     {canAssign &&
+                      row.loadType !== "SHARED" &&
+                      !row.driverId &&
                       ["Pending", "Awaiting Approval", "Quote Rejected", "Approved", "Assigned"].includes(row.status) &&
-                      (row.finalPrice != null || row.calculatedPrice != null || row.quotedPrice != null) && (
+                      (row.finalPrice != null || row.quotedPrice != null) && (
                       <Button className="px-2 py-1 text-xs" onClick={() => openAssign(row)}>
-                        {row.status === "Assigned" ? "Reassign" : "Assign driver"}
+                        Assign driver
                       </Button>
                     )}
                     {CANCELABLE_REQUEST_STATUSES.includes(row.status) && (
@@ -279,13 +281,13 @@ export function RequestsPage() {
 
       {selected && (
         <Modal title={`${["Assigned"].includes(selected.status) ? "Reassign" : "Assign driver"} ${selected.id}`} onClose={() => setSelected(null)}>
-          {(selected.finalPrice != null || selected.calculatedPrice != null || selected.quotedPrice != null) ? (
+          {(selected.finalPrice != null || selected.quotedPrice != null) ? (
             <p className="mb-3 text-sm text-on-surface-variant">
-              Price: {money(selected.finalPrice ?? selected.calculatedPrice ?? selected.quotedPrice)}
+              Price: {money(selected.finalPrice ?? selected.quotedPrice)}
               {selected.quotedEstimatedTime
                 ? ` · ETA ${selected.quotedEstimatedTime}`
                 : selected.distanceKm != null
-                  ? ` · ${selected.distanceKm} km (ETA auto)`
+                  ? ` · ${selected.distanceKm} km`
                   : ""}
             </p>
           ) : null}
@@ -351,7 +353,7 @@ export function RequestsPage() {
             />
             <Detail label="Truck type" value={viewing.truckType} />
             <Detail label="Weight" value={viewing.weight} />
-            <Detail label="Price" value={viewing.finalPrice != null || viewing.calculatedPrice != null || viewing.quotedPrice != null ? money(viewing.finalPrice ?? viewing.calculatedPrice ?? viewing.quotedPrice) : "—"} />
+            <Detail label="Price" value={viewing.finalPrice != null || viewing.quotedPrice != null ? money(viewing.finalPrice ?? viewing.quotedPrice) : "—"} />
             <Detail label="ETA" value={viewing.quotedEstimatedTime || "—"} />
             <Detail label="Distance" value={viewing.distanceKm != null ? `${viewing.distanceKm} km` : "—"} />            <Detail label="Driver" value={viewing.driver || "—"} />
             <Detail label="Truck" value={viewing.truck || "—"} />

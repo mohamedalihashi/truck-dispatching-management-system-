@@ -9,7 +9,7 @@ export const SOMALIA_LOCATIONS = Object.freeze({
   ],
   Bari: ["Bandarbayla", "Boosaaso", "Caluula", "Iskushuban", "Qandala", "Qardho"],
   Bay: ["Baydhabo", "Berdale", "Buur Hakaba", "Diinsoor", "Qansax Dheere"],
-  Galgaduud: ["Cabudwaaq", "Cadaado", "Ceel Buur", "Ceel Dheer", "Dhuusamareeb"],
+  Galgaduud: ["Cabudwaaq", "Cadaado", "Ceel Buur", "Ceel Dheer", "Dhuusamareeb", "Guriceel"],
   Gedo: ["Baardheere", "Beled Xaawo", "Ceel Waaq", "Doolow", "Garbahaarey", "Luuq"],
   Hiiraan: ["Beledweyne", "Buulo Burte", "Jalalaqsi", "Matabaan", "Maxaas"],
   "Jubbada Dhexe": ["Bu'aale", "Jilib", "Saakow"],

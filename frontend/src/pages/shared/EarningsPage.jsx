@@ -50,10 +50,12 @@ export function EarningsPage() {
     }
   }
 
-  const title = isAdmin ? "Earnings & Payouts" : isDriver ? "My Earnings" : "My Commission";
+  const title = isAdmin ? "Earnings & Payouts" : isDriver ? "Earnings" : "My Commission";
   const subtitle = isAdmin
-    ? "Commission splits when customers pay. Pay drivers and dispatchers via EVC/ZAAD."
-    : "Your share from each customer payment — paid out by admin to your mobile wallet.";
+    ? "Commission splits when customers pay. Pay drivers via EVC/ZAAD."
+    : isDriver
+      ? "Step 5 — your share from each customer payment until payout."
+      : "Your share from each customer payment — paid out by admin to your mobile wallet.";
 
   return (
     <div className="space-y-8">
@@ -66,7 +68,7 @@ export function EarningsPage() {
       ) : null}
 
       {isAdmin ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard
             icon={Wallet}
             label="Platform share (available)"
@@ -80,15 +82,9 @@ export function EarningsPage() {
             tone="orange"
           />
           <MetricCard
-            icon={Banknote}
-            label="Owed to dispatchers"
-            value={`${money(summary?.dispatcherOwed)} ${currency}`}
-            tone="navy"
-          />
-          <MetricCard
             icon={Send}
             label="Commission split"
-            value={`${summary?.commission?.driver ?? 80}% / ${summary?.commission?.dispatcher ?? 10}% / ${summary?.commission?.platform ?? 10}%`}
+            value={`${summary?.commission?.driver ?? 90}% driver / ${summary?.commission?.platform ?? 10}% platform`}
             tone="warn"
           />
         </div>
@@ -117,8 +113,7 @@ export function EarningsPage() {
 
       {!isAdmin && summary?.commission ? (
         <p className="text-sm text-on-surface-variant">
-          Commission: Driver {summary.commission.driver}% · Dispatcher {summary.commission.dispatcher}% ·
-          Platform {summary.commission.platform}%
+          Commission: Driver {summary.commission.driver}% · Platform {summary.commission.platform}%
         </p>
       ) : null}
 

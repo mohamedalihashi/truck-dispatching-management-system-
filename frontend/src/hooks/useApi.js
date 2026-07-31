@@ -5,21 +5,95 @@ import { useAuth } from "../contexts/AuthContext";
 import { isRealtimeSocketEnabled } from "../config/api.js";
 import { useEffect } from "react";
 
-export function useDashboard() {
-  return useQuery({ queryKey: ["dashboard"], queryFn: () => api.dashboardReport() });
+export const TRIPS_QUERY_DEFAULT = { limit: 50 };
+
+function normalizeParams(params = {}) {
+  return Object.fromEntries(
+    Object.entries(params)
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
 }
 
-export function useDashboardAnalytics() {
+function invalidateForSocketEvent(qc, eventType) {
+  const refreshDashboard = () => {
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["reports-summary"] });
+    qc.invalidateQueries({ queryKey: ["user-activity-report"] });
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+  };
+
+  if (!eventType) return;
+
+  if (
+    eventType.startsWith("order.") ||
+    eventType.startsWith("quote.") ||
+    eventType === "driver.assigned"
+  ) {
+    qc.invalidateQueries({ queryKey: ["cargo-requests"] });
+    qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
+    refreshDashboard();
+    return;
+  }
+
+  if (eventType.startsWith("trip.") || eventType === "location.updated") {
+    qc.invalidateQueries({ queryKey: ["trips"] });
+    qc.invalidateQueries({ queryKey: ["trip-route"] });
+    refreshDashboard();
+    return;
+  }
+
+  if (eventType.startsWith("notification.")) {
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+    return;
+  }
+
+  if (eventType.startsWith("payment.")) {
+    qc.invalidateQueries({ queryKey: ["payments"] });
+    qc.invalidateQueries({ queryKey: ["earnings"] });
+    refreshDashboard();
+    return;
+  }
+
+  qc.invalidateQueries({ queryKey: ["cargo-requests"] });
+  qc.invalidateQueries({ queryKey: ["trips"] });
+  refreshDashboard();
+}
+
+export function useDashboard() {
   return useQuery({
-    queryKey: ["dashboard-analytics"],
-    queryFn: () => api.dashboardAnalytics()
+    queryKey: ["dashboard"],
+    queryFn: () => api.dashboardReport(),
+    staleTime: 30_000
   });
 }
 
-export function useCargoRequests(params = {}) {
+export function useDashboardSummary(options = {}) {
   return useQuery({
-    queryKey: ["cargo-requests", params],
-    queryFn: () => api.listCargoRequests(params)
+    queryKey: ["dashboard-summary"],
+    queryFn: () => api.dashboardSummary(),
+    staleTime: 30_000,
+    ...options
+  });
+}
+
+export function useReportsSummary(options = {}) {
+  return useQuery({
+    queryKey: ["reports-summary"],
+    queryFn: () => api.reportsSummary(),
+    staleTime: 60_000,
+    ...options
+  });
+}
+
+export function useCargoRequests(params = {}, options = {}) {
+  const normalized = normalizeParams(params);
+  return useQuery({
+    queryKey: ["cargo-requests", normalized],
+    queryFn: () => api.listCargoRequests(normalized),
+    staleTime: 15_000,
+    ...options
   });
 }
 
@@ -32,9 +106,11 @@ export function useCargoRequestSummary(options = {}) {
 }
 
 export function useTrips(params = {}, options = {}) {
+  const normalized = { ...TRIPS_QUERY_DEFAULT, ...normalizeParams(params) };
   return useQuery({
-    queryKey: ["trips", params],
-    queryFn: () => api.listTrips(params),
+    queryKey: ["trips", normalized],
+    queryFn: () => api.listTrips(normalized),
+    staleTime: 15_000,
     ...options
   });
 }
@@ -79,10 +155,15 @@ export function useTruckSummary(options = {}) {
   });
 }
 
-export function useNotifications() {
+export function useNotifications(params = {}, options = {}) {
+  const normalized = normalizeParams({ limit: 20, ...params });
   return useQuery({
-    queryKey: ["notifications"],
-    queryFn: () => api.listNotifications()
+    queryKey: ["notifications", normalized],
+    queryFn: () => api.listNotifications(normalized),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    ...options
   });
 }
 
@@ -114,20 +195,6 @@ export function useCustomers(params = {}, options = {}) {
   );
 }
 
-export function useReports(period = "monthly") {
-  return useQuery({
-    queryKey: ["reports", period],
-    queryFn: async () => {
-      const [revenue, performance, shipments] = await Promise.all([
-        api.revenueReport(period),
-        api.performanceReport(),
-        api.shipmentsReport()
-      ]);
-      return { revenue, performance, shipments };
-    }
-  });
-}
-
 export function usePayments(params = {}) {
   return useQuery({
     queryKey: ["payments", params],
@@ -135,10 +202,13 @@ export function usePayments(params = {}) {
   });
 }
 
-export function useAuditLogs() {
+export function useAuditLogs(params = {}, options = {}) {
+  const normalized = normalizeParams(params);
   return useQuery({
-    queryKey: ["audit-logs"],
-    queryFn: () => api.listAuditLogs()
+    queryKey: ["audit-logs", normalized],
+    queryFn: () => api.listAuditLogs(normalized),
+    staleTime: 30_000,
+    ...options
   });
 }
 
@@ -149,39 +219,29 @@ export function useRealtimeInvalidation() {
 
   useEffect(() => {
     if (!events[0]) return;
-    qc.invalidateQueries({ queryKey: ["cargo-requests"] });
-    qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
-    qc.invalidateQueries({ queryKey: ["trips"] });
-    qc.invalidateQueries({ queryKey: ["trip-route"] });
-    qc.invalidateQueries({ queryKey: ["trucks"] });
-    qc.invalidateQueries({ queryKey: ["notifications"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
-    qc.invalidateQueries({ queryKey: ["reports"] });
-    qc.invalidateQueries({ queryKey: ["trip-feedback"] });
-    qc.invalidateQueries({ queryKey: ["payments"] });
-    qc.invalidateQueries({ queryKey: ["earnings"] });
+    invalidateForSocketEvent(qc, events[0].type);
   }, [events[0]?.id, qc]);
 
-  // Vercel has no WebSocket server — poll API every 20s when logged in.
   useEffect(() => {
     if (!isAuthenticated || isRealtimeSocketEnabled()) return;
 
-    const invalidateAll = () => {
-      qc.invalidateQueries({ queryKey: ["cargo-requests"] });
-    qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
+    const invalidateLight = () => {
+      if (document.hidden) return;
       qc.invalidateQueries({ queryKey: ["trips"] });
-      qc.invalidateQueries({ queryKey: ["trip-route"] });
-      qc.invalidateQueries({ queryKey: ["trucks"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["reports"] });
-      qc.invalidateQueries({ queryKey: ["trip-feedback"] });
-      qc.invalidateQueries({ queryKey: ["payments"] });
-      qc.invalidateQueries({ queryKey: ["earnings"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     };
 
-    const timer = setInterval(invalidateAll, 20_000);
-    return () => clearInterval(timer);
+    const timer = setInterval(invalidateLight, 30_000);
+    const onVisibility = () => {
+      if (!document.hidden) invalidateLight();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [isAuthenticated, qc]);
 }
 
@@ -192,7 +252,8 @@ export function useCreateCargo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cargo-requests"] });
     qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
     }
   });
 }
@@ -204,7 +265,8 @@ export function useUpdateCargo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cargo-requests"] });
     qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
     }
   });
 }
@@ -215,7 +277,10 @@ export function useUserMutations() {
     qc.invalidateQueries({ queryKey: ["users"] });
     qc.invalidateQueries({ queryKey: ["users-summary"] });
     qc.invalidateQueries({ queryKey: ["trucks-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["reports-summary"] });
+    qc.invalidateQueries({ queryKey: ["user-activity-report"] });
   };
   return {
     create: useMutation({
@@ -244,6 +309,7 @@ export function useTruckMutations() {
     qc.invalidateQueries({ queryKey: ["trucks-summary"] });
     qc.invalidateQueries({ queryKey: ["users"] });
     qc.invalidateQueries({ queryKey: ["users-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
   return {
@@ -275,8 +341,8 @@ export function usePaymentMutations() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["payments"] });
     qc.invalidateQueries({ queryKey: ["earnings"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
-    qc.invalidateQueries({ queryKey: ["reports"] });
     qc.invalidateQueries({ queryKey: ["notifications"] });
   };
   return {
@@ -328,6 +394,7 @@ export function useEarningMutations() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["earnings"] });
     qc.invalidateQueries({ queryKey: ["notifications"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
   return {
@@ -346,50 +413,17 @@ export function useSettings(options = {}) {
   return useQuery({
     queryKey: ["settings"],
     queryFn: () => api.getSettings(),
+    staleTime: 60_000,
     ...options
   });
 }
 
-export function usePricing(options = {}) {
+export function useSupportContact() {
   return useQuery({
-    queryKey: ["pricing"],
-    queryFn: () => api.getPricing(),
-    ...options
+    queryKey: ["support-contact"],
+    queryFn: () => api.getSupportContact(),
+    staleTime: 5 * 60_000
   });
-}
-
-export function usePricingMutations() {
-  const qc = useQueryClient();
-  return {
-    save: useMutation({
-      mutationFn: (payload) => api.updatePricing(payload),
-      onSuccess: (data) => {
-        qc.setQueryData(["pricing"], data);
-        qc.invalidateQueries({ queryKey: ["pricing"] });
-      }
-    }),
-    calculate: useMutation({
-      mutationFn: (id) => api.calculateQuote(id),
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["cargo-requests"] });
-        qc.invalidateQueries({ queryKey: ["cargo-request-summary"] });
-      }
-    }),
-    adjust: useMutation({
-      mutationFn: ({ id, ...payload }) => api.adjustQuotePrice(id, payload),
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["cargo-requests"] });
-        qc.invalidateQueries({ queryKey: ["cargo-request-summary"] });
-      }
-    }),
-    pay: useMutation({
-      mutationFn: (id) => api.payQuote(id),
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["payments"] });
-        qc.invalidateQueries({ queryKey: ["cargo-requests"] });
-      }
-    })
-  };
 }
 
 export function usePermissions() {
@@ -397,22 +431,6 @@ export function usePermissions() {
     queryKey: ["permissions"],
     queryFn: () => api.myPermissions(),
     staleTime: 30_000
-  });
-}
-
-export function useUserActivityReport(params, options = {}) {
-  return useQuery({
-    queryKey: ["user-activity-report", params],
-    queryFn: () => api.userActivityReport(params),
-    enabled: Boolean(params?.userId),
-    ...options
-  });
-}
-
-export function useDeliveryFeedbackReport(params = {}) {
-  return useQuery({
-    queryKey: ["delivery-feedback-report", params],
-    queryFn: () => api.deliveryFeedbackReport(params)
   });
 }
 
@@ -441,7 +459,8 @@ export function useCancelCargo() {
       qc.invalidateQueries({ queryKey: ["trips"] });
       qc.invalidateQueries({ queryKey: ["trip-route"] });
       qc.invalidateQueries({ queryKey: ["trucks"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
     }
   });
 }
@@ -455,7 +474,8 @@ export function useRestoreCargo() {
       qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
       qc.invalidateQueries({ queryKey: ["trips"] });
       qc.invalidateQueries({ queryKey: ["trucks"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     }
   });
@@ -471,7 +491,8 @@ export function useAssignCargo() {
       qc.invalidateQueries({ queryKey: ["trips"] });
       qc.invalidateQueries({ queryKey: ["trip-route"] });
       qc.invalidateQueries({ queryKey: ["trucks"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     }
   });
@@ -485,6 +506,7 @@ export function useQuoteMutations() {
     qc.invalidateQueries({ queryKey: ["trips"] });
     qc.invalidateQueries({ queryKey: ["payments"] });
     qc.invalidateQueries({ queryKey: ["notifications"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
   return {
@@ -499,6 +521,10 @@ export function useQuoteMutations() {
     reject: useMutation({
       mutationFn: ({ id, note }) => api.rejectCargoQuote(id, { note }),
       onSuccess: invalidate
+    }),
+    decline: useMutation({
+      mutationFn: ({ id, note }) => api.declineCargoBooking(id, { note }),
+      onSuccess: invalidate
     })
   };
 }
@@ -511,6 +537,7 @@ export function useTripActions() {
     qc.invalidateQueries({ queryKey: ["cargo-requests"] });
     qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
     qc.invalidateQueries({ queryKey: ["trucks"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   };
   return {
@@ -556,13 +583,8 @@ export function useTripActions() {
       mutationFn: (id) => api.rejectTrip(id),
       onSuccess: invalidate
     }),
-    restore: useMutation({
-      mutationFn: (id) => api.restoreTrip(id),
-      onSuccess: invalidate
-    }),
     shareLocation: useMutation({
-      mutationFn: ({ id, lat, lng }) => api.updateTripLocation(id, { lat, lng }),
-      onSuccess: invalidate
+      mutationFn: ({ id, lat, lng }) => api.updateTripLocation(id, { lat, lng })
     })
   };
 }

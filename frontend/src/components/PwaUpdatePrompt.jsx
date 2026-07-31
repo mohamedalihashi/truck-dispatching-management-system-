@@ -20,7 +20,7 @@ export function PwaUpdatePrompt() {
 
   return (
     <div className="fixed inset-x-4 top-20 z-[100] mx-auto flex max-w-lg items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-high px-4 py-3 shadow-lg">
-      <p className="text-sm text-on-surface">A new version of TruckDispatch is available.</p>
+      <p className="text-sm text-on-surface">A new version of GaariHel is available.</p>
       <button
         type="button"
         onClick={() => updateSW(true)}

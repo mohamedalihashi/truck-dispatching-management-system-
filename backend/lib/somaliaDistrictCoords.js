@@ -59,6 +59,8 @@ export const DISTRICT_COORDS = Object.freeze({
   "ceel buur": { lat: 4.6833, lng: 46.6167 },
   "ceel dheer": { lat: 3.85, lng: 47.1833 },
   dhuusamareeb: { lat: 5.535, lng: 46.386 },
+  guriceel: { lat: 5.31, lng: 45.9 },
+  guriel: { lat: 5.31, lng: 45.9 },
 
   // Gedo
   baardheere: { lat: 2.35, lng: 42.2833 },

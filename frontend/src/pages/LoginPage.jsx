@@ -1,11 +1,12 @@
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import { Truck, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/Button";
 import { OtpCodeBanner } from "../components/ui/OtpCodeBanner";
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
+import { BrandLogo } from "../components/BrandLogo";
 import { roleHome } from "../utils/helpers";
 import { useOtpAutoSubmit, useResendCooldown } from "../hooks/useOtpVerification";
 import {
@@ -13,9 +14,11 @@ import {
   loadLoginVerification,
   saveLoginVerification
 } from "../utils/verificationStorage";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export function LoginPage() {
   const { login, verifyLogin, resendCode, isAuthenticated, user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [error, setError] = useState("");
@@ -152,17 +155,14 @@ export function LoginPage() {
       </div>
       <div className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-4 pb-[env(safe-area-inset-bottom)] pt-[calc(5rem+env(safe-area-inset-top))] lg:grid-cols-2 lg:py-10">
         <div className="text-white">
-          <Link to="/" className="mb-8 inline-flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary-container shadow-xl">
-              <Truck />
-            </span>
-            <span className="text-2xl font-bold">TruckDispatch</span>
+          <Link to="/" className="mb-8 inline-flex items-center rounded-2xl bg-white/95 px-3 py-2 shadow-xl">
+            <BrandLogo size="lg" linkToHome={false} />
           </Link>
           <h1 className="text-4xl font-bold leading-tight md:text-5xl">
-            Sign in to the cargo marketplace
+            {t("auth.loginTitle")}
           </h1>
           <p className="mt-4 max-w-md text-on-primary-container">
-            Sign in securely with your username and password.
+            {t("auth.loginSubtitle")}
           </p>
         </div>
 
@@ -170,11 +170,11 @@ export function LoginPage() {
           {step === "credentials" ? (
             <form className="space-y-4" onSubmit={handleSubmit(onSubmitCredentials)}>
               <label className="block text-sm">
-                <span className="mb-1.5 block font-medium text-on-surface-variant">Username or email</span>
+                <span className="mb-1.5 block font-medium text-on-surface-variant">{t("auth.emailOrPhone")}</span>
                 <input className="stitch-input" autoComplete="username" {...register("identifier", { required: true })} />
               </label>
               <label className="block text-sm">
-                <span className="mb-1.5 block font-medium text-on-surface-variant">Password</span>
+                <span className="mb-1.5 block font-medium text-on-surface-variant">{t("auth.password")}</span>
                 <div className="relative">
                   <input 
                     className="stitch-input w-full pr-10" 
@@ -198,19 +198,19 @@ export function LoginPage() {
                 </Link>
               </div>
               <Button className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Signing in…" : "Sign in"}
+                {isSubmitting ? t("common.loading") : t("auth.signIn")}
               </Button>
             </form>
           ) : (
             <form className="space-y-4" onSubmit={handleSubmit(onSubmitCode)}>
               <div>
-                <h2 className="text-xl font-bold text-primary">Enter verification code</h2>
+                <h2 className="text-xl font-bold text-primary">{t("auth.verifyTitle")}</h2>
                 <p className="mt-1 text-sm text-on-surface-variant">
                   Code sent to <strong>{pendingEmail}</strong>
                 </p>
               </div>
               <label className="block text-sm">
-                <span className="mb-1.5 block font-medium text-on-surface-variant">6-digit code</span>
+                <span className="mb-1.5 block font-medium text-on-surface-variant">{t("auth.code")}</span>
                 <input
                   className="stitch-input text-center text-2xl font-semibold tracking-[0.5em]"
                   type="text"

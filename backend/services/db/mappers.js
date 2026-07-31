@@ -24,6 +24,7 @@ export function mapUser(row) {
     driverLicensePublicId: row.driverLicensePublicId || null,
     driverImageUrl: row.driverImageUrl || null,
     driverImagePublicId: row.driverImagePublicId || null,
+    serviceType: row.serviceType || null,
     status: row.status,
     mustChangePassword: Boolean(row.mustChangePassword),
     createdAt: row.createdAt,
@@ -53,6 +54,7 @@ export function mapTruck(row) {
     truckNumber: row.truckNumber,
     plateNumber: row.plateNumber,
     capacity: row.capacity,
+    capacityTons: row.capacityTons != null ? Number(row.capacityTons) : null,
     type: row.truckType,
     truckType: row.truckType,
     driverId: row.driverId,
@@ -75,7 +77,10 @@ export function mapCargoRequest(row) {
   return {
     id: row.id,
     customerId: row.customerId,
-    customer: row.customer?.name || null,
+    customer:
+      row.bookingChannel === "PHONE_ASSISTED"
+        ? (row.senderName || row.sender || row.customer?.name || null)
+        : (row.customer?.name || null),
     pickup: row.pickup,
     destination: row.destination,
     from: row.pickup,
@@ -114,7 +119,18 @@ export function mapCargoRequest(row) {
     quoteVersion: row.quoteVersion ?? 0,
     customerDecisionAt: row.customerDecisionAt,
     customerDecisionNote: row.customerDecisionNote,
-    status: reqStatusToApi(row.status),
+    cargoImageUrl: row.cargoImageUrl || null,
+    cargoImagePublicId: row.cargoImagePublicId || null,
+    loadType: row.loadType || "FTL",
+    status:
+      row.bookingChannel === "PHONE_ASSISTED"
+        ? (reqStatusToApi(row.status) === "Pending"
+            ? "NOT_ASSIGNED"
+            : reqStatusToApi(row.status).toUpperCase().replace(/ /g, "_"))
+        : reqStatusToApi(row.status),
+    bookingChannel: row.bookingChannel || "ONLINE",
+    assignedByAdminId: row.assignedByAdminId || null,
+    assignedAt: row.assignedAt || null,
     driverId: row.driverId,
     driver: row.driver?.name || null,
     truckId: row.truckId,
@@ -157,7 +173,10 @@ export function mapTrip(row) {
     id: row.id,
     cargoRequestId: row.cargoRequestId,
     customerId: row.customerId,
-    customer: row.customer?.name || null,
+    customer:
+      row.cargoRequest?.bookingChannel === "PHONE_ASSISTED"
+        ? (row.cargoRequest?.senderName || row.cargoRequest?.sender || row.customer?.name || null)
+        : (row.customer?.name || null),
     driverId: row.driverId,
     driver: row.driver?.name || null,
     dispatcherId: row.dispatcherId,
@@ -173,6 +192,10 @@ export function mapTrip(row) {
     status: tripStatusToApi(row.status),
     fare: Number(row.fare || 0),
     cargo: row.cargoRequest?.description || "Cargo",
+    cargoWeight: row.cargoRequest?.weight || null,
+    cargoImageUrl: row.cargoRequest?.cargoImageUrl || null,
+    loadType: row.cargoRequest?.loadType || "FTL",
+    bookingChannel: row.cargoRequest?.bookingChannel || "ONLINE",
     customerRole: row.cargoRequest?.customerRole || null,
     senderName: row.cargoRequest?.senderName || row.cargoRequest?.sender || null,
     senderPhone: row.cargoRequest?.senderPhone || null,
@@ -237,6 +260,7 @@ export const cargoRequestInclude = {
   customer: true,
   driver: true,
   dispatcher: true,
+  assignedByAdmin: true,
   truck: true,
 };
 

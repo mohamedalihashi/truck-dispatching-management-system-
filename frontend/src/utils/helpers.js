@@ -18,10 +18,10 @@ export function titleCase(value = "") {
 
 export function statusTone(status = "") {
   const key = status.toLowerCase();
-  if (["delivered", "available", "paid", "accepted", "approved"].some((s) => key.includes(s))) return "success";
+  if (["delivered", "available", "paid", "accepted", "approved", "confirmed", "completed", "open for booking"].some((s) => key.includes(s))) return "success";
   if (["partial"].some((s) => key.includes(s))) return "info";
-  if (["pending", "assigned", "delayed", "maintenance", "awaiting approval"].some((s) => key.includes(s))) return "warn";
-  if (["cancelled", "failed", "rejected", "quote rejected"].some((s) => key.includes(s))) return "danger";
+  if (["pending", "assigned", "delayed", "maintenance", "awaiting approval", "draft", "departed", "in transit"].some((s) => key.includes(s))) return "warn";
+  if (["cancelled", "failed", "rejected", "quote rejected", "withdrawn"].some((s) => key.includes(s))) return "danger";
   return "info";
 }
 
@@ -63,7 +63,6 @@ export const TRIP_STATUSES = [...TRIP_FLOW, "Delayed", "Cancelled"];
 
 /** Trip statuses where the driver phone should stream GPS to the server. */
 export const LIVE_TRACKING_STATUSES = [
-  "Assigned",
   "Accepted",
   "Arrived Pickup",
   "Loaded",
@@ -115,8 +114,6 @@ export function roleHome(role) {
   switch (role) {
     case "admin":
       return "/admin";
-    case "dispatcher":
-      return "/dispatcher";
     case "driver":
       return "/driver";
     case "customer":
@@ -125,53 +122,59 @@ export function roleHome(role) {
   }
 }
 
-export function navForRole(role) {
-  const support = { to: "support", label: "Support", icon: "help" };
+export function isSharedDriver(user) {
+  return user?.serviceType === "SHARED";
+}
 
+export function isFtlDriver(user) {
+  return !user || user.serviceType !== "SHARED";
+}
+
+export function navForRole(role, user = null) {
   if (role === "admin") {
     return [
-      { to: "", end: true, label: "Dashboard", icon: "dashboard" },
-      { to: "requests", label: "Requests", icon: "file" },
-      { to: "trips", label: "Trips", icon: "route" },
-      { to: "tracking", label: "Live Tracking", icon: "map" },
-      { to: "users", label: "Users", icon: "users" },
-      { to: "trucks", label: "Fleet / Drivers", icon: "truck" },
-      { to: "pricing", label: "Pricing", icon: "chart" },
-      { to: "payments", label: "Finance", icon: "chart" },
-      { to: "earnings", label: "Payouts", icon: "chart" },
-      { to: "reports", label: "Reports", icon: "chart" },
-      { to: "audit-logs", label: "Audit Logs", icon: "file" },
-      { to: "support", label: "Support", icon: "help" },
-      { to: "settings", label: "Settings", icon: "settings" }
-    ];
-  }
-  if (role === "dispatcher") {
-    return [
-      { to: "", end: true, label: "Dashboard", icon: "dashboard" },
-      { to: "trips", label: "Trips", icon: "route" },
-      { to: "requests", label: "Requests", icon: "file" },
-      { to: "customers", label: "Customers", icon: "users" },
-      { to: "drivers", label: "Fleet / Drivers", icon: "truck" },
-      { to: "tracking", label: "Live Tracking", icon: "map" },
-      { to: "earnings", label: "Earnings", icon: "chart" },
-      support
+      { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
+      { to: "book", labelKey: "nav.phoneBookings", icon: "plus" },
+      { to: "trips", labelKey: "nav.trips", icon: "route" },
+      { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
+      { to: "users", labelKey: "nav.users", icon: "users" },
+      { to: "customers", labelKey: "nav.customers", icon: "users" },
+      { to: "trucks", labelKey: "nav.fleetDrivers", icon: "truck" },
+      { to: "payments", labelKey: "nav.payments", icon: "chart" },
+      { to: "earnings", labelKey: "nav.payouts", icon: "chart" },
+      { to: "reports", labelKey: "nav.reports", icon: "chart", end: true },
+      { to: "audit-logs", labelKey: "nav.auditLogs", icon: "file" },
+      { to: "support", labelKey: "nav.support", icon: "help" },
+      { to: "settings", labelKey: "nav.settings", icon: "settings" }
     ];
   }
   if (role === "driver") {
+    if (isSharedDriver(user)) {
+      return [
+        { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
+        { to: "shared-trips", labelKey: "nav.sharedTrips", icon: "route" },
+        { to: "jobs", labelKey: "nav.bookings", icon: "package" },
+        { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
+        { to: "earnings", labelKey: "nav.earnings", icon: "chart" },
+        { to: "truck", labelKey: "nav.truckProfile", icon: "truck" }
+      ];
+    }
     return [
-      { to: "", end: true, label: "Dashboard", icon: "dashboard" },
-      { to: "jobs", label: "My Jobs", icon: "route" },
-      { to: "truck", label: "My Truck", icon: "truck" },
-      { to: "earnings", label: "Earnings", icon: "chart" },
-      support
+      { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
+      { to: "marketplace", labelKey: "nav.availableLoads", icon: "package" },
+      { to: "my-bids", labelKey: "nav.myOffers", icon: "file" },
+      { to: "jobs", labelKey: "nav.ftlTrips", icon: "route" },
+      { to: "tracking", labelKey: "nav.tracking", icon: "map" },
+      { to: "earnings", labelKey: "nav.earnings", icon: "chart" },
+      { to: "truck", labelKey: "nav.truckProfile", icon: "truck" }
     ];
   }
   return [
-    { to: "", end: true, label: "Dashboard", icon: "dashboard" },
-    { to: "book", label: "Book Truck", icon: "plus" },
-    { to: "shipments", label: "Shipments", icon: "package" },
-    { to: "tracking", label: "Track", icon: "map" },
-    { to: "payments", label: "Payments", icon: "chart" },
-    support
+    { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
+    { to: "find-trucks", labelKey: "nav.ftlBook", icon: "truck" },
+    { to: "shared-marketplace", labelKey: "nav.sharedBook", icon: "package" },
+    { to: "trips", labelKey: "nav.trips", icon: "route" },
+    { to: "tracking", labelKey: "nav.tracking", icon: "map" },
+    { to: "payments", labelKey: "nav.payment", icon: "chart" }
   ];
 }

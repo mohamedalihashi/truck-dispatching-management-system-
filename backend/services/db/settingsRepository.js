@@ -1,14 +1,23 @@
 import { prisma } from "../../lib/prisma.js";
-import { DEFAULT_ROLE_PERMISSIONS, mergeRolePermissions, PERMISSION_CATALOG } from "../../lib/permissions.js";
+import { getRolePermissions, invalidateRolePermissionsCache } from "../../lib/permissionsCache.js";
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from "../../lib/permissions.js";
 
 export const settingsRepository = {
+  async getSupportContact() {
+    const row = await prisma.setting.findUnique({ where: { key: "general" } });
+    const general = row?.value && typeof row.value === "object" ? row.value : {};
+    return {
+      supportEmail: general.supportEmail || process.env.SUPPORT_EMAIL || "support@truckdispatch.so",
+      supportPhone: general.supportPhone || process.env.SUPPORT_PHONE || "+252 61 XXX XXXX",
+    };
+  },
+
   async getSettings() {
     const rows = await prisma.setting.findMany();
     const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-    // Role permissions are fixed in code — not editable in Settings.
     return {
       ...settings,
-      rolePermissions: mergeRolePermissions({}),
+      rolePermissions: await getRolePermissions(),
       permissionCatalog: PERMISSION_CATALOG,
     };
   },
@@ -20,21 +29,32 @@ export const settingsRepository = {
     });
     if (!user) return null;
     const all = Object.fromEntries(PERMISSION_CATALOG.map(({ key }) => [key, true]));
+    const rolePermissions = await getRolePermissions();
     return {
       role: user.role,
       isSuperAdmin: user.isSuperAdmin,
-      permissions: user.isSuperAdmin ? all : DEFAULT_ROLE_PERMISSIONS[user.role],
+      permissions: user.isSuperAdmin ? all : rolePermissions[user.role] || DEFAULT_ROLE_PERMISSIONS[user.role] || {},
       catalog: PERMISSION_CATALOG,
+      rolePermissions,
     };
   },
 
-  async updateRolePermissions() {
-    const error = new Error("Role permissions are fixed and cannot be changed from Settings");
-    error.status = 403;
-    throw error;
+  async updateRolePermissions(value = {}) {
+    const { mergeRolePermissions } = await import("../../lib/permissions.js");
+    const merged = mergeRolePermissions(value);
+    const row = await prisma.setting.upsert({
+      where: { key: "rolePermissions" },
+      update: { value: merged, updatedAt: new Date() },
+      create: { key: "rolePermissions", value: merged },
+    });
+    invalidateRolePermissionsCache();
+    return { key: row.key, value: mergeRolePermissions(row.value) };
   },
 
   async updateSettings(key, value) {
+    if (key === "rolePermissions") {
+      return this.updateRolePermissions(value);
+    }
     return prisma.setting.upsert({
       where: { key },
       update: { value, updatedAt: new Date() },

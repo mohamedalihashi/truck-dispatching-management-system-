@@ -51,7 +51,7 @@ function purposeLabel(purpose) {
 }
 
 function buildMailContent(code, purpose) {
-  const appName = "TruckDispatch";
+  const appName = "GaariHel";
   const action = purposeLabel(purpose);
   const subject = `${appName} verification code`;
   const text = [
@@ -147,7 +147,7 @@ export function verificationPayload(email, emailResult = {}) {
 
 /** Welcome email when an admin creates a user. */
 export async function sendWelcomeEmail(email, tempPassword) {
-  const appName = "TruckDispatch";
+  const appName = "GaariHel";
   const subject = `${appName} â€” your new account`;
   const text = [
     `Welcome to ${appName}!`,

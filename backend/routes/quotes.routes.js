@@ -1,21 +1,9 @@
 import { Router } from "express";
-import { z } from "zod";
 import { requireAuth, requireRole, requirePasswordChanged } from "../middleware/auth.js";
-import { validate } from "../middleware/validate.js";
 import { db } from "../services/dbService.js";
 
 const router = Router();
 router.use(requireAuth, requirePasswordChanged);
-
-const adjustSchema = z.object({
-  adjustmentType: z.enum(["Increase", "Discount", "Fixed"]).optional().nullable(),
-  adjustmentAmount: z.coerce.number().nonnegative().optional().nullable(),
-  adjustmentReason: z.string().trim().max(500).optional().nullable(),
-}).superRefine((data, ctx) => {
-  if (data.adjustmentType && (data.adjustmentAmount == null || Number.isNaN(Number(data.adjustmentAmount)))) {
-    ctx.addIssue({ code: "custom", path: ["adjustmentAmount"], message: "Adjustment amount is required" });
-  }
-});
 
 function mapQuoteStatus(request) {
   const status = request.status;
@@ -38,18 +26,12 @@ function toQuotePayload(request, extras = {}) {
     destination: request.destination,
     distanceKm: request.distanceKm,
     weight: request.weight,
-    calculatedPrice: request.calculatedPrice,
-    adjustmentType: request.adjustmentType,
-    adjustmentAmount: request.adjustmentAmount,
-    adjustmentReason: request.adjustmentReason,
     finalPrice: request.finalPrice ?? request.quotedPrice,
     quotedPrice: request.quotedPrice,
     quotedEstimatedTime: request.quotedEstimatedTime,
     quoteNotes: request.quoteNotes,
     status: request.status,
     quoteStatus: mapQuoteStatus({ ...request, ...extras }),
-    approvedByDispatcher: request.approvedByDispatcher,
-    approvedAt: request.approvedAt,
     customer: request.customer,
     driver: request.driver,
     truck: request.truck,
@@ -58,39 +40,6 @@ function toQuotePayload(request, extras = {}) {
     ...extras,
   };
 }
-
-router.post("/:id/calculate", requireRole("admin", "dispatcher"), async (req, res, next) => {
-  try {
-    const result = await db.calculateQuotePrice(req.params.id, {
-      actorId: req.user.sub,
-      force: true,
-    });
-    if (!result) return res.status(404).json({ message: "Quote not found" });
-    res.json({
-      quote: toQuotePayload(result.request),
-      calculation: result.calculation,
-      settings: result.settings,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.patch("/:id/adjust-price", requireRole("admin", "dispatcher"), validate(adjustSchema), async (req, res, next) => {
-  try {
-    const type = req.body.adjustmentType || null;
-    const request = await db.adjustQuotePrice(req.params.id, {
-      adjustmentType: type,
-      adjustmentAmount: type ? req.body.adjustmentAmount : 0,
-      adjustmentReason: req.body.adjustmentReason,
-      actorId: req.user.sub,
-    });
-    if (!request) return res.status(404).json({ message: "Quote not found" });
-    res.json(toQuotePayload(request));
-  } catch (error) {
-    next(error);
-  }
-});
 
 router.get("/:id", async (req, res, next) => {
   try {

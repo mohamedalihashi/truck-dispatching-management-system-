@@ -119,46 +119,6 @@ router.get("/audit-logs", requireRole("admin"), requirePermission("auditLogs"), 
   }
 });
 
-router.get("/user-activity-report", requireRole("admin"), requirePermission("reports"), async (req, res, next) => {
-  try {
-    if (!req.query.userId) {
-      return res.status(400).json({ message: "Select a user to generate the activity report" });
-    }
-    const report = await db.userActivityReport({
-      userId: req.query.userId,
-      activityType: req.query.activityType || undefined,
-      from: req.query.from || undefined,
-      to: req.query.to || undefined,
-      groupBy: req.query.groupBy || "day",
-      limit: req.query.limit || 1000,
-    });
-    if (!report) return res.status(404).json({ message: "User not found" });
-    await db.recordAudit({
-      userId: req.user.sub,
-      action: "report.user_activity.generated",
-      entityType: "users",
-      entityId: req.query.userId,
-      description: `Generated user activity report for ${report.profile.name}`,
-      newValues: { activityType: req.query.activityType || null, from: req.query.from || null, to: req.query.to || null },
-    });
-    res.json(report);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get("/delivery-feedback", requireRole("admin"), requirePermission("reports"), async (req, res, next) => {
-  try {
-    res.json(await db.listTripFeedback({
-      complaintsOnly: req.query.complaintsOnly === "true",
-      page: req.query.page,
-      limit: req.query.limit || 100,
-    }));
-  } catch (error) {
-    next(error);
-  }
-});
-
 router.get("/sms-notifications", requireRole("admin"), requirePermission("notifications"), async (req, res, next) => {
   try {
     res.json(await listSmsNotifications({ status: req.query.status, page: req.query.page, limit: req.query.limit }));

@@ -8,10 +8,15 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
+      // Do not refresh an active booking/trip screen automatically when a
+      // deployment becomes available. PwaUpdatePrompt lets the user decide
+      // when it is safe to reload.
+      registerType: "prompt",
       includeAssets: [
+        "favicon.png",
         "favicon.svg",
         "apple-touch-icon.png",
+        "brand/gaarihel-logo.png",
         "pwa-192x192.png",
         "pwa-512x512.png",
         "pwa-maskable-512x512.png"
@@ -19,12 +24,12 @@ export default defineConfig({
       manifestFilename: "manifest.webmanifest",
       manifest: {
         id: "/",
-        name: "TruckDispatch Marketplace",
-        short_name: "TruckDispatch",
+        name: "GaariHel Marketplace",
+        short_name: "GaariHel",
         description:
-          "Truck & cargo dispatch marketplace — book shipments, assign drivers, and track trips in Somalia.",
-        theme_color: "#0d1c32",
-        background_color: "#0d1c32",
+          "GaariHel — hel gaari, dir rarkaaga. Truck & cargo marketplace for Somalia.",
+        theme_color: "#00224D",
+        background_color: "#00224D",
         display: "standalone",
         orientation: "portrait-primary",
         scope: "/",

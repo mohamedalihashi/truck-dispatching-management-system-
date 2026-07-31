@@ -1,6 +1,8 @@
 import { X } from "lucide-react";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 export function Modal({ title, onClose, children, wide = false }) {
+  const { t } = useLanguage();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm dark:bg-black/60">
       <div
@@ -9,11 +11,14 @@ export function Modal({ title, onClose, children, wide = false }) {
         }`}
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-outline-variant/40 bg-surface-container-lowest/95 px-5 py-4 backdrop-blur">
-          <h2 className="text-lg font-bold text-primary">{title}</h2>
+          <h2 className="text-lg font-bold text-primary">
+            {typeof title === "string" ? t(title) : title}
+          </h2>
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-container-low"
+            aria-label={t("Close")}
           >
             <X size={18} />
           </button>

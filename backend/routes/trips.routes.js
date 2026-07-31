@@ -79,14 +79,13 @@ router.get("/summary", async (req, res, next) => {
   }
 });
 
-router.get("/feedback", requireRole("admin", "dispatcher", "driver"), async (req, res, next) => {
+router.get("/feedback", requireRole("admin", "driver"), async (req, res, next) => {
   try {
     const filters = {
       page: req.query.page,
       limit: req.query.limit || 10
     };
     if (req.user.role === "driver") filters.driverId = req.user.sub;
-    if (req.user.role === "dispatcher") filters.dispatcherId = req.user.sub;
     const result = await db.listTripFeedback(filters);
     res.json(result);
   } catch (error) {
@@ -94,10 +93,12 @@ router.get("/feedback", requireRole("admin", "dispatcher", "driver"), async (req
   }
 });
 
-router.patch("/:id/status", requireRole("driver", "dispatcher", "admin"), validate(statusSchema), async (req, res, next) => {
+router.patch("/:id/status", requireRole("driver"), validate(statusSchema), async (req, res, next) => {
   try {
-    const options = { role: req.user.role, driverId: req.user.role === "driver" ? req.user.sub : undefined };
-    const result = await db.updateTripStatus(req.params.id, req.body.status, req.user.sub, options);
+    const result = await db.updateTripStatus(req.params.id, req.body.status, req.user.sub, {
+      role: "driver",
+      driverId: req.user.sub
+    });
     if (!result) return res.status(404).json({ message: "Trip not found" });
     req.app.get("io").emit("trip.status.updated", result.trip);
     if (result.notification) req.app.get("io").emit("notification.created", result.notification);
@@ -126,20 +127,6 @@ router.post("/:id/accept", requireRole("driver"), async (req, res, next) => {
     const result = await db.updateTripStatus(req.params.id, "Accepted", req.user.sub, { driverId: req.user.sub, role: "driver" });
     if (!result) return res.status(404).json({ message: "Trip not found" });
     req.app.get("io").emit("trip.status.updated", result.trip);
-    res.json(result.trip);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/:id/restore", requireRole("dispatcher", "admin"), async (req, res, next) => {
-  try {
-    const result = await db.restoreTrip(req.params.id, req.user.sub);
-    if (!result) return res.status(404).json({ message: "Trip not found" });
-    req.app.get("io").emit("trip.status.updated", result.trip);
-    if (result.notification) req.app.get("io").emit("notification.created", result.notification);
-    void sendTripEventSms(result.trip.id, "cargo.restored")
-      .catch((error) => console.error("Restored trip SMS failed:", error.message));
     res.json(result.trip);
   } catch (error) {
     next(error);

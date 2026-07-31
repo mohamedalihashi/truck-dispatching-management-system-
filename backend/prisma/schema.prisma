@@ -7,8 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────
@@ -95,6 +96,29 @@ enum EarningStatus {
   @@map("earning_status")
 }
 
+enum CargoLoadType {
+  FTL
+  SHARED
+
+  @@map("cargo_load_type")
+}
+
+enum DriverServiceType {
+  FTL
+  SHARED
+
+  @@map("driver_service_type")
+}
+
+enum BidStatus {
+  Pending
+  Accepted
+  Rejected
+  Withdrawn
+
+  @@map("bid_status")
+}
+
 // ─── Models ──────────────────────────────────────────────────────────
 
 model User {
@@ -113,11 +137,13 @@ model User {
   driverLicensePublicId String? @map("driver_license_public_id")
   driverImageUrl String? @map("driver_image_url")
   driverImagePublicId String? @map("driver_image_public_id")
+  serviceType    DriverServiceType?  @map("service_type")
   status       String   @default("Active")
   isSuperAdmin Boolean  @default(false) @map("is_super_admin")
   mustChangePassword Boolean @default(false) @map("must_change_password")
   failedLoginAttempts Int @default(0) @map("failed_login_attempts")
   lockedUntil DateTime? @map("locked_until") @db.Timestamptz()
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz()
   createdById  String?  @map("created_by_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
@@ -144,7 +170,14 @@ model User {
   smsNotificationsSent  SmsNotification[] @relation("SmsSentBy")
   supportComplaintsFiled SupportComplaint[] @relation("SupportComplaintCustomer")
   supportComplaintsAgainst SupportComplaint[] @relation("SupportComplaintAgainst")
+  bids                 Bid[]
+  sharedTrips          SharedTrip[]
+  sharedTripBookings   SharedTripBooking[]
+  phoneBookingsAssigned CargoRequest[] @relation("PhoneBookingAssignedBy")
 
+  @@index([role], map: "idx_users_role")
+  @@index([role, status], map: "idx_users_role_status")
+  @@index([createdById], map: "idx_users_created_by")
   @@map("users")
 }
 
@@ -217,6 +250,7 @@ model Truck {
   truckNumber String      @map("truck_number")
   plateNumber String      @unique @map("plate_number")
   capacity    String
+  capacityTons Decimal?   @map("capacity_tons") @db.Decimal(12, 2)
   truckType   String      @map("truck_type")
   photoUrl1   String?     @map("photo_url_1")
   photoUrl2   String?     @map("photo_url_2")
@@ -236,7 +270,10 @@ model Truck {
   driver        User           @relation(fields: [driverId], references: [id], onDelete: Cascade)
   cargoRequests CargoRequest[]
   trips         Trip[]
+  bids          Bid[]
+  sharedTrips   SharedTrip[]
 
+  @@index([status], map: "idx_trucks_status")
   @@map("trucks")
 }
 
@@ -279,10 +316,16 @@ model CargoRequest {
   quoteVersion          Int           @default(0) @map("quote_version")
   customerDecisionAt    DateTime?     @map("customer_decision_at") @db.Timestamptz()
   customerDecisionNote  String?       @map("customer_decision_note")
+  cargoImageUrl         String?       @map("cargo_image_url")
+  cargoImagePublicId    String?       @map("cargo_image_public_id")
+  loadType              CargoLoadType @default(FTL) @map("load_type")
   status                RequestStatus @default(Pending)
   driverId              String?       @map("driver_id") @db.Uuid
   truckId               String?       @map("truck_id") @db.Uuid
   dispatcherId          String?       @map("dispatcher_id") @db.Uuid
+  bookingChannel        String        @default("ONLINE") @map("booking_channel")
+  assignedByAdminId     String?       @map("assigned_by_admin_id") @db.Uuid
+  assignedAt            DateTime?     @map("assigned_at") @db.Timestamptz()
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -290,10 +333,19 @@ model CargoRequest {
   customer   User   @relation("CargoRequestCustomer", fields: [customerId], references: [id])
   driver     User?  @relation("CargoRequestDriver", fields: [driverId], references: [id])
   dispatcher User?  @relation("CargoRequestDispatcher", fields: [dispatcherId], references: [id])
+  assignedByAdmin User? @relation("PhoneBookingAssignedBy", fields: [assignedByAdminId], references: [id], onDelete: SetNull)
   truck      Truck? @relation(fields: [truckId], references: [id])
   trips      Trip[]
+  bids       Bid[]
+  sharedBooking SharedTripBooking?
 
   @@index([status], map: "idx_cargo_requests_status")
+  @@index([loadType, status], map: "idx_cargo_requests_load_type")
+  @@index([customerId, createdAt], map: "idx_cargo_requests_customer_created")
+  @@index([driverId], map: "idx_cargo_requests_driver")
+  @@index([dispatcherId], map: "idx_cargo_requests_dispatcher")
+  @@index([bookingChannel, status], map: "idx_cargo_requests_booking_channel_status")
+  @@index([createdAt], map: "idx_cargo_requests_created_at")
   @@map("cargo_requests")
 }
 
@@ -332,6 +384,11 @@ model Trip {
   locationPoints TripLocationPoint[]
 
   @@index([status], map: "idx_trips_status")
+  @@index([customerId], map: "idx_trips_customer")
+  @@index([driverId, status], map: "idx_trips_driver_status")
+  @@index([dispatcherId], map: "idx_trips_dispatcher")
+  @@index([cargoRequestId], map: "idx_trips_cargo_request")
+  @@index([createdAt], map: "idx_trips_created_at")
   @@map("trips")
 }
 
@@ -360,6 +417,7 @@ model Notification {
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read], map: "idx_notifications_user")
+  @@index([createdAt], map: "idx_notifications_created_at")
   @@map("notifications")
 }
 
@@ -384,6 +442,9 @@ model Payment {
   customer User? @relation("PaymentCustomer", fields: [customerId], references: [id])
   earnings Earning[]
 
+  @@index([status], map: "idx_payments_status")
+  @@index([customerId, createdAt], map: "idx_payments_customer_created")
+  @@index([createdAt], map: "idx_payments_created_at")
   @@map("payments")
 }
 
@@ -416,20 +477,6 @@ model Setting {
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz()
 
   @@map("settings")
-}
-
-model PricingSettings {
-  id               String   @id @default("default")
-  baseFee          Decimal  @default(20) @map("base_fee") @db.Decimal(12, 2)
-  pricePerKm       Decimal  @default(10) @map("price_per_km") @db.Decimal(12, 2)
-  pricePerTon      Decimal  @default(5) @map("price_per_ton") @db.Decimal(12, 2)
-  minimumCharge    Decimal  @default(50) @map("minimum_charge") @db.Decimal(12, 2)
-  maximumCharge    Decimal? @map("maximum_charge") @db.Decimal(12, 2)
-  automaticPricing Boolean  @default(true) @map("automatic_pricing")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
-
-  @@map("pricing_settings")
 }
 
 model AuditLog {
@@ -561,4 +608,75 @@ model SupportComplaint {
   @@index([customerId, createdAt], map: "idx_support_complaints_customer")
   @@index([status, createdAt], map: "idx_support_complaints_status")
   @@map("support_complaints")
+}
+
+model Bid {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cargoRequestId String   @map("cargo_request_id")
+  driverId       String   @map("driver_id") @db.Uuid
+  truckId        String?  @map("truck_id") @db.Uuid
+  amount         Decimal  @db.Decimal(12, 2)
+  estimatedDays  Int?     @map("estimated_days")
+  notes          String?
+  status         BidStatus @default(Pending)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  cargoRequest CargoRequest @relation(fields: [cargoRequestId], references: [id], onDelete: Cascade)
+  driver       User         @relation(fields: [driverId], references: [id])
+  truck        Truck?       @relation(fields: [truckId], references: [id])
+
+  @@unique([cargoRequestId, driverId], map: "uq_bid_request_driver")
+  @@index([driverId, status], map: "idx_bids_driver")
+  @@index([cargoRequestId, status], map: "idx_bids_request_status")
+  @@map("bids")
+}
+
+model SharedTrip {
+  id              String    @id
+  driverId        String    @map("driver_id") @db.Uuid
+  truckId         String?   @map("truck_id") @db.Uuid
+  pickup          String
+  destination     String
+  fromRegion      String?   @map("from_region")
+  fromDistrict    String?   @map("from_district")
+  toRegion        String?   @map("to_region")
+  toDistrict      String?   @map("to_district")
+  departureDate   DateTime? @map("departure_date") @db.Date
+  durationAmount  Decimal?  @map("duration_amount") @db.Decimal(12, 2)
+  durationUnit    String?   @map("duration_unit")
+  totalCapacityTons Decimal @map("total_capacity_tons") @db.Decimal(12, 2)
+  availableTons   Decimal   @map("available_tons") @db.Decimal(12, 2)
+  pricePerTon     Decimal?  @map("price_per_ton") @db.Decimal(12, 2)
+  notes           String?
+  status          String    @default("Open for booking")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  driver   User                @relation(fields: [driverId], references: [id])
+  truck    Truck?              @relation(fields: [truckId], references: [id])
+  bookings SharedTripBooking[]
+
+  @@index([driverId, status], map: "idx_shared_trips_driver")
+  @@index([status, departureDate], map: "idx_shared_trips_status")
+  @@map("shared_trips")
+}
+
+model SharedTripBooking {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sharedTripId   String   @map("shared_trip_id")
+  customerId     String   @map("customer_id") @db.Uuid
+  cargoRequestId String?  @unique @map("cargo_request_id")
+  weightTons     Decimal  @map("weight_tons") @db.Decimal(12, 2)
+  status         String   @default("Pending")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  sharedTrip   SharedTrip    @relation(fields: [sharedTripId], references: [id], onDelete: Cascade)
+  customer     User          @relation(fields: [customerId], references: [id])
+  cargoRequest CargoRequest? @relation(fields: [cargoRequestId], references: [id], onDelete: SetNull)
+
+  @@index([sharedTripId], map: "idx_shared_trip_bookings_trip")
+  @@index([customerId], map: "idx_shared_trip_bookings_customer")
+  @@map("shared_trip_bookings")
 }

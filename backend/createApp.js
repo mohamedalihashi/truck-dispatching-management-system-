@@ -15,13 +15,16 @@ import adminRoutes from "./routes/admin.routes.js";
 import paymentRoutes from "./routes/payments.routes.js";
 import earningsRoutes from "./routes/earnings.routes.js";
 import feedbackRoutes from "./routes/feedback.routes.js";
-import pricingRoutes from "./routes/pricing.routes.js";
 import quotesRoutes from "./routes/quotes.routes.js";
 import supportRoutes from "./routes/support.routes.js";
+import marketplaceRoutes from "./routes/marketplace.routes.js";
+import sharedTripsRoutes from "./routes/sharedTrips.routes.js";
+import publicRoutes from "./routes/public.routes.js";
 import { auditContextMiddleware } from "./lib/auditContext.js";
 import { isCloudinaryConfigured } from "./services/cloudinaryService.js";
 import { getWaafiPublicConfig } from "./services/waafiPayService.js";
 import { isSmsConfigured, retryDueSms } from "./services/smsService.js";
+import { prisma } from "./lib/prisma.js";
 
 function looksLikePlaceholder(value = "") {
   return /your[_-]?|replace-with|xxxxx|changeme|example|<|>/i.test(String(value || ""));
@@ -127,38 +130,69 @@ export function createApp({ io } = {}) {
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true }));
   app.use(auditContextMiddleware);
+
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    res.on("finish", () => {
+      const duration = Date.now() - startedAt;
+      if (process.env.NODE_ENV !== "test") {
+        console.log(`[API] ${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms`);
+      }
+    });
+    next();
+  });
+
   if (!process.env.VERCEL) {
     app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
   }
 
   app.get("/api/health", async (req, res) => {
+    const startedAt = Date.now();
     const integrations = getIntegrationsStatus();
-    // Best-effort SMS retry on serverless (cron or monitoring can hit /api/health).
+
     if (process.env.VERCEL || req.query.retrySms === "1") {
       void retryDueSms().catch((error) => console.warn("SMS retry failed:", error.message));
     }
-    try {
-      const stats = await db.dashboardStats();
-      const missing = Object.entries(integrations)
-        .filter(([, value]) => value && typeof value === "object" && value.configured === false)
-        .map(([key]) => key);
 
-      if (process.env.VERCEL && !integrations.cloudinary.configured) {
-        missing.push("cloudinary");
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      const latencyMs = Date.now() - startedAt;
+
+      if (req.query.full === "1") {
+        const stats = await db.dashboardStats();
+        const missing = Object.entries(integrations)
+          .filter(([, value]) => value && typeof value === "object" && value.configured === false)
+          .map(([key]) => key);
+
+        if (process.env.VERCEL && !integrations.cloudinary.configured) {
+          missing.push("cloudinary");
+        }
+
+        return res.json({
+          status: missing.length ? "degraded" : "ok",
+          database: "connected",
+          latencyMs,
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString(),
+          integrations,
+          missing: [...new Set(missing)],
+          stats
+        });
       }
 
       res.json({
-        status: missing.length ? "degraded" : "ok",
-        database: "postgresql",
+        success: true,
+        database: "connected",
+        latencyMs,
+        status: "ok",
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
-        integrations,
-        missing: [...new Set(missing)],
-        stats
+        integrations
       });
     } catch (error) {
-      res.status(500).json({
-        status: "error",
+      res.status(503).json({
+        success: false,
+        database: "disconnected",
         message: error.message,
         integrations: { ...integrations, database: false }
       });
@@ -188,6 +222,7 @@ export function createApp({ io } = {}) {
   app.get("/api/internal/sms-retry", smsRetryHandler);
   app.post("/api/internal/sms-retry", smsRetryHandler);
 
+  app.use("/api/public", publicRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/public/feedback", feedbackRoutes);
   app.use("/api/users", userRoutes);
@@ -199,9 +234,10 @@ export function createApp({ io } = {}) {
   app.use("/api/payments", paymentRoutes);
   app.use("/api/earnings", earningsRoutes);
   app.use("/api/admin", adminRoutes);
-  app.use("/api/pricing", pricingRoutes);
   app.use("/api/quotes", quotesRoutes);
   app.use("/api/support", supportRoutes);
+  app.use("/api/marketplace", marketplaceRoutes);
+  app.use("/api/shared-trips", sharedTripsRoutes);
   app.use(notFound);
   app.use(errorHandler);
 

@@ -9,11 +9,11 @@ router.use(requireAuth);
 router.use(requirePasswordChanged);
 router.use(requirePermission("earnings"));
 
-router.get("/commission", requireRole("admin", "driver", "dispatcher"), async (_req, res) => {
+router.get("/commission", requireRole("admin", "driver"), async (_req, res) => {
   res.json(await getCommissionSettings());
 });
 
-router.get("/summary", requireRole("admin", "driver", "dispatcher"), async (req, res, next) => {
+router.get("/summary", requireRole("admin", "driver"), async (req, res, next) => {
   try {
     res.json(
       await db.getEarningsSummary({
@@ -26,7 +26,7 @@ router.get("/summary", requireRole("admin", "driver", "dispatcher"), async (req,
   }
 });
 
-router.get("/me", requireRole("driver", "dispatcher"), async (req, res, next) => {
+router.get("/me", requireRole("driver"), async (req, res, next) => {
   try {
     res.json(
       await db.listEarnings({

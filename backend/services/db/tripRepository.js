@@ -65,7 +65,10 @@ async tripSummary({ driverId, customerId } = {}) {
 },
 
 async updateTripStatus(id, status, actorId, { driverId, role } = {}) {
-  const existing = await prisma.trip.findUnique({ where: { id } });
+  const existing = await prisma.trip.findUnique({
+    where: { id },
+    include: { cargoRequest: { select: { bookingChannel: true } } },
+  });
   if (!existing) return null;
   if (driverId && existing.driverId !== driverId) {
     const error = new Error("Not allowed to update this trip");
@@ -86,7 +89,7 @@ async updateTripStatus(id, status, actorId, { driverId, role } = {}) {
     throw error;
   }
 
-  // Journey cannot start until the customer pays the 30% deposit.
+  // Journey cannot start until the customer pays the 30% deposit (including phone FTL).
   if (TRIP_START_STATUSES.includes(status)) {
     const payment = await prisma.payment.findFirst({
       where: { tripId: id },
@@ -440,6 +443,11 @@ async rejectTrip(id, driverId) {
   return withTransaction(async (tx) => {
     const trip = await tx.trip.findFirst({
       where: { id, driverId },
+      include: {
+        cargoRequest: {
+          include: { sharedBooking: true },
+        },
+      },
     });
     if (!trip) return null;
 
@@ -451,8 +459,26 @@ async rejectTrip(id, driverId) {
     if (trip.cargoRequestId) {
       await tx.cargoRequest.update({
         where: { id: trip.cargoRequestId },
-        data: { status: "Pending", driverId: null, truckId: null },
+        data: {
+          status: "Pending",
+          driverId: null,
+          truckId: null,
+          ...(trip.cargoRequest?.bookingChannel === "PHONE_ASSISTED"
+            ? { assignedByAdminId: null, assignedAt: null }
+            : {}),
+        },
       });
+      const sharedBooking = trip.cargoRequest?.sharedBooking;
+      if (sharedBooking) {
+        await tx.sharedTrip.update({
+          where: { id: sharedBooking.sharedTripId },
+          data: {
+            availableTons: { increment: sharedBooking.weightTons },
+            status: "Open for booking",
+          },
+        });
+        await tx.sharedTripBooking.delete({ where: { id: sharedBooking.id } });
+      }
     }
 
     if (trip.truckId) {
@@ -558,6 +584,41 @@ async restoreTrip(id, actorId) {
 
     return { trip: mapTrip(joined), notification: mapNotification(notification) };
   });
+},
+
+async listPublicTestimonials({ limit = 12 } = {}) {
+  const rows = await prisma.tripFeedback.findMany({
+    where: {
+      reportProblem: false,
+      rating: { gte: 4 },
+    },
+    include: {
+      customer: { include: { customerProfile: true } },
+      trip: { select: { pickup: true, destination: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: Number(limit),
+  });
+
+  return {
+    data: rows.map((row) => {
+      const name = row.customer?.name?.trim() || "Customer";
+      const parts = name.split(/\s+/).filter(Boolean);
+      const displayName =
+        parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1].charAt(0)}.` : parts[0] || "Customer";
+      return {
+        id: row.id,
+        rating: row.rating,
+        comment:
+          row.comment?.trim() ||
+          `Rated ${row.rating}/5 stars for a smooth delivery experience.`,
+        customerName: displayName,
+        customerCity: row.customer?.customerProfile?.city || null,
+        route: row.trip ? `${row.trip.pickup} → ${row.trip.destination}` : null,
+        createdAt: row.createdAt,
+      };
+    }),
+  };
 },
 
 };

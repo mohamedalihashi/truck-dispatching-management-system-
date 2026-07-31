@@ -5,18 +5,34 @@ const API_BASE_URL = getApiBaseUrl();
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: { "Content-Type": "application/json" }
+  headers: { "Content-Type": "application/json" },
+  timeout: 30_000
 });
 
 apiClient.interceptors.request.use((config) => {
+  config.metadata = { startTime: Date.now() };
   const token = localStorage.getItem("td_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 apiClient.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    if (import.meta.env.DEV && response.config?.metadata?.startTime) {
+      const duration = Date.now() - response.config.metadata.startTime;
+      console.log(
+        `${response.config.method?.toUpperCase()} ${response.config.url}: ${duration}ms`
+      );
+    }
+    return response.data;
+  },
   (error) => {
+    if (import.meta.env.DEV && error.config?.metadata?.startTime) {
+      const duration = Date.now() - error.config.metadata.startTime;
+      console.error(
+        `${error.config.method?.toUpperCase()} ${error.config.url}: ${duration}ms`
+      );
+    }
     const data = error.response?.data;
     const status = error.response?.status;
     let message = data?.message;
@@ -93,13 +109,23 @@ export const api = {
   deleteUser: (id) => apiClient.delete(`/users/${id}`),
   verifyDriver: (id) => apiClient.post(`/users/${id}/verify-driver`),
   createCargoRequest: (payload) => apiClient.post("/cargo-requests", payload),
+  createPhoneBooking: (payload) => apiClient.post("/cargo-requests/phone-assisted", payload),
+  listPhoneBookings: (params = {}) => apiClient.get("/cargo-requests/phone-assisted", { params }),
+  listPhoneBookingOptions: () => apiClient.get("/cargo-requests/phone-assisted-options"),
+  phoneBookingAssignmentOptions: (id) => apiClient.get(`/cargo-requests/phone-assisted/${encodeURIComponent(id)}/assignment-options`),
+  assignPhoneBooking: (id, payload) => apiClient.post(`/cargo-requests/phone-assisted/${encodeURIComponent(id)}/assign`, payload),
   updateCargoRequest: (id, payload) => apiClient.patch(`/cargo-requests/${id}`, payload),
   listCargoRequests: (params = {}) => apiClient.get("/cargo-requests", { params }),
   cargoRequestSummary: () => apiClient.get("/cargo-requests/summary"),
   assignCargoRequest: (id, payload) => apiClient.patch(`/cargo-requests/${id}/assign`, payload),
+  uploadCargoImage: (id, formData) =>
+    apiClient.post(`/cargo-requests/${id}/image`, formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    }),
   submitCargoQuote: (id, payload) => apiClient.patch(`/cargo-requests/${id}/quote`, payload),
   acceptCargoQuote: (id) => apiClient.post(`/cargo-requests/${id}/quote/accept`),
   rejectCargoQuote: (id, payload) => apiClient.post(`/cargo-requests/${id}/quote/reject`, payload),
+  declineCargoBooking: (id, payload) => apiClient.post(`/cargo-requests/${id}/decline`, payload),
   cancelCargoRequest: (id) => apiClient.delete(`/cargo-requests/${id}`),
   restoreCargoRequest: (id) => apiClient.post(`/cargo-requests/${id}/restore`),
   listTrips: (params = {}) => apiClient.get("/trips", { params }),
@@ -108,7 +134,6 @@ export const api = {
   updateTripStatus: (id, status) => apiClient.patch(`/trips/${id}/status`, { status }),
   acceptTrip: (id) => apiClient.post(`/trips/${id}/accept`),
   rejectTrip: (id) => apiClient.post(`/trips/${id}/reject`),
-  restoreTrip: (id) => apiClient.post(`/trips/${id}/restore`),
   updateTripLocation: (id, payload) => apiClient.patch(`/trips/${id}/location`, payload),
   getTripLocations: (id) => apiClient.get(`/trips/${id}/locations`),
   uploadProof: (id, formData) =>
@@ -123,13 +148,16 @@ export const api = {
   listTruckTypes: () => apiClient.get("/trucks/types"),
   updateTruck: (id, payload) => apiClient.patch(`/trucks/${id}`, payload),
   deleteTruck: (id) => apiClient.delete(`/trucks/${id}`),
-  listNotifications: () => apiClient.get("/notifications"),
+  listNotifications: (params = {}) => apiClient.get("/notifications", { params }),
   markNotificationRead: (id) => apiClient.patch(`/notifications/${id}/read`),
   dashboardReport: () => apiClient.get("/reports/dashboard"),
-  dashboardAnalytics: () => apiClient.get("/reports/dashboard-analytics"),
-  revenueReport: (period = "monthly") => apiClient.get("/reports/revenue", { params: { period } }),
-  performanceReport: () => apiClient.get("/reports/performance"),
-  shipmentsReport: () => apiClient.get("/reports/shipments"),
+  dashboardSummary: () => apiClient.get("/reports/dashboard-summary"),
+  reportsSummary: () => apiClient.get("/reports/summary"),
+  reportsOverview: () => apiClient.get("/reports/overview"),
+  reportsTrends: (params = {}) => apiClient.get("/reports/trends", { params }),
+  reportsOperations: () => apiClient.get("/reports/operations"),
+  reportsPerformance: () => apiClient.get("/reports/performance"),
+  userActivityReport: (params = {}) => apiClient.get("/reports/user-activity", { params }),
   listPayments: (params = {}) => apiClient.get("/admin/payments", { params }),
   createPayment: (payload) => apiClient.post("/admin/payments", payload),
   updatePayment: (id, payload) => apiClient.patch(`/admin/payments/${id}`, payload),
@@ -146,26 +174,47 @@ export const api = {
   getSettings: () => apiClient.get("/admin/settings"),
   updateSettings: (key, value) => apiClient.put(`/admin/settings/${key}`, value),
   updateRolePermissions: (value) => apiClient.put("/admin/settings/rolePermissions", value),
-  getPricing: () => apiClient.get("/pricing"),
-  estimatePricing: (payload) => apiClient.post("/pricing/estimate", payload),
-  updatePricing: (payload) => apiClient.put("/pricing", payload),
-  calculateQuote: (id) => apiClient.post(`/quotes/${encodeURIComponent(id)}/calculate`),
-  adjustQuotePrice: (id, payload) => apiClient.patch(`/quotes/${encodeURIComponent(id)}/adjust-price`, payload),
   getQuote: (id) => apiClient.get(`/quotes/${encodeURIComponent(id)}`),
   acceptQuoteById: (id) => apiClient.post(`/quotes/${encodeURIComponent(id)}/accept`),
   rejectQuoteById: (id, payload) => apiClient.post(`/quotes/${encodeURIComponent(id)}/reject`, payload),
   payQuote: (id) => apiClient.post(`/quotes/${encodeURIComponent(id)}/pay`),
-  listAuditLogs: () => apiClient.get("/admin/audit-logs"),
-  userActivityReport: (params) => apiClient.get("/admin/user-activity-report", { params }),
-  deliveryFeedbackReport: (params) => apiClient.get("/admin/delivery-feedback", { params }),
+  listAuditLogs: (params = {}) => apiClient.get("/admin/audit-logs", { params }),
   listSmsNotifications: (params) => apiClient.get("/admin/sms-notifications", { params }),
   sendSmsNotification: (payload) => apiClient.post("/admin/sms-notifications", payload),
   resendSmsNotification: (id) => apiClient.post(`/admin/sms-notifications/${id}/resend`),
   listSupportComplaints: (params = {}) => apiClient.get("/support", { params }),
+  getSupportContact: () => apiClient.get("/support/contact"),
   createSupportComplaint: (payload) => apiClient.post("/support", payload),
   updateSupportComplaintStatus: (id, payload) => apiClient.patch(`/support/${id}/status`, payload),
   getPublicFeedback: (token) => apiClient.get(`/public/feedback/${encodeURIComponent(token)}`),
-  submitPublicFeedback: (token, payload) => apiClient.post(`/public/feedback/${encodeURIComponent(token)}`, payload)
+  submitPublicFeedback: (token, payload) => apiClient.post(`/public/feedback/${encodeURIComponent(token)}`, payload),
+  listPublicTrucks: (params = {}) => apiClient.get("/public/trucks", { params }),
+  getPublicTruck: (id) => apiClient.get(`/public/trucks/${encodeURIComponent(id)}`),
+  listPublicTestimonials: (params = {}) => apiClient.get("/public/testimonials", { params }),
+  listFtlMarketplace: (params = {}) => apiClient.get("/marketplace/ftl", { params }),
+  listMyBids: (params = {}) => apiClient.get("/marketplace/bids/me", { params }),
+  listBidsForRequest: (cargoRequestId) => apiClient.get(`/marketplace/bids/request/${encodeURIComponent(cargoRequestId)}`),
+  createBid: (cargoRequestId, payload) => apiClient.post(`/marketplace/bids/${encodeURIComponent(cargoRequestId)}`, payload),
+  updateBid: (id, payload) => apiClient.patch(`/marketplace/bids/${id}`, payload),
+  withdrawBid: (id) => apiClient.post(`/marketplace/bids/${id}/withdraw`),
+  acceptBid: (id) => apiClient.post(`/marketplace/bids/${id}/accept`),
+  sharedTripsSummary: (params = {}) => apiClient.get("/shared-trips/summary", { params }),
+  listSharedTrips: (params = {}) => apiClient.get("/shared-trips", { params }),
+  listMySharedTrips: (params = {}) => apiClient.get("/shared-trips/me", { params }),
+  listPublicSharedTrips: (params = {}) => apiClient.get("/shared-trips/public", { params }),
+  getSharedTrip: (id) => apiClient.get(`/shared-trips/${encodeURIComponent(id)}`),
+  createSharedTrip: (payload) => apiClient.post("/shared-trips", payload),
+  updateSharedTrip: (id, payload) => apiClient.patch(`/shared-trips/${id}`, payload),
+  publishSharedTrip: (id) => apiClient.post(`/shared-trips/${id}/publish`),
+  cancelSharedTrip: (id) => apiClient.post(`/shared-trips/${id}/cancel`),
+  startSharedTripPickup: (id) => apiClient.post(`/shared-trips/${id}/pickup`),
+  markSharedTripInTransit: (id) => apiClient.post(`/shared-trips/${id}/in-transit`),
+  markSharedTripDelivered: (id) => apiClient.post(`/shared-trips/${id}/deliver`),
+  /** @deprecated use startSharedTripPickup */
+  departSharedTrip: (id) => apiClient.post(`/shared-trips/${id}/pickup`),
+  /** @deprecated use markSharedTripDelivered */
+  completeSharedTrip: (id) => apiClient.post(`/shared-trips/${id}/deliver`),
+  bookSharedTrip: (id, payload) => apiClient.post(`/shared-trips/${id}/book`, payload)
 };
 
 export function saveSession({ token, user }) {

@@ -29,7 +29,7 @@ export function DriverTruckPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader title="My Truck" subtitle="View truck details, documents, and update availability status." />
+      <PageHeader title="Truck Profile" subtitle="View truck details, review documents, and update availability status." />
       {message && (
         <p className="rounded-xl border border-primary-fixed bg-primary-fixed/40 px-4 py-3 text-sm text-on-surface">
           {message}

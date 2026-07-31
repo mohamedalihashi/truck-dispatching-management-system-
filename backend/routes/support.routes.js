@@ -21,6 +21,14 @@ const statusSchema = z.object({
 router.use(requireAuth);
 router.use(requirePasswordChanged);
 
+router.get("/contact", async (_req, res, next) => {
+  try {
+    res.json(await db.getSupportContact());
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/", requireRole("admin", "customer"), async (req, res, next) => {
   try {
     const customerId = req.user.role === "customer" ? req.user.sub : req.query.customerId;

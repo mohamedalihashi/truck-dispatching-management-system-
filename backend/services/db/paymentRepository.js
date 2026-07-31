@@ -9,15 +9,30 @@ import {
 } from "../waafiPayService.js";
 import { getCommissionSettings, syncEarningsForPayment } from "../commissionService.js";
 
+const paymentInclude = {
+  customer: true,
+  trip: {
+    include: {
+      cargoRequest: { select: { id: true, loadType: true } },
+    },
+  },
+};
+
+function isSharedPayment(row) {
+  return row?.trip?.cargoRequest?.loadType === "SHARED";
+}
+
 export const paymentRepository = {
 mapPayment(row, customerName) {
   if (!row) return null;
   const amount = Number(row.amount);
   const amountPaid = Number(row.amountPaid || 0);
+  const fullPaymentOnce = isSharedPayment(row);
   const schedule = paymentSchedule({
     amount,
     amountPaid,
     deliveryConfirmedAt: row.trip?.deliveryConfirmedAt,
+    fullPaymentOnce,
   });
   return {
     id: row.id,
@@ -31,6 +46,8 @@ mapPayment(row, customerName) {
     requiredPaymentAmount: schedule.requiredAmount,
     paymentStage: schedule.stage,
     canPay: schedule.canPay,
+    fullPaymentOnce,
+    loadType: row.trip?.cargoRequest?.loadType || null,
     deliveryConfirmedAt: row.trip?.deliveryConfirmedAt || null,
     status: row.status,
     method: row.method,
@@ -46,7 +63,7 @@ mapPayment(row, customerName) {
 async getPaymentById(id) {
   const payment = await prisma.payment.findUnique({
     where: { id },
-    include: { customer: true, trip: true },
+    include: paymentInclude,
   });
   return payment ? this.mapPayment(payment) : null;
 },
@@ -54,7 +71,7 @@ async getPaymentById(id) {
 async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount }) {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
-    include: { trip: true, customer: true },
+    include: paymentInclude,
   });
 
   if (!payment) {
@@ -71,6 +88,7 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
   const totalDue = Number(payment.amount);
   const alreadyPaid = Number(payment.amountPaid || 0);
   const balanceDue = Math.max(0, totalDue - alreadyPaid);
+  const fullPaymentOnce = isSharedPayment(payment);
 
   if (payment.status === "Paid" || balanceDue <= 0) {
     const error = new Error("This payment is already completed");
@@ -94,15 +112,20 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
     amount: totalDue,
     amountPaid: alreadyPaid,
     deliveryConfirmedAt: payment.trip?.deliveryConfirmedAt,
+    fullPaymentOnce,
   });
   const requiredAmount = schedule.requiredAmount;
-  if (alreadyPaid > 0 && !payment.trip?.deliveryConfirmedAt) {
+  if (!fullPaymentOnce && alreadyPaid > 0 && !payment.trip?.deliveryConfirmedAt) {
     const error = new Error("The remaining 70% can only be paid after proof of delivery and customer confirmation");
     error.status = 409;
     throw error;
   }
   if (Math.abs(chargeAmount - requiredAmount) > 0.01) {
-    const stage = alreadyPaid <= 0 ? "30% deposit" : "remaining 70% balance";
+    const stage = fullPaymentOnce
+      ? "full shared-trip payment"
+      : alreadyPaid <= 0
+        ? "30% deposit"
+        : "remaining 70% balance";
     const error = new Error(`This payment must be the exact ${stage}: ${requiredAmount.toFixed(2)}`);
     error.status = 400;
     throw error;
@@ -114,7 +137,7 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
     payment.description ||
     (payment.trip
       ? `Trip ${payment.tripId} — ${payment.trip.pickup} to ${payment.trip.destination}`
-      : "TruckDispatch shipment payment");
+      : "GaariHel shipment payment");
 
   const { response, currency } = await waafiPurchase({
     accountNo,
@@ -143,7 +166,7 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
           : null,
         providerResponse: response,
       },
-      include: { customer: true, trip: true },
+      include: paymentInclude,
     });
 
     if (alreadyPaid <= 0 && payment.tripId) {
@@ -171,6 +194,7 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
           chargeAmount,
           amountPaid: newAmountPaid,
           totalDue,
+          fullPaymentOnce,
         },
       },
     });
@@ -282,7 +306,7 @@ async updatePayment(id, { status, amount, description, amountPaid, method }) {
   const payment = await prisma.payment.update({
     where: { id },
     data,
-    include: { customer: true, trip: true },
+    include: paymentInclude,
   }).catch(() => null);
 
   if (!payment) return null;
@@ -328,7 +352,7 @@ async updateCustomerPayment(id, { amount, description, customerId }) {
   const updated = await prisma.payment.update({
     where: { id },
     data,
-    include: { customer: true, trip: true },
+    include: paymentInclude,
   });
 
   return this.mapPayment(updated);
@@ -339,7 +363,7 @@ async listPayments({ page = 1, limit = 50, customerId } = {}) {
   const where = customerId ? { customerId } : {};
   const data = await prisma.payment.findMany({
     where,
-    include: { customer: true, trip: true },
+    include: paymentInclude,
     orderBy: { createdAt: "desc" },
     take: Number(limit),
     skip: offset,

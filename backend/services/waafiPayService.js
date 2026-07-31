@@ -159,7 +159,7 @@ export async function waafiPurchase({ accountNo, referenceId, invoiceId, amount,
         invoiceId: safeInvoiceId,
         amount: numericAmount.toFixed(2),
         currency: config.currency,
-        description: (description || "TruckDispatch payment").slice(0, 255)
+        description: (description || "GaariHel payment").slice(0, 255)
       }
     }
   };

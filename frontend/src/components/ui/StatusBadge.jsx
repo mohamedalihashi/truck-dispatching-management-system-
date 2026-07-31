@@ -1,4 +1,5 @@
 import { statusTone } from "../../utils/helpers";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 const tones = {
   success: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800",
@@ -8,11 +9,13 @@ const tones = {
 };
 
 export function StatusBadge({ status }) {
+  const { t } = useLanguage();
+  const label = status != null && status !== "" ? t(String(status)) : "";
   return (
     <span
       className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[statusTone(status)]}`}
     >
-      {status}
+      {label}
     </span>
   );
 }

@@ -30,14 +30,6 @@ export function validateTripStatusChange({
     }
   }
 
-  if (role === "dispatcher" && !DISPATCHER_TRIP_STATUSES.includes(nextStatus)) {
-    return {
-      ok: false,
-      status: 403,
-      message: "Dispatchers can only mark trips Delayed or Cancelled",
-    };
-  }
-
   if (nextStatus === "Delivered" && !hasDeliveryProof) {
     return {
       ok: false,

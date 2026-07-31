@@ -1,8 +1,14 @@
 import { StatusBadge } from "./StatusBadge";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 export function DataTable({ columns, rows, empty = "No records found." }) {
+  const { t } = useLanguage();
   if (!rows?.length) {
-    return <p className="px-6 py-10 text-center text-sm text-on-surface-variant">{empty}</p>;
+    return (
+      <p className="px-6 py-10 text-center text-sm text-on-surface-variant">
+        {t(empty)}
+      </p>
+    );
   }
 
   return (
@@ -15,7 +21,7 @@ export function DataTable({ columns, rows, empty = "No records found." }) {
                 key={col.key}
                 className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
               >
-                {col.label}
+                {t(col.label)}
               </th>
             ))}
           </tr>

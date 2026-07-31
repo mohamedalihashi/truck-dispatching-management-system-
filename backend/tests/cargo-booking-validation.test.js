@@ -57,6 +57,14 @@ describe("cargo booking validation", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts open FTL marketplace requests without a preferred truck", () => {
+    expect(cargoRequestSchema.safeParse({
+      ...validBooking,
+      openForBids: true,
+      loadType: "FTL"
+    }).success).toBe(true);
+  });
+
   it("provides reusable region, district, and formatted route helpers", () => {
     expect(isValidSomaliaRegion("Banaadir")).toBe(true);
     expect(isValidSomaliaDistrict("Banaadir", "Hodan")).toBe(true);

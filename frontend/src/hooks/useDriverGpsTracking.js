@@ -11,7 +11,7 @@ export function useDriverGpsTracking() {
   const isDriver = user?.role === "driver";
   const { data } = useTrips(
     { limit: 50 },
-    { enabled: isDriver, refetchInterval: isDriver ? 10_000 : false }
+    { enabled: isDriver, refetchInterval: isDriver ? 30_000 : false, refetchIntervalInBackground: false }
   );
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");

@@ -16,7 +16,7 @@ const safeLocation = (cargo, prefix) => {
     || (prefix === "from" ? "Pickup area" : "Destination area");
 };
 
-/** External parties who may not have a TruckDispatch account. */
+/** External parties who may not have a GaariHel account. */
 export function cargoSmsRecipients(cargo, { prefer } = {}) {
   const rows = [
     { name: cargo?.senderName || cargo?.sender, phone: cargo?.senderPhone, type: "Sender" },
@@ -83,10 +83,10 @@ export async function sendCargoRequestEventSms(request, event) {
   if (event === "booking.assigned" && request.driverId) {
     const driver = await prisma.user.findUnique({
       where: { id: request.driverId },
-      select: { name: true, phone: true },
+      select: { name: true, phone: true, truck: { select: { plateNumber: true } } },
     });
     if (driver?.phone) {
-      driverLine = ` Darawalka: ${driver.name || "Darawal"}, tel: ${driver.phone}.`;
+      driverLine = ` Darawalka: ${driver.name || "Darawal"}, tel: ${driver.phone}, taarikada: ${driver.truck?.plateNumber || "N/A"}.`;
     }
   }
 

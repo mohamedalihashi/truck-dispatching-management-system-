@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Eye, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
+import { Eye, Gavel, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
@@ -15,6 +15,7 @@ import { api } from "../../services/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES } from "../../utils/helpers";
 import { QuoteReviewPanel } from "../../components/QuoteReviewPanel";
+import { TripPaymentJourney } from "../../components/TripPaymentJourney";
 
 export function ShipmentsPage() {
   const location = useLocation();
@@ -98,23 +99,24 @@ export function ShipmentsPage() {
     setViewingTrip(updatedTrip);
     qc.invalidateQueries({ queryKey: ["trips"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
-    qc.invalidateQueries({ queryKey: ["reports"] });
     qc.invalidateQueries({ queryKey: ["trip-feedback"] });
   }
 
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Shipments"
-        subtitle="Create, view, edit, and cancel your cargo requests and trips."
+        title="FTL Trips"
+        subtitle="Full truck trips — agree on price, pay 30% to start, then 70% after delivery."
         actions={
-          <Link to="/customer/book">
+          <Link to="/customer/find-trucks">
             <Button>
-              <Plus size={16} /> Book truck
+              <Plus size={16} /> FTL Book
             </Button>
           </Link>
         }
       />
+
+      <TripPaymentJourney />
 
       {location.state?.created && (
         <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
@@ -164,6 +166,15 @@ export function ShipmentsPage() {
                     <button type="button" className="p-1 text-on-surface-variant" onClick={() => setViewingRequest(row)} title="View">
                       <Eye size={16} />
                     </button>
+                    {row.status === "Pending" && !row.driverId && row.loadType !== "SHARED" && (
+                      <Link
+                        to={`/customer/bids/${row.id}`}
+                        className="inline-flex items-center gap-1 p-1 text-xs font-semibold text-secondary-container hover:underline"
+                        title="View bids"
+                      >
+                        <Gavel size={14} /> Bids
+                      </Link>
+                    )}
                     {row.status === "Pending" && (
                       <button type="button" className="p-1 text-secondary-container" onClick={() => openEdit(row)} title="Edit">
                         <Pencil size={16} />
@@ -258,7 +269,7 @@ export function ShipmentsPage() {
 
       {viewingRequest && (
         <Modal title={`Request ${viewingRequest.id}`} onClose={() => setViewingRequest(null)} wide>
-          <QuoteReviewPanel request={viewingRequest} />
+          <QuoteReviewPanel request={viewingRequest} onUpdated={(updated) => setViewingRequest(updated)} />
 
           <dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
             <Detail label="Route" value={`${viewingRequest.pickup} → ${viewingRequest.destination}`} className="sm:col-span-2" />
@@ -273,10 +284,10 @@ export function ShipmentsPage() {
             />
             <Detail label="Truck type" value={viewingRequest.truckType} />
             <Detail label="Weight" value={viewingRequest.weight} />
-            {(viewingRequest.finalPrice != null || viewingRequest.calculatedPrice != null || viewingRequest.quotedPrice != null) ? (
+            {(viewingRequest.finalPrice != null || viewingRequest.quotedPrice != null) ? (
               <Detail
                 label="Price"
-                value={`$${Number(viewingRequest.finalPrice ?? viewingRequest.calculatedPrice ?? viewingRequest.quotedPrice).toLocaleString()}`}
+                value={`$${Number(viewingRequest.finalPrice ?? viewingRequest.quotedPrice).toLocaleString()}`}
               />
             ) : null}
             {viewingRequest.quotedEstimatedTime ? (

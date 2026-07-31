@@ -16,12 +16,13 @@ const createSchema = z.object({
   username: z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9._-]+$/),
   email: z.string().email(),
   password: strongPasswordSchema.optional(),
-  role: z.enum(["admin", "dispatcher", "customer", "driver"]),
+  role: z.enum(["admin", "customer", "driver"]),
   phone: z.string().optional(),
   nationalIdNumber: z.string().trim().min(1).optional(),
   driverLicense: z.string().trim().min(1).optional(),
   driverLicenseUrl: z.string().min(1).optional(),
   driverImageUrl: z.string().min(1).optional(),
+  serviceType: z.enum(["FTL", "SHARED"]).optional(),
   dispatcherProfile: z.object({
     dispatcherCode: z.string().trim().min(1),
     nationalIdNumber: z.string().trim().min(1),
@@ -74,6 +75,9 @@ const createSchema = z.object({
     })
     .optional()
 }).superRefine((data, ctx) => {
+  if (data.role === "driver" && !data.serviceType) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["serviceType"], message: "Driver service type (FTL or SHARED) is required" });
+  }
   if (data.role === "driver" && data.truck && (!data.truck.region?.trim() || !data.truck.city?.trim())) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["truck", "city"], message: "Region and city are required for driver registration" });
   }
@@ -90,23 +94,14 @@ router.use(requireAuth);
 router.use(requirePasswordChanged);
 router.use(requirePermission("users"));
 
-router.get("/", requireRole("admin", "dispatcher"), async (req, res, next) => {
+router.get("/", requireRole("admin"), async (req, res, next) => {
   try {
-    let roleFilter = req.query.role;
-    if (req.user.role === "dispatcher") {
-      if (roleFilter && !["driver", "customer"].includes(roleFilter)) {
-        return res.status(403).json({ message: "Dispatchers can only list drivers or customers" });
-      }
-      roleFilter = roleFilter || "driver";
-    }
     res.json(
       await db.listUsers({
-        role: roleFilter,
+        role: req.query.role,
         search: req.query.search,
         page: req.query.page,
-        limit: req.query.limit,
-        scopedToDispatcherId:
-          req.user.role === "dispatcher" && roleFilter === "customer" ? req.user.sub : undefined
+        limit: req.query.limit
       })
     );
   } catch (error) {
@@ -114,13 +109,9 @@ router.get("/", requireRole("admin", "dispatcher"), async (req, res, next) => {
   }
 });
 
-router.get("/summary", requireRole("admin", "dispatcher"), async (req, res, next) => {
+router.get("/summary", requireRole("admin"), async (req, res, next) => {
   try {
-    res.json(
-      await db.userSummary({
-        scopedToDispatcherId: req.user.role === "dispatcher" ? req.user.sub : undefined
-      })
-    );
+    res.json(await db.userSummary());
   } catch (error) {
     next(error);
   }
@@ -128,17 +119,13 @@ router.get("/summary", requireRole("admin", "dispatcher"), async (req, res, next
 
 router.post(
   "/",
-  requireRole("admin", "dispatcher"),
+  requireRole("admin"),
   documentUpload.fields([
     { name: "truckPhoto1", maxCount: 1 },
     { name: "truckPhoto2", maxCount: 1 },
     { name: "driverImage", maxCount: 1 },
     { name: "driverLicenseDocument", maxCount: 1 },
     { name: "truckDocuments", maxCount: 5 },
-    { name: "nationalIdFront", maxCount: 1 },
-    { name: "nationalIdBack", maxCount: 1 },
-    { name: "dispatcherPhoto", maxCount: 1 },
-    { name: "dispatcherCv", maxCount: 1 },
     { name: "profilePhoto", maxCount: 1 }
   ]),
   async (req, res, next) => {
@@ -150,25 +137,11 @@ router.post(
           return res.status(403).json({ message: "Only the Super Admin can create another admin" });
         }
       }
-      if (req.user.role === "dispatcher") {
-        if (requestedRole && !["driver", "customer"].includes(requestedRole)) {
-          return res.status(403).json({ message: "Dispatchers can only register drivers or customers" });
-        }
+      if (requestedRole === "dispatcher") {
+        return res.status(400).json({ message: "Dispatcher accounts are no longer supported" });
       }
 
-      const role =
-        req.user.role === "dispatcher"
-          ? requestedRole === "customer"
-            ? "customer"
-            : "driver"
-          : requestedRole;
-      const nationalIdBackUrl = await persistUploadedFile(req.files?.nationalIdBack?.[0], "dispatchers");
-      const nationalIdFrontUrl =
-        (await persistUploadedFile(req.files?.nationalIdFront?.[0], "dispatchers")) || nationalIdBackUrl;
-      const dispatcherFiles = [req.files?.nationalIdBack?.[0], req.files?.dispatcherPhoto?.[0]];
-      if (role === "dispatcher" && dispatcherFiles.some((file) => !file || !imageTypes.has(file.mimetype))) {
-        return res.status(400).json({ message: "National ID back and profile photo must be JPEG, PNG, or WebP images" });
-      }
+      const role = requestedRole;
       const truckPayload =
         role === "driver"
           ? {
@@ -210,18 +183,7 @@ router.post(
           role === "driver"
             ? (await persistUploadedFile(req.files?.driverImage?.[0], "drivers")) || undefined
             : undefined,
-        dispatcherProfile: role === "dispatcher" ? {
-          ...req.body,
-          nationalIdFrontUrl,
-          nationalIdBackUrl,
-          profilePhotoUrl: await persistUploadedFile(req.files?.dispatcherPhoto?.[0], "dispatchers"),
-          cvUrl: await persistUploadedFile(req.files?.dispatcherCv?.[0], "dispatchers"),
-          assignedRegion: req.body.assignedRegion || "N/A",
-          workShift: req.body.workShift || "N/A",
-          commissionPercentage: req.body.commissionPercentage ?? 0,
-          verificationStatus: req.body.verificationStatus || "Pending",
-          accountStatus: req.body.accountStatus || "Active"
-        } : undefined,
+        serviceType: role === "driver" ? req.body.serviceType : undefined,
         customerProfile:
           role === "customer"
             ? {
@@ -281,11 +243,13 @@ router.post(
         driverLicense: parsed.data.driverLicense,
         driverLicenseUrl: parsed.data.driverLicenseUrl,
         driverImageUrl: parsed.data.driverImageUrl,
-        dispatcherProfile: parsed.data.dispatcherProfile,
+        serviceType: parsed.data.serviceType,
         customerProfile: parsed.data.customerProfile,
         truck,
         mustChangePassword: true,
-        actorId: req.user.sub
+        actorId: req.user.sub,
+        // Admin already reviewed docs while creating the account
+        autoVerify: parsed.data.role === "driver"
       });
 
       const emailResult = await sendWelcomeEmail(parsed.data.email, tempPassword);
@@ -301,7 +265,7 @@ router.post(
   }
 );
 
-router.post("/:id/verify-driver", requireRole("admin", "dispatcher"), async (req, res, next) => {
+router.post("/:id/verify-driver", requireRole("admin"), async (req, res, next) => {
   try {
     const user = await db.verifyDriver(req.params.id, req.user.sub);
     if (!user) return res.status(404).json({ message: "Driver not found" });

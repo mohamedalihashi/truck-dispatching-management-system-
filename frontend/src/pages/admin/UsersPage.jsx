@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Eye, Pencil, Plus, Trash2, Truck, UserCog, Users } from "lucide-react";
+import { Eye, MapPin, Pencil, Phone, Plus, Trash2, Truck, UserCheck, Users } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
@@ -14,14 +14,13 @@ import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
 import { somaliaLocations, somaliaRegions } from "../../data/somaliaLocations";
 
-/** mode="fleet" → Fleet / Drivers. mode="customers" → Customers (dispatcher register). */
+/** mode="fleet" → Fleet / Drivers. mode="customers" → Customers. */
 export function UsersPage({ mode } = {}) {
   const { user: authUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const isDispatcher = authUser.role === "dispatcher";
+  const isFleet = mode === "fleet";
   const isCustomersMode = mode === "customers";
-  const isFleet = mode === "fleet" || (isDispatcher && !isCustomersMode);
   const [role, setRole] = useState(isFleet ? "driver" : isCustomersMode ? "customer" : "");
   const { search, hasSearch } = useDashboardSearch();
   const [open, setOpen] = useState(false);
@@ -33,14 +32,19 @@ export function UsersPage({ mode } = {}) {
   const [driverImage, setDriverImage] = useState(null);
   const [driverLicenseDocument, setDriverLicenseDocument] = useState(null);
   const [truckDocuments, setTruckDocuments] = useState([]);
-  const [nationalIdBack, setNationalIdBack] = useState(null);
-  const [dispatcherPhoto, setDispatcherPhoto] = useState(null);
-  const [dispatcherCv, setDispatcherCv] = useState(null);
+  const [serviceType, setServiceType] = useState("FTL");
   const [photo1Preview, setPhoto1Preview] = useState("");
   const listRole = isFleet ? "driver" : isCustomersMode ? "customer" : role || undefined;
   const { data, isLoading } = useUsers({ role: listRole, search: search || undefined });
   const { data: summary } = useUserSummary();
   const mutations = useUserMutations();
+  const rows = data?.data || [];
+  const customerActiveCount = isCustomersMode
+    ? rows.filter((row) => row.status === "Active").length
+    : 0;
+  const customerInactiveCount = isCustomersMode
+    ? rows.filter((row) => row.status !== "Active").length
+    : 0;
   const { register, handleSubmit, watch, reset, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: {
       role: isFleet ? "driver" : "customer",
@@ -60,9 +64,6 @@ export function UsersPage({ mode } = {}) {
     setDriverImage(null);
     setDriverLicenseDocument(null);
     setTruckDocuments([]);
-    setNationalIdBack(null);
-    setDispatcherPhoto(null);
-    setDispatcherCv(null);
     setPhoto1Preview("");
     reset({
       role: isFleet ? "driver" : "customer",
@@ -86,11 +87,27 @@ export function UsersPage({ mode } = {}) {
     }
     setEditing(user);
     setError("");
+    setCreateInfo("");
+    setTruckPhoto1(null);
+    setDriverImage(null);
+    setDriverLicenseDocument(null);
+    setTruckDocuments([]);
+    setPhoto1Preview("");
     reset({
       name: user.name,
       email: user.email,
       phone: user.phone || "",
-      role: user.role
+      role: user.role,
+      password: "",
+      driverLicense: user.driverLicense || "",
+      truckNumber: user.truckNumber || "",
+      plateNumber: user.plateNumber || "",
+      capacity: user.capacity || "12 tons",
+      truckType: user.truckType || "",
+      region: user.region || "",
+      city: user.city || user.customerProfile?.city || "",
+      address: user.customerProfile?.address || "",
+      truckStatus: (user.truckStatus || "Available").replace(/_/g, " ")
     });
     setOpen(true);
   }
@@ -99,10 +116,6 @@ export function UsersPage({ mode } = {}) {
     setError("");
     try {
       if (editing) {
-        if (isDispatcher) {
-          setError("Dispatchers cannot edit accounts. Contact an admin.");
-          return;
-        }
         const payload = {
           name: values.name,
           email: values.email,
@@ -110,6 +123,31 @@ export function UsersPage({ mode } = {}) {
           role: values.role
         };
         if (values.password) payload.password = values.password;
+
+        const editRole = editing.role || values.role;
+        if (editRole === "driver" || isFleet) {
+          if (!values.region?.trim() || !values.city?.trim()) {
+            setError("Region and city are required for the driver and truck.");
+            return;
+          }
+          payload.driverLicense = values.driverLicense?.trim() || undefined;
+          payload.truck = {
+            truckNumber: values.truckNumber?.trim(),
+            plateNumber: values.plateNumber?.trim(),
+            capacity: values.capacity?.trim(),
+            truckType: values.truckType?.trim(),
+            region: values.region.trim(),
+            city: values.city.trim(),
+            ...(values.truckStatus ? { status: values.truckStatus } : {})
+          };
+        }
+        if (editRole === "customer" || isCustomersMode) {
+          payload.customerProfile = {
+            city: values.city?.trim() || "",
+            address: values.address?.trim() || ""
+          };
+        }
+
         await mutations.update.mutateAsync({ id: editing.id, payload });
       } else {
         let result;
@@ -136,38 +174,11 @@ export function UsersPage({ mode } = {}) {
           formData.append("truckType", values.truckType);
           formData.append("city", values.city?.trim() || "");
           formData.append("region", values.region?.trim() || "");
+          formData.append("serviceType", serviceType);
           formData.append("truckPhoto1", truckPhoto1);
           formData.append("driverImage", driverImage);
           formData.append("driverLicenseDocument", driverLicenseDocument);
           truckDocuments.forEach((file) => formData.append("truckDocuments", file));
-          result = await mutations.create.mutateAsync(formData);
-        } else if (createRole === "dispatcher") {
-          if (!nationalIdBack || !dispatcherPhoto || !dispatcherCv) {
-            setError("National ID back, profile photo, and CV are required.");
-            return;
-          }
-          const formData = new FormData();
-          [
-            "name",
-            "username",
-            "email",
-            "phone",
-            "dispatcherCode",
-            "nationalIdNumber",
-            "dateOfBirth",
-            "gender",
-            "city",
-            "address",
-            "yearsOfExperience",
-            "emergencyContactName",
-            "emergencyContactPhone"
-          ].forEach((key) => {
-            if (values[key] !== undefined && values[key] !== "") formData.append(key, values[key]);
-          });
-          formData.append("role", "dispatcher");
-          formData.append("nationalIdBack", nationalIdBack);
-          formData.append("dispatcherPhoto", dispatcherPhoto);
-          formData.append("dispatcherCv", dispatcherCv);
           result = await mutations.create.mutateAsync(formData);
         } else if (createRole === "customer") {
           if (!values.phone?.trim()) {
@@ -215,7 +226,6 @@ export function UsersPage({ mode } = {}) {
   }
 
   async function onDelete(user) {
-    if (isDispatcher) return;
     if (user.role === "admin") {
       alert("Admin users cannot be deleted.");
       return;
@@ -237,7 +247,7 @@ export function UsersPage({ mode } = {}) {
             ? "Register a driver together with their truck, photos, and documents."
             : isCustomersMode
               ? "Register customers so you can create cargo requests on their behalf."
-              : "Manage admins, dispatchers, customers, and driver-truck accounts."
+              : "Manage admins, customers, and driver-truck accounts."
         }
         actions={
           <Button onClick={openCreate}>
@@ -252,7 +262,7 @@ export function UsersPage({ mode } = {}) {
         </p>
       )}
 
-      <section className={`grid grid-cols-2 gap-3 ${isFleet || isCustomersMode ? "md:grid-cols-2" : "md:grid-cols-3 xl:grid-cols-4"}`}>
+      <section className={`grid grid-cols-2 gap-3 ${isCustomersMode ? "md:grid-cols-3" : isFleet ? "md:grid-cols-2" : "md:grid-cols-3 xl:grid-cols-4"}`}>
         {isFleet ? (
           <>
             <MetricCard icon={Users} label="Total Drivers" value={summary?.drivers ?? "—"} tone="navy" />
@@ -260,13 +270,14 @@ export function UsersPage({ mode } = {}) {
           </>
         ) : isCustomersMode ? (
           <>
-            <MetricCard icon={Users} label="Total Customers" value={summary?.customers ?? "—"} tone="blue" />
+            <MetricCard icon={Users} label="Total Customers" value={summary?.customers ?? rows.length ?? "—"} tone="blue" />
+            <MetricCard icon={UserCheck} label="Active" value={isLoading ? "—" : customerActiveCount} tone="green" />
+            <MetricCard icon={Users} label="Inactive" value={isLoading ? "—" : customerInactiveCount} tone="soft" />
           </>
         ) : (
           <>
             <MetricCard icon={Users} label="Total Users" value={summary?.total ?? "—"} tone="navy" />
             <MetricCard icon={Users} label="Total Customers" value={summary?.customers ?? "—"} tone="blue" />
-            <MetricCard icon={UserCog} label="Total Dispatchers" value={summary?.dispatchers ?? "—"} tone="amber" />
             <MetricCard icon={Truck} label="Total Trucks" value={summary?.trucks ?? "—"} tone="soft" />
           </>
         )}
@@ -286,91 +297,155 @@ export function UsersPage({ mode } = {}) {
           >
             <option value="">All roles</option>
             <option value="admin">Admin</option>
-            <option value="dispatcher">Dispatcher</option>
             <option value="customer">Customer</option>
             <option value="driver">Driver</option>
           </select>
         ) : null}
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
-        <div className="border-b border-outline-variant px-6 py-5">
-          <h2 className="text-xl font-semibold text-on-surface">
-            {isFleet ? "Drivers & trucks" : isCustomersMode ? "Customer directory" : "Directory"}
-          </h2>
-        </div>
-        {isLoading ? (
-          <p className="py-10 text-center text-sm text-on-surface-variant">
-            {isFleet ? "Loading fleet…" : isCustomersMode ? "Loading customers…" : "Loading users…"}
-          </p>
-        ) : (
-          <DataTable
-            rows={data?.data || []}
-            columns={[
-              { key: "name", label: "Name" },
-              { key: "email", label: "Email" },
-              ...(!isFleet && !isCustomersMode ? [{
-                key: "role",
-                label: "Role",
-                render: (row) => row.isSuperAdmin ? "Super Admin" : row.role
-              }] : isCustomersMode ? [
+      {isCustomersMode ? (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold text-on-surface">All customers</h2>
+            <p className="text-sm text-on-surface-variant">{isLoading ? "…" : `${rows.length} shown`}</p>
+          </div>
+          {isLoading ? (
+            <p className="rounded-xl border border-outline-variant bg-surface-container-lowest py-10 text-center text-sm text-on-surface-variant">
+              Loading customers…
+            </p>
+          ) : rows.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest py-12 text-center text-sm text-on-surface-variant">
+              No customers yet. Use Add Customer to register one.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {rows.map((row) => (
+                <article
+                  key={row.id}
+                  className="flex flex-col gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm transition hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-tertiary-container/15 text-sm font-bold text-on-tertiary-container">
+                        {row.name?.charAt(0)?.toUpperCase() || "C"}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-on-surface">{row.name}</h3>
+                        <p className="truncate text-xs text-on-surface-variant">{row.email}</p>
+                      </div>
+                    </div>
+                    <StatusBadge status={row.status || "Active"} />
+                  </div>
+
+                  <div className="space-y-1.5 text-xs text-on-surface-variant">
+                    <p className="flex items-center gap-1.5">
+                      <Phone size={13} className="shrink-0" />
+                      <span className="truncate">{row.phone || "No phone"}</span>
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <MapPin size={13} className="shrink-0" />
+                      <span className="truncate">
+                        {[row.customerProfile?.city, row.customerProfile?.address].filter(Boolean).join(" · ") || "No address"}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="mt-auto flex items-center gap-2 border-t border-outline-variant pt-3">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-on-surface-variant transition hover:bg-surface-container"
+                      onClick={() => setViewing(row)}
+                    >
+                      <Eye size={14} /> View
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-secondary-container transition hover:bg-secondary-fixed"
+                      onClick={() => openEdit(row)}
+                    >
+                      <Pencil size={14} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-error transition hover:bg-error/10"
+                      onClick={() => onDelete(row)}
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
+          <div className="border-b border-outline-variant px-6 py-5">
+            <h2 className="text-xl font-semibold text-on-surface">
+              {isFleet ? "Drivers & trucks" : "Directory"}
+            </h2>
+          </div>
+          {isLoading ? (
+            <p className="py-10 text-center text-sm text-on-surface-variant">
+              {isFleet ? "Loading fleet…" : "Loading users…"}
+            </p>
+          ) : (
+            <DataTable
+              rows={rows}
+              columns={[
+                { key: "name", label: "Name" },
+                { key: "email", label: "Email" },
+                ...(!isFleet ? [{
+                  key: "role",
+                  label: "Role",
+                  render: (row) => row.isSuperAdmin ? "Super Admin" : row.role
+                }] : [
+                  { key: "truckNumber", label: "Truck", render: (row) => row.truckNumber || "—" },
+                  { key: "plateNumber", label: "Plate", render: (row) => row.plateNumber || "—" },
+                  { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
+                  { key: "truckType", label: "Type", render: (row) => row.truckType || "—" },
+                  {
+                    key: "truckStatus",
+                    label: "Truck status",
+                    render: (row) => row.truckStatus ? <StatusBadge status={row.truckStatus} /> : "—"
+                  }
+                ]),
                 {
-                  key: "city",
-                  label: "City",
-                  render: (row) => row.customerProfile?.city || "—"
+                  key: "phone",
+                  label: "Phone",
+                  render: (row) => row.phone || "—"
                 },
                 {
-                  key: "address",
-                  label: "Address",
-                  render: (row) => row.customerProfile?.address || "—"
+                  key: "actions",
+                  label: "",
+                  render: (row) => (
+                    <div className="flex gap-2">
+                      <button type="button" className="text-on-surface-variant" onClick={() => setViewing(row)} title="View">
+                        <Eye size={16} />
+                      </button>
+                      {isFleet && row.status !== "Active" ? (
+                        <Button className="px-2 py-1 text-xs" onClick={() => mutations.verifyDriver.mutate(row.id)}>
+                          Verify
+                        </Button>
+                      ) : null}
+                      {(!row.isSuperAdmin || authUser.isSuperAdmin) && (
+                        <button type="button" className="text-secondary-container" onClick={() => openEdit(row)} title="Edit">
+                          <Pencil size={16} />
+                        </button>
+                      )}
+                      {row.role !== "admin" && (
+                        <button type="button" className="text-error" onClick={() => onDelete(row)} title="Delete">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  )
                 }
-              ] : [
-                { key: "truckNumber", label: "Truck", render: (row) => row.truckNumber || "—" },
-                { key: "plateNumber", label: "Plate", render: (row) => row.plateNumber || "—" },
-                { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
-                { key: "truckType", label: "Type", render: (row) => row.truckType || "—" },
-                {
-                  key: "truckStatus",
-                  label: "Truck status",
-                  render: (row) => row.truckStatus ? <StatusBadge status={row.truckStatus} /> : "—"
-                }
-              ]),
-              {
-                key: "phone",
-                label: "Phone",
-                render: (row) => row.phone || "—"
-              },
-              {
-                key: "actions",
-                label: "",
-                render: (row) => (
-                  <div className="flex gap-2">
-                    <button type="button" className="text-on-surface-variant" onClick={() => setViewing(row)} title="View">
-                      <Eye size={16} />
-                    </button>
-                    {!isDispatcher ? (
-                      <>
-                        {(!row.isSuperAdmin || authUser.isSuperAdmin) && (
-                          <button type="button" className="text-secondary-container" onClick={() => openEdit(row)} title="Edit">
-                            <Pencil size={16} />
-                          </button>
-                        )}
-                        {row.role !== "admin" && (
-                          <button type="button" className="text-error" onClick={() => onDelete(row)} title="Delete">
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </>
-                    ) : isFleet && row.status !== "Active" ? (
-                      <Button className="px-2 py-1 text-xs" onClick={() => mutations.verifyDriver.mutate(row.id)}>Verify</Button>
-                    ) : null}
-                  </div>
-                )
-              }
-            ]}
-          />
-        )}
-      </section>
+              ]}
+            />
+          )}
+        </section>
+      )}
 
       {viewing && (
         <Modal title={viewing.name} onClose={() => setViewing(null)} wide>
@@ -446,7 +521,18 @@ export function UsersPage({ mode } = {}) {
 
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setViewing(null)}>Close</Button>
-            {!isDispatcher && (!viewing.isSuperAdmin || authUser.isSuperAdmin) ? (
+            {viewing.role === "driver" && viewing.status !== "Active" ? (
+              <Button
+                onClick={() => {
+                  mutations.verifyDriver.mutate(viewing.id, {
+                    onSuccess: () => setViewing(null)
+                  });
+                }}
+              >
+                Verify documents
+              </Button>
+            ) : null}
+            {(!viewing.isSuperAdmin || authUser.isSuperAdmin) ? (
               <Button onClick={() => { setViewing(null); openEdit(viewing); }}>Edit user</Button>
             ) : null}
           </div>
@@ -479,7 +565,6 @@ export function UsersPage({ mode } = {}) {
             {!isFleet && !isCustomersMode ? (
               <select className="stitch-input" {...register("role")}>
                 <option value="customer">Customer</option>
-                <option value="dispatcher">Dispatcher</option>
                 <option value="driver">Driver</option>
                 {(authUser.isSuperAdmin || editing?.role === "admin") ? <option value="admin">Admin</option> : null}
               </select>
@@ -492,20 +577,42 @@ export function UsersPage({ mode } = {}) {
                 <input className="stitch-input sm:col-span-2" placeholder="Address" {...register("address", { required: true })} />
               </>
             )}
-            {!editing && selectedRole === "driver" && (
+            {editing && (editing.role === "customer" || isCustomersMode) ? (
               <>
+                <input className="stitch-input" placeholder="City" {...register("city", { required: true })} />
+                <input className="stitch-input sm:col-span-2" placeholder="Address" {...register("address", { required: true })} />
+              </>
+            ) : null}
+            {(selectedRole === "driver" || (editing && editing.role === "driver") || isFleet) && (editing || selectedRole === "driver") ? (
+              <>
+                {!editing ? (
+                  <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
+                    <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-outline-variant px-4 py-3 text-sm">
+                      <input type="radio" name="serviceType" checked={serviceType === "FTL"} onChange={() => setServiceType("FTL")} />
+                      FTL — full truck loads
+                    </label>
+                    <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-outline-variant px-4 py-3 text-sm">
+                      <input type="radio" name="serviceType" checked={serviceType === "SHARED"} onChange={() => setServiceType("SHARED")} />
+                      SHARED — partial capacity
+                    </label>
+                  </div>
+                ) : null}
                 <input className="stitch-input sm:col-span-2" placeholder="Driver license number" {...register("driverLicense", { required: true })} />
-                <FileField label="Driver license document *" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={setDriverLicenseDocument} />
-                <label className="sm:col-span-2 block text-sm">
-                  <span className="mb-1.5 block font-medium text-on-surface-variant">Driver photo *</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="stitch-input w-full"
-                    onChange={(e) => setDriverImage(e.target.files?.[0] || null)}
-                    required
-                  />
-                </label>
+                {!editing ? (
+                  <>
+                    <FileField label="Driver license document *" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={setDriverLicenseDocument} />
+                    <label className="sm:col-span-2 block text-sm">
+                      <span className="mb-1.5 block font-medium text-on-surface-variant">Driver photo *</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="stitch-input w-full"
+                        onChange={(e) => setDriverImage(e.target.files?.[0] || null)}
+                        required
+                      />
+                    </label>
+                  </>
+                ) : null}
                 <input className="stitch-input" placeholder="Truck number" {...register("truckNumber", { required: true })} />
                 <input className="stitch-input" placeholder="Plate number" {...register("plateNumber", { required: true })} />
                 <input className="stitch-input" placeholder="Capacity" {...register("capacity", { required: true })} />
@@ -538,52 +645,51 @@ export function UsersPage({ mode } = {}) {
                     ))}
                   </select>
                 </label>
-                <label className="sm:col-span-2 block text-sm">
-                  <span className="mb-1.5 block font-medium text-on-surface-variant">Truck photo *</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="stitch-input w-full"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      setTruckPhoto1(file || null);
-                      setPhoto1Preview(file ? URL.createObjectURL(file) : "");
-                    }}
-                    required
-                  />
-                  {photo1Preview ? (
-                    <img src={photo1Preview} alt="Truck preview" className="mt-2 h-24 w-full rounded-lg object-cover" />
-                  ) : null}
-                </label>
-                <label className="sm:col-span-2 block text-sm">
-                  <span className="mb-1.5 block font-medium text-on-surface-variant">Truck documents * (up to 5 images)</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    className="stitch-input w-full"
-                    onChange={(e) => setTruckDocuments(Array.from(e.target.files || []).slice(0, 5))}
-                    required
-                  />
-                </label>
+                {editing ? (
+                  <label className="sm:col-span-2 block text-sm">
+                    <span className="mb-1.5 block font-medium text-on-surface-variant">Truck status</span>
+                    <select className="stitch-input" {...register("truckStatus")}>
+                      <option value="Available">Available</option>
+                      <option value="Busy">Busy</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Unavailable">Unavailable</option>
+                      <option value="Pending Verification">Pending Verification</option>
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label className="sm:col-span-2 block text-sm">
+                      <span className="mb-1.5 block font-medium text-on-surface-variant">Truck photo *</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="stitch-input w-full"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          setTruckPhoto1(file || null);
+                          setPhoto1Preview(file ? URL.createObjectURL(file) : "");
+                        }}
+                        required
+                      />
+                      {photo1Preview ? (
+                        <img src={photo1Preview} alt="Truck preview" className="mt-2 h-24 w-full rounded-lg object-cover" />
+                      ) : null}
+                    </label>
+                    <label className="sm:col-span-2 block text-sm">
+                      <span className="mb-1.5 block font-medium text-on-surface-variant">Truck documents * (up to 5 images)</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        className="stitch-input w-full"
+                        onChange={(e) => setTruckDocuments(Array.from(e.target.files || []).slice(0, 5))}
+                        required
+                      />
+                    </label>
+                  </>
+                )}
               </>
-            )}
-            {!editing && selectedRole === "dispatcher" && (
-              <>
-                <input className="stitch-input" placeholder="Dispatcher code" {...register("dispatcherCode", { required: true })} />
-                <input className="stitch-input" placeholder="National ID number" {...register("nationalIdNumber", { required: true })} />
-                <input className="stitch-input" type="date" {...register("dateOfBirth", { required: true })} />
-                <select className="stitch-input" {...register("gender", { required: true })}><option value="">Gender</option><option>Male</option><option>Female</option><option>Other</option></select>
-                <input className="stitch-input" placeholder="City" {...register("city", { required: true })} />
-                <input className="stitch-input" placeholder="Address" {...register("address", { required: true })} />
-                <input className="stitch-input" type="number" min="0" placeholder="Years of experience" {...register("yearsOfExperience", { required: true })} />
-                <input className="stitch-input" placeholder="Emergency contact name" {...register("emergencyContactName", { required: true })} />
-                <input className="stitch-input" placeholder="Emergency contact phone" {...register("emergencyContactPhone", { required: true })} />
-                <FileField label="National ID back *" accept="image/jpeg,image/png,image/webp" onChange={setNationalIdBack} />
-                <FileField label="Profile photo *" accept="image/jpeg,image/png,image/webp" onChange={setDispatcherPhoto} />
-                <FileField label="CV *" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={setDispatcherCv} />
-              </>
-            )}
+            ) : null}
             {error && <p className="sm:col-span-2 text-sm text-red-600">{error}</p>}
             <div className="sm:col-span-2 flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setOpen(false)}>

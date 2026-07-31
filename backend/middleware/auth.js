@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
-import { mergeRolePermissions } from "../lib/permissions.js";
+import { getRolePermissions } from "../lib/permissionsCache.js";
 
 const jwtSecret = process.env.JWT_SECRET;
 
@@ -53,6 +53,12 @@ export function requireAuth(req, res, next) {
         mcp: user.mustChangePassword ? true : undefined,
         isSuperAdmin: Boolean(user.isSuperAdmin)
       };
+      if (user.role === "driver") {
+        void prisma.user.update({
+          where: { id: user.id },
+          data: { lastSeenAt: new Date() },
+        }).catch(() => {});
+      }
       next();
     })
     .catch(() => {
@@ -86,15 +92,11 @@ export function requireRole(...roles) {
 
 export async function requireSuperAdmin(req, res, next) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user?.sub },
-      select: { role: true, isSuperAdmin: true },
-    });
-    if (!user || user.role !== "admin" || !user.isSuperAdmin) {
-      return res.status(403).json({ message: "Super Admin permission required" });
+    if (req.user?.role === "admin" && req.user?.isSuperAdmin) {
+      req.isSuperAdmin = true;
+      return next();
     }
-    req.isSuperAdmin = true;
-    next();
+    return res.status(403).json({ message: "Super Admin permission required" });
   } catch (error) {
     next(error);
   }
@@ -103,21 +105,16 @@ export async function requireSuperAdmin(req, res, next) {
 export function requirePermission(permission) {
   return async (req, res, next) => {
     try {
-      if (req.user?.isSuperAdmin) {
+      if (!req.user?.role) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      if (req.user.isSuperAdmin) {
         req.isSuperAdmin = true;
         return next();
       }
-      const user = await prisma.user.findUnique({
-        where: { id: req.user?.sub },
-        select: { role: true, isSuperAdmin: true },
-      });
-      if (!user) return res.status(401).json({ message: "Authentication required" });
-      if (user.isSuperAdmin) {
-        req.isSuperAdmin = true;
-        return next();
-      }
-      const permissions = mergeRolePermissions({});
-      if (!permissions[user.role]?.[permission]) {
+
+      const permissions = await getRolePermissions();
+      if (!permissions[req.user.role]?.[permission]) {
         return res.status(403).json({ message: `Your role is not allowed to access ${permission}` });
       }
       next();

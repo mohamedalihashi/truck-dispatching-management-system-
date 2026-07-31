@@ -3,8 +3,10 @@ import { Smartphone } from "lucide-react";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import { money, paymentBalance } from "../utils/helpers";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, currency = "SLSH" }) {
+  const { t } = useLanguage();
   const [accountNo, setAccountNo] = useState("");
   const [payAmount, setPayAmount] = useState("");
 
@@ -28,8 +30,15 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
     });
   }
 
+  const tipText =
+    payment.fullPaymentOnce || payment.loadType === "SHARED" || payment.paymentStage === "Payment Due"
+      ? t("waafi.sharedOnce")
+      : payment.paymentStage === "Deposit Due"
+        ? t("waafi.ftlDeposit")
+        : t("waafi.ftlBalance");
+
   return (
-    <Modal title="Pay with Waafi (EVC / ZAAD)" onClose={onClose}>
+    <Modal title={t("waafi.title")} onClose={onClose}>
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -61,17 +70,17 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
         </div>
 
         <div className="rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-100">
-          <p className="font-semibold">Ka hor inta aadan bixin</p>
+          <p className="font-semibold">{t("waafi.beforePay")}</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
-            <li>{payment.paymentStage === "Deposit Due" ? "Bixi 30% deposit-ka — safarka ma bilaaban karo ilaa deposit-ka la bixiyo" : "Bixi 70% balance-ka kadib delivery confirmation"}</li>
-            <li>Isticmaal lambarka EVC Plus / ZAAD ee lacagta laga jarayo</li>
-            <li>Marka aad taabato Pay now, taleefanka ayaa ku weydiinaya PIN / Approve</li>
+            <li>{tipText}</li>
+            <li>{t("waafi.useWallet")}</li>
+            <li>{t("waafi.approvePhone")}</li>
           </ul>
         </div>
 
         <label className="block text-sm">
           <span className="mb-1.5 block font-medium text-on-surface-variant">
-            Lacagta aad bixinayso ({currency})
+            {t("waafi.amountLabel")} ({currency})
           </span>
           <input
             className="stitch-input w-full"
@@ -83,14 +92,11 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
             readOnly
             required
           />
-          <span className="mt-1.5 block text-xs text-on-surface-variant">
-            Payment stage: {payment.paymentStage || "Payment due"} · Required: {money(payment.requiredPaymentAmount || balanceDue)} {currency}
-          </span>
         </label>
 
         <label className="block text-sm">
           <span className="mb-1.5 block font-medium text-on-surface-variant">
-            Mobile wallet number
+            {t("waafi.walletNumber")}
           </span>
           <div className="relative">
             <Smartphone
@@ -107,16 +113,13 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
               required
             />
           </div>
-          <span className="mt-1.5 block text-xs text-on-surface-variant">
-            Geli lambarka EVC Plus ama ZAAD — ku bilow 252. Ansixi prompt-ka taleefankaaga.
-          </span>
         </label>
 
         {error ? <p className="text-sm text-error">{error}</p> : null}
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -128,7 +131,7 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
               Number(payAmount) > (payment.requiredPaymentAmount || balanceDue)
             }
           >
-            {loading ? "Processing…" : `Pay ${money(payAmount || 0)}`}
+            {loading ? t("waafi.processing") : `${t("waafi.payNow")} ${money(payAmount || 0)}`}
           </Button>
         </div>
       </form>

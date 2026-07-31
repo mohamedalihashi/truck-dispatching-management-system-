@@ -1,340 +1,254 @@
-import { useRef, useState } from "react";
 import {
   CheckCircle2,
-  CloudUpload,
-  Headphones,
-  Info,
-  MapPin,
-  Minus,
+  ChevronRight,
   Navigation,
   Package,
   Plus,
-  RefreshCw,
-  Star,
   Truck,
-  Wallet
+  Weight,
+  Flag
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAuth } from "../../contexts/AuthContext";
-import { useDashboard, useTripActions, useTripFeedback, useTrips, useEarningsSummary } from "../../hooks/useApi";
-import { money, nextTripStatus } from "../../utils/helpers";
+import { useDashboardSummary, useTripActions } from "../../hooks/useApi";
+import { isSharedDriver, money, nextTripStatus } from "../../utils/helpers";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { api } from "../../services/api";
-import { useQueryClient } from "@tanstack/react-query";
-import { FleetMap } from "../../components/map/FleetMap";
-import { TripFeedbackPanel } from "../../components/TripFeedbackPanel";
-import { randomSomaliaCoords } from "../../utils/geo";
+import { LazyFleetMap } from "../../components/map/LazyFleetMap";
+import { SharedTripJourney } from "../../components/SharedTripJourney";
+import { FtlDriverJourney, FTL_DRIVER_ACTIONS } from "../../components/FtlDriverJourney";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 export function DriverDashboard() {
   const { user } = useAuth();
-  const { data: stats } = useDashboard();
-  const { data: earnings } = useEarningsSummary();
-  const { data: trips } = useTrips();
-  const { data: feedback, isLoading: feedbackLoading } = useTripFeedback({ limit: 6 });
-  const actions = useTripActions();
-  const fileRef = useRef(null);
-  const qc = useQueryClient();
-  const [podMessage, setPodMessage] = useState("");
-  const jobs = trips?.data || [];
-  const active = jobs.filter((t) => !["Delivered", "Cancelled"].includes(t.status));
-  const live = active[0];
-  const firstName = (user?.name || "Driver").split(" ")[0];
+  if (isSharedDriver(user)) return <SharedDriverDashboard user={user} />;
+  return <FtlDriverDashboard user={user} />;
+}
 
-  async function uploadPod(event) {
-    const file = event.target.files?.[0];
-    if (!file || !live) return;
-    const formData = new FormData();
-    formData.append("proof", file);
-    try {
-      await api.uploadProof(live.id, formData);
-      setPodMessage(`Proof uploaded for ${live.id}`);
-      qc.invalidateQueries({ queryKey: ["trips"] });
-    } catch (err) {
-      setPodMessage(err.message);
-    }
-    event.target.value = "";
-  }
+function SharedDriverDashboard({ user }) {
+  const { t } = useLanguage();
+  const firstName = (user?.name || "Driver").split(" ")[0];
+  const { data: summary } = useQuery({
+    queryKey: ["shared-trips-summary"],
+    queryFn: () => api.sharedTripsSummary()
+  });
+  const { data: tripsData, isLoading } = useQuery({
+    queryKey: ["my-shared-trips-dashboard"],
+    queryFn: () => api.listMySharedTrips({ limit: 5 })
+  });
+  const trips = tripsData?.data || [];
 
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Driver Account"
-        subtitle={`Welcome back, ${firstName}. You have ${active.length} ${active.length === 1 ? "delivery" : "deliveries"} scheduled.`}
+        title={t("driver.sharedDashboardTitle")}
+        subtitle={t("Welcome back, {name}. Publish → book → pay full fare once before pickup → in transit → delivered.", {
+          name: firstName
+        })}
+        actions={
+          <Link to="/driver/shared-trips/new">
+            <Button><Plus size={16} /> {t("driver.newSharedTrip")}</Button>
+          </Link>
+        }
       />
 
-      {podMessage && (
-        <p className="rounded-xl border border-primary-fixed bg-primary-fixed/40 px-4 py-3 text-sm text-primary-container">
-          {podMessage}
-        </p>
-      )}
+      <SharedTripJourney />
 
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <CenterMetric
-          icon={Truck}
-          tone="bg-primary-fixed-dim text-primary-container"
-          value={jobs.length}
-          label="Deliveries Today"
-        />
-        <CenterMetric
-          icon={Navigation}
-          tone="bg-secondary-fixed text-on-secondary-fixed"
-          value={active.length}
-          label="In Progress"
-        />
-        <CenterMetric
-          icon={CheckCircle2}
-          tone="bg-tertiary-fixed text-on-tertiary-fixed"
-          value={stats?.completedOrders ?? 0}
-          label="Completed (Monthly)"
-        />
-        <CenterMetric
-          icon={Wallet}
-          tone="bg-secondary-container text-on-secondary"
-          value={money(earnings?.available ?? 0)}
-          label="Earnings (available)"
-        />
-        <CenterMetric
-          icon={Star}
-          tone="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-          value={feedback?.summary?.avgRating ?? "—"}
-          label="Your Avg Rating"
-        />
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <CenterMetric icon={Package} tone="bg-primary-fixed-dim text-primary-container" value={summary?.total ?? 0} label="Total trips" />
+        <CenterMetric icon={Truck} tone="bg-secondary-fixed text-on-secondary-fixed" value={summary?.open ?? 0} label="Open" />
+        <CenterMetric icon={CheckCircle2} tone="bg-tertiary-fixed text-on-tertiary-fixed" value={summary?.full ?? 0} label="Full" />
+        <CenterMetric icon={Navigation} tone="bg-secondary-container text-on-secondary" value={summary?.pickup ?? summary?.departed ?? 0} label="Pickup" />
+        <CenterMetric icon={Navigation} tone="bg-secondary-fixed text-on-secondary-fixed" value={summary?.inTransit ?? 0} label="In Transit" />
+        <CenterMetric icon={Flag} tone="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200" value={summary?.delivered ?? summary?.completed ?? 0} label="Delivered" />
       </div>
-
-      <div className="grid grid-cols-12 gap-8">
-        <section className="col-span-12 flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)] lg:col-span-5">
-          <div className="flex items-center justify-between border-b border-outline-variant p-6">
-            <h3 className="text-xl font-semibold text-on-surface">Today&apos;s Deliveries</h3>
-            <Link to="/driver/jobs" className="text-sm font-semibold text-secondary hover:underline">
-              View all
-            </Link>
-          </div>
-          <div className="space-y-4 p-4">
-            {!jobs.length && <EmptyState title="No jobs yet" text="When a dispatcher assigns your truck, jobs appear here." />}
-            {jobs.slice(0, 5).map((trip, idx) => {
-              const isLive = live?.id === trip.id || (idx === 0 && active.includes(trip));
-              return (
-                <article
-                  key={trip.id}
-                  className={
-                    isLive
-                      ? "rounded-lg border-l-4 border-secondary-container bg-secondary-fixed p-4"
-                      : "cursor-pointer rounded-lg border border-outline-variant p-4 transition hover:bg-surface-container-low"
-                  }
-                >
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[13px] font-medium tracking-wide text-on-secondary-container uppercase">
-                        {trip.id}
-                      </span>
-                      <h4 className="text-sm font-semibold text-on-surface">
-                        {trip.pickup} → {trip.destination}
-                      </h4>
-                    </div>
-                    {isLive ? (
-                      <span className="rounded-full bg-secondary-container px-2 py-0.5 text-xs font-medium text-on-secondary">
-                        In Progress
-                      </span>
-                    ) : (
-                      <StatusBadge status={trip.status} />
-                    )}
-                  </div>
-                  <div className="mb-3 flex items-center gap-2 text-sm text-on-surface-variant">
-                    {isLive ? (
-                      <>
-                        <Navigation size={16} />
-                        <span>ETA: {trip.estimatedTime || trip.eta || "TBD"}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Package size={16} />
-                        <span>{trip.cargo || trip.description || "Cargo load"}</span>
-                      </>
-                    )}
-                  </div>
-                  {isLive && (
-                    <div className="flex gap-2">
-                      {trip.status === "Assigned" ? (
-                        <>
-                          <Button className="flex-1" onClick={() => actions.accept.mutate(trip.id)}>
-                            Accept
-                          </Button>
-                          <Button variant="danger" onClick={() => actions.reject.mutate(trip.id)}>
-                            Reject
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          {!["Delivered", "Cancelled"].includes(trip.status) && (
-                            <button
-                              type="button"
-                              className="flex-1 rounded-lg bg-secondary-container py-2 text-sm font-semibold text-on-secondary shadow-sm transition hover:brightness-110 active:scale-95"
-                              onClick={() =>
-                                actions.updateStatus.mutate({ id: trip.id, status: nextTripStatus(trip.status) })
-                              }
-                            >
-                              Update Status
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="flex w-12 items-center justify-center rounded-lg border border-secondary-container text-secondary-container transition hover:bg-secondary-fixed"
-                            onClick={() => {
-                              const { lat, lng } = randomSomaliaCoords();
-                              actions.shareLocation.mutate({ id: trip.id, lat, lng });
-                            }}
-                          >
-                            <MapPin size={18} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  {!isLive && trip.status === "Assigned" && (
-                    <div className="mt-3 flex gap-2">
-                      <Button onClick={() => actions.accept.mutate(trip.id)}>Accept</Button>
-                      <Button variant="danger" onClick={() => actions.reject.mutate(trip.id)}>
-                        Reject
-                      </Button>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="col-span-12 flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)] lg:col-span-7">
-          <div className="flex items-center justify-between border-b border-outline-variant bg-surface-container-lowest p-6">
-            <div>
-              <h3 className="text-xl font-semibold text-on-surface">Navigation</h3>
-              <p className="flex items-center gap-1 text-xs font-medium text-on-surface-variant">
-                <MapPin size={14} />
-                {live ? `${live.pickup} → ${live.destination}` : "Awaiting assignment"}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xl font-semibold text-on-tertiary-container">{live?.estimatedTime || "—"}</p>
-              <p className="text-xs font-medium text-on-surface-variant">
-                Status: {live?.status || "Idle"}
-              </p>
-            </div>
-          </div>
-          <div className="relative min-h-[400px] flex-1 overflow-hidden">
-            <FleetMap trips={live ? [live] : []} selectedId={live?.id} className="absolute inset-0 h-full w-full" />
-            <div className="absolute bottom-6 right-6 flex flex-col gap-2">
-              <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface shadow-lg hover:bg-surface-container-high">
-                <Plus size={20} />
-              </button>
-              <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface shadow-lg hover:bg-surface-container-high">
-                <Minus size={20} />
-              </button>
-              <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary-container text-on-secondary shadow-lg hover:brightness-110">
-                <Navigation size={20} />
-              </button>
-            </div>
-            <div className="absolute left-6 top-6 max-w-[240px] rounded-xl border border-outline-variant bg-surface-container-lowest/90 p-4 shadow-lg backdrop-blur-md">
-              <p className="mb-1 text-xs font-medium text-on-surface-variant">Current Action</p>
-              <p className="mb-2 text-base font-bold text-on-surface">
-                {live ? nextTripStatus(live.status) || live.status : "Standby"}
-              </p>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-surface-variant">
-                <div
-                  className="h-full bg-secondary-container"
-                  style={{
-                    width: live
-                      ? `${Math.min(90, ["Accepted", "Arrived Pickup", "Loaded", "In Transit", "Delivered"].indexOf(live.status) * 22 + 20)}%`
-                      : "10%"
-                  }}
-                />
-              </div>
-              <p className="mt-1 text-right text-xs font-medium text-on-primary-container">
-                {live?.cargo || "One truck · one account"}
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <QuickAction
-          icon={RefreshCw}
-          label="Update Status"
-          onClick={() => {
-            if (!live || ["Assigned", "Delivered", "Cancelled"].includes(live.status)) return;
-            actions.updateStatus.mutate({ id: live.id, status: nextTripStatus(live.status) });
-          }}
-        />
-        <QuickAction
-          icon={CloudUpload}
-          label="Upload POD"
-          onClick={() => {
-            if (!live) {
-              setPodMessage("No active job to upload proof for.");
-              return;
-            }
-            fileRef.current?.click();
-          }}
-        />
-        <QuickAction icon={Headphones} label="Call Dispatcher" />
-        <Link to={live ? `/driver/jobs` : "/driver/truck"}>
-          <QuickAction icon={Info} label="View Details" asDiv />
-        </Link>
-      </div>
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={uploadPod} />
 
       <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
         <div className="flex items-center justify-between border-b border-outline-variant px-6 py-5">
-          <div className="flex items-center gap-2">
-            <Star size={20} className="text-amber-500" />
-            <h3 className="text-xl font-semibold text-on-surface">Customer Reviews</h3>
+          <h2 className="text-xl font-semibold text-primary-container">{t("Your shared trips")}</h2>
+          <Link to="/driver/shared-trips" className="text-sm font-semibold text-secondary hover:underline">{t("View all")}</Link>
+        </div>
+        {isLoading ? (
+          <p className="py-10 text-center text-sm text-on-surface-variant">{t("Loading trips…")}</p>
+        ) : !trips.length ? (
+          <EmptyState title="No shared trips yet" text="Create a trip with open capacity so customers can book by the ton." />
+        ) : (
+          <div className="divide-y divide-outline-variant">
+            {trips.map((trip) => (
+              <Link key={trip.id} to={`/driver/shared-trips/${trip.id}`} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 transition hover:bg-surface-container-low">
+                <div>
+                  <p className="font-semibold text-on-surface">{trip.id}</p>
+                  <p className="text-sm text-on-surface-variant">{trip.pickup} → {trip.destination}</p>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="flex items-center gap-1 text-on-surface-variant"><Weight size={14} /> {trip.availableTons}t / {trip.totalCapacityTons}t</span>
+                  <StatusBadge status={trip.status} />
+                </div>
+              </Link>
+            ))}
           </div>
-          <span className="text-sm text-on-surface-variant">Feedback on your deliveries</span>
-        </div>
-        <div className="p-6">
-          <TripFeedbackPanel
-            items={feedback?.data || []}
-            summary={feedback?.summary}
-            loading={feedbackLoading}
-            showCustomer
-            emptyTitle="No reviews yet"
-            emptyText="When customers rate delivered goods, reviews show up here."
-            limit={6}
-          />
-        </div>
+        )}
       </section>
     </div>
   );
 }
 
+function FtlDriverDashboard({ user }) {
+  const { t } = useLanguage();
+  const { data: summary } = useDashboardSummary();
+  const stats = summary?.stats;
+  const earnings = summary?.earnings;
+  const actions = useTripActions();
+  const jobs = summary?.recentTrips?.data || [];
+  const active = jobs.filter((row) => !["Delivered", "Cancelled"].includes(row.status));
+  const live = active[0];
+  const firstName = (user?.name || "Driver").split(" ")[0];
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="FTL Driver Dashboard"
+        subtitle={t("Welcome back, {name}. Available loads, offers, trips, tracking, and earnings.", {
+          name: firstName
+        })}
+      />
+
+      <FtlDriverJourney status={live?.status} />
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {FTL_DRIVER_ACTIONS.map((action) => {
+          const Icon = action.icon;
+          return (
+            <Link
+              key={action.to}
+              to={action.to}
+              className="group flex flex-col rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] transition hover:border-primary/40 hover:shadow-[0px_8px_24px_rgba(0,0,0,0.1)]"
+            >
+              <div className={`mb-4 w-fit rounded-lg p-2.5 ${action.tone}`}>
+                <Icon size={22} />
+              </div>
+              <h2 className="text-base font-semibold text-primary-container">{t(action.title)}</h2>
+              <p className="mt-1 flex-1 text-xs leading-relaxed text-on-surface-variant">{t(action.text)}</p>
+              <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-on-tertiary-container opacity-80 group-hover:opacity-100">
+                {t("Open")} <ChevronRight size={14} />
+              </span>
+            </Link>
+          );
+        })}
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Stat label="Active trips" value={active.length} />
+        <Stat label="Delivered" value={stats?.completedOrders ?? 0} />
+        <Stat label="Earnings available" value={money(earnings?.available ?? 0)} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)] lg:col-span-7">
+          <div className="flex items-center justify-between border-b border-outline-variant px-6 py-5">
+            <div>
+              <h2 className="text-xl font-semibold text-primary-container">Your trips</h2>
+              <p className="text-xs text-on-surface-variant">After booking — until delivery ends</p>
+            </div>
+            <Link to="/driver/jobs" className="text-sm font-semibold text-secondary hover:underline">
+              View all
+            </Link>
+          </div>
+          <div className="divide-y divide-outline-variant">
+            {jobs.slice(0, 5).map((trip) => (
+              <div key={trip.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-on-surface">{trip.id}</p>
+                  <p className="truncate text-xs text-on-surface-variant">
+                    {trip.pickup || "—"} → {trip.destination || "—"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={trip.status} />
+                  {trip.status === "Assigned" ? (
+                    <>
+                      <Button className="px-3 py-1 text-xs" onClick={() => actions.accept.mutate(trip.id)}>Accept</Button>
+                      <Button variant="danger" className="px-3 py-1 text-xs" onClick={() => actions.reject.mutate(trip.id)}>Reject</Button>
+                    </>
+                  ) : null}
+                  {active.some((t) => t.id === trip.id) && trip.status !== "Assigned" ? (
+                    <Button
+                      className="px-3 py-1 text-xs"
+                      onClick={() => actions.updateStatus.mutate({ id: trip.id, status: nextTripStatus(trip.status) })}
+                    >
+                      Next: {nextTripStatus(trip.status)}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            {!jobs.length ? (
+              <div className="px-6 py-10">
+                <EmptyState
+                  title="No trips yet"
+                  text="Start with Available Loads — bid on an open FTL request."
+                />
+                <div className="mt-4 text-center">
+                  <Link to="/driver/marketplace">
+                    <Button><Package size={16} /> Available Loads</Button>
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)] lg:col-span-5">
+          <div className="flex items-center justify-between border-b border-outline-variant px-6 py-5">
+            <div>
+              <h2 className="text-xl font-semibold text-primary-container">Tracking</h2>
+              <p className="text-xs text-on-surface-variant">Active load: {live?.id || "—"}</p>
+            </div>
+            <Link to="/driver/tracking" className="text-sm font-semibold text-secondary hover:underline">
+              Open map
+            </Link>
+          </div>
+          <div className="relative min-h-[260px] flex-1">
+            <LazyFleetMap trips={live ? [live] : active} selectedId={live?.id} className="absolute inset-0 h-full w-full" />
+          </div>
+          <div className="border-t border-outline-variant bg-surface-container-low px-6 py-4 text-sm">
+            {live ? (
+              <p>
+                <span className="font-semibold">{live.status}</span>
+                <span className="text-on-surface-variant"> · {live.pickup} → {live.destination}</span>
+              </p>
+            ) : (
+              <p className="text-on-surface-variant">No active load to track right now.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <article className="rounded-xl border border-outline-variant bg-surface-container-lowest px-5 py-4 shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
+      <div className="text-2xl font-bold text-primary-container">{value}</div>
+      <div className="mt-1 text-xs font-medium uppercase tracking-wider text-on-surface-variant">{label}</div>
+    </article>
+  );
+}
+
 function CenterMetric({ icon: Icon, tone, value, label }) {
+  const { t } = useLanguage();
   return (
     <article className="flex flex-col items-center justify-center rounded-xl border border-outline-variant bg-surface-container-lowest p-6 text-center shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
       <div className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${tone}`}>
         <Icon size={28} />
       </div>
       <p className="text-[32px] font-bold leading-10 text-on-surface">{value}</p>
-      <p className="text-sm font-semibold text-on-primary-container">{label}</p>
+      <p className="text-sm font-semibold text-on-primary-container">{t(label)}</p>
     </article>
-  );
-}
-
-function QuickAction({ icon: Icon, label, onClick, asDiv }) {
-  const className =
-    "flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] transition hover:bg-secondary-fixed active:scale-95 group";
-  const content = (
-    <>
-      <Icon size={32} className="text-on-primary-container transition group-hover:text-secondary-container" />
-      <span className="text-sm font-semibold text-on-surface">{label}</span>
-    </>
-  );
-  if (asDiv) return <div className={className}>{content}</div>;
-  return (
-    <button type="button" className={className} onClick={onClick}>
-      {content}
-    </button>
   );
 }
