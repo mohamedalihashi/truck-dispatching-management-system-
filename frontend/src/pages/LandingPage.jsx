@@ -6,7 +6,6 @@ import {
   ClipboardEdit,
   FileText,
   Globe,
-  MapPin,
   Navigation,
   Shield,
   Share2,
@@ -17,12 +16,11 @@ import {
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
 import { PublicTrucksCatalog } from "../components/PublicTrucksCatalog";
 import { CustomerTestimonials } from "../components/CustomerTestimonials";
+import { HeroTruckCarousel } from "../components/HeroTruckCarousel";
 import { BrandLogo } from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../brand";
 import { useLanguage } from "../contexts/LanguageContext";
 
-const HERO_IMG =
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuD-PtSvT2g9IZwLnN_PKPkoAo1HIWoase3vkYDZZGwouK-l2S1hu7RPs__gfEY0MpbJPsac9i1smuEi2_Wc2Pu_B74WpiwnSGCbKnjXd5syzbcESK9mhfo6810W18L_UJWOnUL68mGj8bzl4hNAPWiTRr9gTZK9C3Hfukrm7nQucgn--mW2LBPrYh9_EkC2EpRpL2G9ba6EurGqbDWpSGYfu0KfQHe2CwKkvPqsO1YbSgeM3lPBLA7jSZQctcWKh95UBlz_-omM_c8";
 const AVATARS = [
   "https://lh3.googleusercontent.com/aida-public/AB6AXuC77B6eY93wbbmNYtn9GWLcwb02QYua2jxm-nexWh2HUes8kHlSRspl7rhnK6m-tg1V0yy6f_t7VJt1fQl3EqsLdjVzs33hOYahB5DVu1cvhxIkCJ1Xo7QuupxRaOvMRh3ZNrKlWsEYkgYiZhMyeqxnrpYFMmNhpMskL05feXSVmeE2B9nvp2Tl5FstCcEzN14RniK568MqZSFFjjb34k5ZIaHl0SR7Kv8KV0vqYPzYV3MHGEyaGqsmK6zWYg8q2HNz9TipvsrtkRE",
   "https://lh3.googleusercontent.com/aida-public/AB6AXuA3HA9XQzJ_yZllijQOa-Ek2xig9lietI-DnFW6yMC9Cpxi6IPjV4ncf_GILLwW27bw0awvxqn95rrp6y1xW-H1c1HC7EeXF_Lyr5_LTCLYISM3uQueSLT-bOSDMN8o2zyFG-DQcLIDy-DDZfektJP7oWOQbSqRVUt2N9wL01QHohqJcqlrSkSOb7kda1ZhPjF1xM_c1vP21ycujAa84KsmaP-8REtja6s1s8Lezvn-Vkp2q6l_nM2NIZGTomTku8Hhzhdbdl58XtE",
@@ -102,30 +100,7 @@ export function LandingPage() {
               </div>
             </div>
 
-            <div className="relative hidden lg:block">
-              <div className="group relative z-10 overflow-hidden rounded-3xl border border-white/10 shadow-2xl">
-                <img
-                  src={HERO_IMG}
-                  alt="Truck on highway"
-                  className="h-auto w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                />
-                <div className="glass-effect absolute bottom-6 left-6 right-6 flex items-center justify-between rounded-2xl p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary-container/20 text-secondary-container">
-                      <MapPin />
-                    </div>
-                    <div>
-                      <p className="text-xs text-on-surface-variant">Live Tracking</p>
-                      <p className="text-sm font-semibold text-primary">I-80, Ohio, USA</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-on-surface-variant">ETA</p>
-                    <p className="text-sm font-semibold text-secondary">45 min</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <HeroTruckCarousel className="mt-4 lg:mt-0" />
           </div>
         </section>
 
