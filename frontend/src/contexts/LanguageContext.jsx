@@ -29,18 +29,12 @@ function interpolate(template, vars) {
   );
 }
 
-/** Translate dynamic titles like "Trip TR-12" / "Bid on CR-9". */
+/** Translate dynamic titles like "Trip TR-12". */
 const SO_DYNAMIC_PREFIXES = [
-  ["Bids for ", "Bids-ka "],
   ["Confirm booking ", "Xaqiiji booking "],
-  ["Decline booking ", "Diid booking "],
-  ["Phone Booking ", "Booking Telefoon "],
   ["Shared Trip ", "Safar Shared "],
   ["Assign driver ", "Dooro darawal "],
   ["Select driver — ", "Dooro darawal — "],
-  ["Phone booking ", "Booking telefoon "],
-  ["Edit bid ", "Wax ka beddel bid "],
-  ["Bid on ", "Bid samee "],
   ["Request ", "Codsi "],
   ["Reassign ", "Dib u qoondee "],
   ["Edit ", "Wax ka beddel "],

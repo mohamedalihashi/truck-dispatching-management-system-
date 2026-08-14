@@ -1,5 +1,23 @@
+/** Full personal name: letters + spaces (e.g. "Cabdi Axmed Xaashi"). */
+export const FULL_NAME_PATTERN = /^[\p{L}\p{M}]+(?:[\s'.-]+[\p{L}\p{M}]+)*$/u;
+
+export function isValidFullName(value) {
+  const name = String(value || "").trim();
+  return name.length >= 2 && name.length <= 150 && FULL_NAME_PATTERN.test(name);
+}
+
 export function money(value) {
   return `$${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+/** Show fare only after Delivered (GPS distance locked when truck stops). */
+export function fareAfterDelivered(status, value, { pendingLabel = "— (after Delivered)" } = {}) {
+  const s = String(status || "").toLowerCase();
+  if (!s.includes("delivered") && !s.includes("completed")) {
+    return pendingLabel;
+  }
+  if (value == null || !(Number(value) > 0)) return "—";
+  return money(value);
 }
 
 export function paymentBalance(row) {
@@ -18,9 +36,9 @@ export function titleCase(value = "") {
 
 export function statusTone(status = "") {
   const key = status.toLowerCase();
-  if (["delivered", "available", "paid", "accepted", "approved", "confirmed", "completed", "open for booking"].some((s) => key.includes(s))) return "success";
-  if (["partial"].some((s) => key.includes(s))) return "info";
-  if (["pending", "assigned", "delayed", "maintenance", "awaiting approval", "draft", "departed", "in transit"].some((s) => key.includes(s))) return "warn";
+  if (["delivered", "available", "paid", "approved", "confirmed", "completed", "open for booking", "picked up"].some((s) => key.includes(s))) return "success";
+  if (["partial", "near destination", "en route"].some((s) => key.includes(s))) return "info";
+  if (["pending", "assigned", "maintenance", "awaiting approval", "draft", "departed", "in transit", "arrived"].some((s) => key.includes(s))) return "warn";
   if (["cancelled", "failed", "rejected", "quote rejected", "withdrawn"].some((s) => key.includes(s))) return "danger";
   return "info";
 }
@@ -31,10 +49,11 @@ export const REQUEST_STATUSES = [
   "Quote Rejected",
   "Approved",
   "Assigned",
-  "Accepted",
-  "Arrived Pickup",
-  "Loaded",
+  "En Route to Pickup",
+  "Arrived at Pickup",
+  "Picked Up",
   "In Transit",
+  "Near Destination",
   "Delivered",
   "Cancelled"
 ];
@@ -45,51 +64,51 @@ export const CANCELABLE_REQUEST_STATUSES = [
   "Quote Rejected",
   "Approved",
   "Assigned",
-  "Accepted",
-  "Arrived Pickup"
+  "En Route to Pickup",
+  "Arrived at Pickup"
 ];
 
 export const TRIP_FLOW = [
-  "Pending",
   "Assigned",
-  "Accepted",
-  "Arrived Pickup",
-  "Loaded",
+  "En Route to Pickup",
+  "Arrived at Pickup",
+  "Picked Up",
   "In Transit",
+  "Near Destination",
   "Delivered"
 ];
 
-export const TRIP_STATUSES = [...TRIP_FLOW, "Delayed", "Cancelled"];
+export const TRIP_STATUSES = ["Pending", ...TRIP_FLOW, "Cancelled"];
 
-/** Trip statuses where the driver phone should stream GPS to the server. */
+/** Driver phone streams GPS during these statuses (used for per-km billing). */
 export const LIVE_TRACKING_STATUSES = [
-  "Accepted",
-  "Arrived Pickup",
-  "Loaded",
+  "Assigned",
+  "En Route to Pickup",
+  "Arrived at Pickup",
+  "Picked Up",
   "In Transit",
-  "Delayed"
+  "Near Destination"
 ];
 
 /** Trip statuses shown on the live tracking map. */
 export const LIVE_MAP_STATUSES = [
   "Assigned",
-  "Accepted",
-  "Arrived Pickup",
-  "Loaded",
-  "In Transit",
-  "Delayed"
+  ...LIVE_TRACKING_STATUSES
 ];
 
 export function driverTripActionLabel(status) {
   switch (status) {
     case "Assigned":
-      return "Accept job";
-    case "Accepted":
+      return "Start — En Route to Pickup";
+    case "En Route to Pickup":
+      return "Mark Arrived at Pickup";
+    case "Arrived at Pickup":
       return "Mark Picked Up";
-    case "Arrived Pickup":
-    case "Loaded":
+    case "Picked Up":
       return "Mark In Transit";
     case "In Transit":
+      return "Mark Near Destination";
+    case "Near Destination":
       return "Mark Delivered";
     default:
       return null;
@@ -97,16 +116,15 @@ export function driverTripActionLabel(status) {
 }
 
 export function nextDriverTripStatus(current) {
-  if (current === "Assigned") return "Accepted";
-  if (current === "Accepted") return "Arrived Pickup";
-  if (current === "Arrived Pickup" || current === "Loaded") return "In Transit";
-  if (current === "In Transit") return "Delivered";
-  return current;
+  const idx = TRIP_FLOW.indexOf(current);
+  if (idx < 0 || idx >= TRIP_FLOW.length - 1) return current;
+  return TRIP_FLOW[idx + 1];
 }
 
 export function nextTripStatus(current) {
+  if (current === "Pending") return "Assigned";
   const idx = TRIP_FLOW.indexOf(current);
-  if (idx < 0) return "Accepted";
+  if (idx < 0) return "En Route to Pickup";
   return TRIP_FLOW[Math.min(idx + 1, TRIP_FLOW.length - 1)];
 }
 
@@ -134,7 +152,8 @@ export function navForRole(role, user = null) {
   if (role === "admin") {
     return [
       { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
-      { to: "book", labelKey: "nav.phoneBookings", icon: "plus" },
+      { to: "requests", labelKey: "nav.cargoRequests", icon: "package" },
+      { to: "shared-trips", labelKey: "nav.sharedTrips", icon: "route" },
       { to: "trips", labelKey: "nav.trips", icon: "route" },
       { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
       { to: "users", labelKey: "nav.users", icon: "users" },
@@ -153,18 +172,14 @@ export function navForRole(role, user = null) {
       return [
         { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
         { to: "shared-trips", labelKey: "nav.sharedTrips", icon: "route" },
-        { to: "jobs", labelKey: "nav.bookings", icon: "package" },
-        { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
         { to: "earnings", labelKey: "nav.earnings", icon: "chart" },
         { to: "truck", labelKey: "nav.truckProfile", icon: "truck" }
       ];
     }
     return [
       { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
-      { to: "marketplace", labelKey: "nav.availableLoads", icon: "package" },
-      { to: "my-bids", labelKey: "nav.myOffers", icon: "file" },
       { to: "jobs", labelKey: "nav.ftlTrips", icon: "route" },
-      { to: "tracking", labelKey: "nav.tracking", icon: "map" },
+      { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
       { to: "earnings", labelKey: "nav.earnings", icon: "chart" },
       { to: "truck", labelKey: "nav.truckProfile", icon: "truck" }
     ];
@@ -172,9 +187,11 @@ export function navForRole(role, user = null) {
   return [
     { to: "", end: true, labelKey: "nav.dashboard", icon: "dashboard" },
     { to: "find-trucks", labelKey: "nav.ftlBook", icon: "truck" },
-    { to: "shared-marketplace", labelKey: "nav.sharedBook", icon: "package" },
+    { to: "shared-booking", labelKey: "nav.sharedBook", icon: "package" },
     { to: "trips", labelKey: "nav.trips", icon: "route" },
-    { to: "tracking", labelKey: "nav.tracking", icon: "map" },
-    { to: "payments", labelKey: "nav.payment", icon: "chart" }
+    { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
+    { to: "notifications", labelKey: "nav.notifications", icon: "notifications" },
+    { to: "payments", labelKey: "nav.payment", icon: "chart" },
+    { to: "support", labelKey: "nav.support", icon: "help" }
   ];
 }

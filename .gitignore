@@ -16,3 +16,7 @@ backend/uploads/*
 .vercel
 # Local user PostgreSQL data
 .local-pgdata/
+thesis/.screenshot-credentials.json
+
+# Nested accidental project copy
+api/truck-dispa/

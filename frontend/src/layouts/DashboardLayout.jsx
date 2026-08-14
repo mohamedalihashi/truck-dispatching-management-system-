@@ -24,7 +24,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../contexts/SocketContext";
 import { usePermissions, useRealtimeInvalidation, useSettings } from "../hooks/useApi";
 import { useDriverGpsTracking } from "../hooks/useDriverGpsTracking";
-import { navForRole, roleHome, isSharedDriver } from "../utils/helpers";
+import { navForRole, roleHome } from "../utils/helpers";
 import { resolveUploadUrl } from "../config/api.js";
 import { Button } from "../components/ui/Button";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -46,12 +46,12 @@ const icons = {
   plus: Plus,
   package: Package,
   message: MessageSquare,
-  help: HelpCircle
+  help: HelpCircle,
+  notifications: Bell
 };
 
 const primaryLabelKeys = {
   customer: "common.ftlBook",
-  driver: "common.availableLoads",
   admin: "common.addUser"
 };
 
@@ -62,20 +62,20 @@ const navPermissions = {
   customers: "users",
   requests: "requests",
   trips: "trips",
+  tracking: "trips",
   jobs: "trips",
   "shared-trips": "trips",
   truck: "trucks",
   trucks: "trucks",
   "find-trucks": "requests",
-  book: "requests",
   "post-request": "requests",
+  "shared-booking": "requests",
   "shared-marketplace": "requests",
   shipments: "requests",
   marketplace: "requests",
   "my-bids": "requests",
   payments: "payments",
   earnings: "earnings",
-  tracking: "tracking",
   reports: "reports",
   "audit-logs": "auditLogs",
   sms: "notifications",
@@ -130,10 +130,7 @@ export function DashboardLayout() {
   function primaryAction() {
     if (user.role === "customer") navigate(`${base}/find-trucks`);
     else if (user.role === "admin") navigate(`${base}/users`, { state: { openCreate: true } });
-    else if (user.role === "driver") {
-      if (isSharedDriver(user)) navigate(`${base}/shared-trips/new`);
-      else navigate(`${base}/marketplace`);
-    } else navigate(`${base}/users`);
+    else navigate(`${base}/users`);
   }
 
   return (
@@ -145,16 +142,16 @@ export function DashboardLayout() {
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         {/* Brand */}
-        <div className="app-sidebar-divider flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3.5">
-          <button type="button" onClick={() => navigate(base)} className="flex min-w-0 items-center gap-2 text-left">
-            <BrandLogo size="xs" linkToHome={false} className="max-h-9 max-w-[140px]" />
+        <div className="app-sidebar-divider flex shrink-0 items-center justify-between gap-3 border-b px-4 py-4">
+          <button type="button" onClick={() => navigate(base)} className="flex min-w-0 flex-1 flex-col items-center text-center">
+            <BrandLogo size="md" layout="stack" tone="onDark" linkToHome={false} />
             {user.role === "admin" && companyName && companyName !== APP_NAME ? (
-              <span className="block truncate text-xs font-semibold text-on-sidebar">{brand}</span>
+              <span className="mt-1 block max-w-full truncate text-[10px] font-semibold text-on-sidebar/70">{brand}</span>
             ) : null}
           </button>
           <button
             type="button"
-            className="app-sidebar-link rounded-lg p-1.5 transition lg:hidden"
+            className="app-sidebar-link self-start rounded-lg p-1.5 transition lg:hidden"
             onClick={() => setOpen(false)}
             aria-label={t("common.closeMenu")}
           >
@@ -206,15 +203,10 @@ export function DashboardLayout() {
           className="app-sidebar-divider shrink-0 space-y-2 border-t px-3 py-3"
           style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
         >
-          {(
-            (user.role === "admin" && permissions.users === true) ||
-            (user.role === "driver" && permissions.trips === true)
-          ) && (
+          {(user.role === "admin" && permissions.users === true) && (
             <Button className="h-9 w-full text-sm" onClick={primaryAction}>
               <Plus size={15} />
-              {user.role === "driver" && isSharedDriver(user)
-                ? t("common.newSharedTrip")
-                : t(primaryLabelKeys[user.role] || "common.addUser")}
+              {t(primaryLabelKeys[user.role] || "common.addUser")}
             </Button>
           )}
 
@@ -273,7 +265,7 @@ export function DashboardLayout() {
           {user.role === "driver" && gps.active ? (
             <p className="mt-2 flex items-center justify-center gap-1.5 text-[10px] font-medium text-emerald-300">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              GPS live · {gps.trackingTripId}
+              GPS · {gps.distanceTraveledKm != null ? `${gps.distanceTraveledKm} km` : gps.trackingTripId}
             </p>
           ) : null}
           {user.role === "driver" && gps.error ? (
@@ -349,16 +341,17 @@ export function DashboardLayout() {
         <div className="mx-auto max-w-[1400px]">
           {user.role === "driver" && gps.trackingTripId && gps.error ? (
             <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-              Live tracking needs location access on this phone. {gps.error}
+              Allow location on this phone so trip distance can be recorded for per-km billing. {gps.error}
             </div>
           ) : null}
           {user.role === "driver" && gps.active && !gps.error ? (
             <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100">
-              Sharing live GPS for {gps.trackingTripId}
-              {gps.lastSentAt ? ` · last sent ${gps.lastSentAt.toLocaleTimeString()}` : ""}. Keep this page open while driving.
+              Recording GPS for {gps.trackingTripId}
+              {gps.distanceTraveledKm != null ? ` · ${gps.distanceTraveledKm} km traveled` : ""}
+              {gps.lastSentAt ? ` · last update ${gps.lastSentAt.toLocaleTimeString()}` : ""}. Keep this app open while driving.
             </div>
           ) : null}
-          <Outlet context={{ search: debouncedSearch }} />
+          <Outlet context={{ search: debouncedSearch, gps }} />
         </div>
       </main>
     </div>

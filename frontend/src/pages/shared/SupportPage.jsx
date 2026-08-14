@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Clock3, Headphones, Mail, MessageCircle, Phone, ShieldCheck } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
@@ -9,12 +9,13 @@ import { useSupportContact, useSupportComplaints, useTrips } from "../../hooks/u
 import { api } from "../../services/api";
 
 export function SupportPage({ embedded = false }) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const qc = useQueryClient();
   const { data: supportContact } = useSupportContact();
-  const canComplaint = user.role === "customer" || user.role === "admin";
-  const complaintsQuery = useSupportComplaints({}, { enabled: canComplaint });
-  const tripsQuery = useTrips({ limit: 100 }, { enabled: user.role === "customer" });
+  const isCustomer = user?.role === "customer";
+  const isAdmin = user?.role === "admin";
+  const complaintsQuery = useSupportComplaints({}, { enabled: isCustomer || isAdmin });
+  const tripsQuery = useTrips({ limit: 100 }, { enabled: isCustomer });
 
   const [form, setForm] = useState({
     againstRole: "driver",
@@ -25,8 +26,14 @@ export function SupportPage({ embedded = false }) {
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
 
-  const shipments = tripsQuery.data?.data || [];
-  const selectedTrip = shipments.find((trip) => trip.id === form.referenceId) || null;
+  useEffect(() => {
+    void refreshUser?.().catch(() => {});
+  }, [refreshUser]);
+
+  const customerTrips = (tripsQuery.data?.data || []).filter(
+    (trip) => !user?.id || trip.customerId === user.id
+  );
+  const selectedTrip = customerTrips.find((trip) => trip.id === form.referenceId) || null;
   const availableRoles = selectedTrip
     ? [
         selectedTrip.driverId ? { value: "driver", name: selectedTrip.driver } : null,
@@ -92,46 +99,66 @@ export function SupportPage({ embedded = false }) {
     }
   ];
 
-  function onSelectShipment(tripId) {
-    const trip = shipments.find((item) => item.id === tripId) || null;
+  function onSelectTrip(tripId) {
+    const trip = customerTrips.find((item) => item.id === tripId) || null;
     const roles = trip
       ? [trip.driverId ? "driver" : null, trip.dispatcherId ? "dispatcher" : null].filter(Boolean)
       : [];
     setForm((current) => ({
       ...current,
       referenceId: tripId,
-      againstRole: roles.includes(current.againstRole) ? current.againstRole : roles[0] || ""
+      againstRole: roles.includes(current.againstRole)
+        ? current.againstRole
+        : roles[0] || "platform"
     }));
   }
 
-  function onSubmitComplaint(event) {
+  async function onSubmitComplaint(event) {
     event.preventDefault();
     setError("");
     setInfo("");
-    if (!form.referenceId) {
-      setError("Please choose the shipment you want to complain about.");
+
+    const latest = await refreshUser?.().catch(() => user);
+    const role = latest?.role || user?.role;
+    if (role !== "customer") {
+      setError("Only customer accounts can file complaints. Log out and sign in as a customer.");
+      return;
+    }
+
+    if (form.againstRole !== "platform" && !form.referenceId) {
+      setError("Please choose the trip you want to complain about.");
       return;
     }
     if (!form.againstRole) {
-      setError("Choose whether the complaint is about the driver.");
+      setError("Choose who the complaint is about.");
       return;
     }
+    if (form.againstRole !== "platform" && availableRoles.length === 0) {
+      setError("No driver is assigned on this trip yet. Choose Platform support instead.");
+      return;
+    }
+
     createComplaint.mutate({
       againstRole: form.againstRole,
-      referenceId: form.referenceId.trim(),
-      subject: form.subject.trim() || undefined,
-      message: form.message.trim()
+      referenceId: form.referenceId || undefined,
+      subject: form.subject || undefined,
+      message: form.message
     });
+  }
+
+  function tripLabel(trip) {
+    const route = trip.route || `${trip.pickup || "—"} → ${trip.destination || "—"}`;
+    return `${trip.id} · ${route} · ${trip.status}`;
   }
 
   return (
     <div className="space-y-8">
-      {embedded ? null : (
+      {!embedded ? (
         <PageHeader
           title="Support Center"
           subtitle="Professional help for booking, dispatch, tracking, and account access."
         />
-      )}
+      ) : null}
 
       <section className="overflow-hidden rounded-2xl bg-primary-container text-on-primary shadow-[0px_8px_30px_rgba(13,28,50,0.18)]">
         <div className="relative px-6 py-8 sm:px-8 sm:py-10">
@@ -152,7 +179,7 @@ export function SupportPage({ embedded = false }) {
                 We are here when operations need a clear answer.
               </h2>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/75 sm:text-base">
-                Reach the operations team by email, phone, or WhatsApp. Customers can also file a formal complaint against a driver from one of their shipments.
+                Reach the operations team by email, phone, or WhatsApp. Customers can also file a formal complaint against a driver from one of their trips.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -207,39 +234,38 @@ export function SupportPage({ embedded = false }) {
         </div>
       </section>
 
-      {user.role === "customer" ? (
+      {isCustomer ? (
         <section className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.04)]">
           <h3 className="text-xl font-semibold text-primary-container">File a complaint</h3>
           <p className="mt-1 text-sm text-on-surface-variant">
-            Pick one of your shipments below. The driver who worked on it is filled in automatically.
+            Pick one of your trips, or send a general complaint to platform support.
           </p>
           <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={onSubmitComplaint}>
             <label className="block text-sm sm:col-span-2">
-              <span className="mb-1.5 block font-medium text-on-surface-variant">Choose shipment *</span>
+              <span className="mb-1.5 block font-medium text-on-surface-variant">Choose trip (optional for platform support)</span>
               <select
                 className="stitch-input"
                 value={form.referenceId}
-                onChange={(e) => onSelectShipment(e.target.value)}
-                required
+                onChange={(e) => onSelectTrip(e.target.value)}
                 disabled={tripsQuery.isLoading}
               >
                 <option value="">
                   {tripsQuery.isLoading
-                    ? "Loading your shipments…"
-                    : shipments.length === 0
-                      ? "No shipments found"
-                      : "Select a shipment…"}
+                    ? "Loading your trips…"
+                    : customerTrips.length === 0
+                      ? "No trips found — you can still contact platform support"
+                      : "Select a trip…"}
                 </option>
-                {shipments.map((trip) => (
+                {customerTrips.map((trip) => (
                   <option key={trip.id} value={trip.id}>
-                    {trip.id} · {trip.route} · {trip.status}
+                    {tripLabel(trip)}
                   </option>
                 ))}
               </select>
             </label>
             {selectedTrip ? (
               <div className="sm:col-span-2 rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">People on this shipment</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">People on this trip</p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <p>
                     <span className="text-on-surface-variant">Driver: </span>
@@ -258,18 +284,14 @@ export function SupportPage({ embedded = false }) {
                 className="stitch-input"
                 value={form.againstRole}
                 onChange={(e) => setForm((current) => ({ ...current, againstRole: e.target.value }))}
-                disabled={!selectedTrip || availableRoles.length === 0}
               >
-                {!selectedTrip ? <option value="">Select a shipment first</option> : null}
+                <option value="platform">Platform support</option>
                 {availableRoles.map((role) => (
                   <option key={role.value} value={role.value}>
                     {role.value === "driver" ? "Driver" : "Dispatcher"}
                     {role.name ? ` — ${role.name}` : ""}
                   </option>
                 ))}
-                {selectedTrip && availableRoles.length === 0 ? (
-                  <option value="">No driver or dispatcher assigned yet</option>
-                ) : null}
               </select>
             </label>
             <label className="block text-sm sm:col-span-2">
@@ -278,7 +300,7 @@ export function SupportPage({ embedded = false }) {
                 className="stitch-input"
                 value={form.subject}
                 onChange={(e) => setForm((current) => ({ ...current, subject: e.target.value }))}
-                placeholder="Late pickup, rude behavior, wrong route…"
+                placeholder="Late pickup, rude behavior, damaged cargo…"
               />
             </label>
             <label className="block text-sm sm:col-span-2">
@@ -294,10 +316,7 @@ export function SupportPage({ embedded = false }) {
               />
             </label>
             <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-              <Button
-                type="submit"
-                disabled={createComplaint.isPending || !form.referenceId || availableRoles.length === 0}
-              >
+              <Button type="submit" disabled={createComplaint.isPending || form.message.trim().length < 10}>
                 {createComplaint.isPending ? "Submitting…" : "Submit complaint"}
               </Button>
               {info ? <p className="text-sm text-emerald-700">{info}</p> : null}
@@ -305,80 +324,64 @@ export function SupportPage({ embedded = false }) {
             </div>
           </form>
         </section>
+      ) : isAdmin ? (
+        <p className="rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
+          Admins review customer complaints below. To file a complaint, sign in with a customer account.
+        </p>
       ) : null}
 
-      {canComplaint ? (
+      {(isCustomer || isAdmin) && (
         <section className="overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.04)]">
           <div className="border-b border-outline-variant px-6 py-5">
             <h3 className="text-xl font-semibold text-primary-container">
-              {user.role === "admin" ? "Customer complaints" : "My complaints"}
+              {isAdmin ? "Customer complaints" : "My complaints"}
             </h3>
             <p className="mt-1 text-sm text-on-surface-variant">
-              {user.role === "admin"
+              {isAdmin
                 ? "Review complaints filed by customers against drivers."
                 : "Track the status of complaints you have submitted."}
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="bg-surface-container-low text-on-surface-variant">
-                <tr>
-                  <th className="px-4 py-3">Date</th>
-                  {user.role === "admin" ? <th className="px-4 py-3">Customer</th> : null}
-                  <th className="px-4 py-3">Against</th>
-                  <th className="px-4 py-3">Reference</th>
-                  <th className="px-4 py-3">Subject</th>
-                  <th className="px-4 py-3">Status</th>
-                  {user.role === "admin" ? <th className="px-4 py-3">Action</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {(complaintsQuery.data?.data || []).map((row) => (
-                  <tr key={row.id} className="border-t border-outline-variant/60 align-top">
-                    <td className="px-4 py-3 whitespace-nowrap">{new Date(row.createdAt).toLocaleString()}</td>
-                    {user.role === "admin" ? (
-                      <td className="px-4 py-3 font-semibold">{row.customerName || "—"}</td>
-                    ) : null}
-                    <td className="px-4 py-3">
-                      <p className="font-semibold capitalize">{row.againstRole}</p>
-                      <p className="text-xs text-on-surface-variant">{row.againstName || "—"}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold">{row.referenceId}</p>
-                      <p className="text-xs capitalize text-on-surface-variant">{row.referenceType?.replace("_", " ")}</p>
-                    </td>
-                    <td className="max-w-xs px-4 py-3">
-                      <p className="font-medium">{row.subject || "—"}</p>
-                      <p className="mt-1 text-xs text-on-surface-variant line-clamp-2">{row.message}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={row.status} />
-                    </td>
-                    {user.role === "admin" ? (
-                      <td className="px-4 py-3">
-                        <select
-                          className="stitch-input max-w-[9rem]"
-                          value={row.status}
-                          disabled={updateStatus.isPending}
-                          onChange={(e) => updateStatus.mutate({ id: row.id, status: e.target.value })}
-                        >
-                          {["Open", "In Review", "Resolved", "Closed"].map((status) => (
-                            <option key={status} value={status}>{status}</option>
-                          ))}
-                        </select>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-outline-variant">
+            {complaintsQuery.isLoading ? (
+              <p className="p-6 text-center text-sm text-on-surface-variant">Loading…</p>
+            ) : null}
+            {(complaintsQuery.data?.data || []).map((row) => (
+              <article key={row.id} className="px-6 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-on-surface">{row.subject}</p>
+                    <p className="mt-1 text-sm text-on-surface-variant">
+                      {row.againstRole} {row.againstName ? `— ${row.againstName}` : ""} · {row.referenceId}
+                      {isAdmin && row.customerName ? ` · ${row.customerName}` : ""}
+                    </p>
+                    <p className="mt-2 text-sm text-on-surface">{row.message}</p>
+                  </div>
+                  <StatusBadge status={row.status} />
+                </div>
+                {isAdmin ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {["Open", "In Review", "Resolved", "Closed"].map((status) => (
+                      <Button
+                        key={status}
+                        variant="secondary"
+                        className="px-2 py-1 text-xs"
+                        disabled={updateStatus.isPending || row.status === status}
+                        onClick={() => updateStatus.mutate({ id: row.id, status })}
+                      >
+                        {status}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ))}
             {!complaintsQuery.isLoading && !(complaintsQuery.data?.data || []).length ? (
               <p className="p-6 text-center text-on-surface-variant">No complaints yet.</p>
             ) : null}
           </div>
         </section>
-      ) : null}
-
+      )}
     </div>
   );
 }

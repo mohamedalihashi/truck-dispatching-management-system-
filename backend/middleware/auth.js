@@ -45,6 +45,10 @@ export function requireAuth(req, res, next) {
         res.status(401).json({ message: "Authentication required" });
         return;
       }
+      if (user.status === "Inactive" || user.status === "Deleted") {
+        res.status(403).json({ message: "Account is inactive. Contact an admin." });
+        return;
+      }
       // Always trust the database role so stale JWT claims cannot block customer actions.
       req.user = {
         sub: user.id,
@@ -80,8 +84,11 @@ export function requirePasswordChanged(req, res, next) {
 export function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
+      const onlyCustomer = roles.length === 1 && roles[0] === "customer";
       return res.status(403).json({
-        message: `Insufficient permissions${req.user?.role ? ` for role "${req.user.role}"` : ""}`,
+        message: onlyCustomer
+          ? "Only customer accounts can file complaints. Log out and sign in as a customer."
+          : `Insufficient permissions${req.user?.role ? ` for role "${req.user.role}"` : ""}`,
         requiredRoles: roles,
         currentRole: req.user?.role || null
       });

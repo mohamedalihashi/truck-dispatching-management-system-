@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { APIProvider, Map, Marker, useMap } from "@vis.gl/react-google-maps";
 import { MapContainer, TileLayer, Marker as LeafletMarker, Polyline, Popup, useMap as useLeafletMap } from "react-leaflet";
 import L from "leaflet";
@@ -26,6 +26,47 @@ const selectedIcon = L.divIcon({
   iconSize: [34, 34],
   iconAnchor: [17, 17]
 });
+
+function LeafletTripMarker({ marker, selectedId, onSelect, truckIcon, selectedIcon }) {
+  const ref = useRef(null);
+  const position = useMemo(() => [marker.lat, marker.lng], [marker.lat, marker.lng]);
+
+  useEffect(() => {
+    ref.current?.setLatLng(position);
+  }, [position]);
+
+  return (
+    <LeafletMarker
+      ref={ref}
+      position={position}
+      icon={marker.id === selectedId ? selectedIcon : truckIcon}
+      eventHandlers={{ click: () => onSelect?.(marker.id) }}
+    >
+      <Popup>
+        <strong>{marker.label}</strong>
+        <br />
+        {marker.subtitle}
+        <br />
+        <span className="text-xs">
+          {marker.gpsStatus || "Live GPS"}
+          {marker.speedKmh != null ? ` · ${marker.speedKmh} km/h` : ""}
+        </span>
+        {marker.driver ? (
+          <>
+            <br />
+            <span className="text-xs">{marker.driver}</span>
+          </>
+        ) : null}
+        {marker.lastSeenLabel ? (
+          <>
+            <br />
+            <span className="text-xs">{marker.lastSeenLabel}</span>
+          </>
+        ) : null}
+      </Popup>
+    </LeafletMarker>
+  );
+}
 
 function LeafletResizeFix() {
   const map = useLeafletMap();
@@ -55,7 +96,6 @@ function GoogleFitBounds({ markers, selectedId }) {
       const sel = markers.find((m) => m.id === selectedId);
       if (sel) {
         map.panTo({ lat: sel.lat, lng: sel.lng });
-        map.setZoom(SOMALIA_ZOOM.city);
         return;
       }
     }
@@ -85,7 +125,7 @@ function LeafletFitBounds({ markers, selectedId }) {
     if (selectedId) {
       const sel = markers.find((m) => m.id === selectedId);
       if (sel) {
-        map.setView([sel.lat, sel.lng], SOMALIA_ZOOM.city, { animate: true });
+        map.setView([sel.lat, sel.lng], map.getZoom(), { animate: true });
         return;
       }
     }
@@ -209,28 +249,14 @@ function LeafletFleetMap({ markers, selectedId, onSelect, routePoints, destinati
         </LeafletMarker>
       ) : null}
       {markers.map((m) => (
-        <LeafletMarker
+        <LeafletTripMarker
           key={m.id}
-          position={[m.lat, m.lng]}
-          icon={
-            m.id === selectedId ? selectedIcon : m.live ? truckIcon : estimatedIcon
-          }
-          eventHandlers={{ click: () => onSelect?.(m.id) }}
-        >
-          <Popup>
-            <strong>{m.label}</strong>
-            <br />
-            {m.subtitle}
-            <br />
-            <span className="text-xs">{m.live ? "Live GPS" : "Estimated (pickup area)"}</span>
-            {m.driver ? (
-              <>
-                <br />
-                <span className="text-xs">{m.driver}</span>
-              </>
-            ) : null}
-          </Popup>
-        </LeafletMarker>
+          marker={m}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          truckIcon={truckIcon}
+          selectedIcon={selectedIcon}
+        />
       ))}
     </MapContainer>
   );
@@ -249,7 +275,7 @@ export function FleetMap({
   className = "h-full w-full"
 }) {
   const markers = useMemo(() => tripsToMarkers(trips), [trips]);
-  const liveCount = markers.filter((m) => m.live).length;
+  const liveCount = markers.length;
   const useGoogle =
     import.meta.env.VITE_MAP_PROVIDER === "google" && Boolean(GOOGLE_MAPS_API_KEY);
 
@@ -283,7 +309,7 @@ export function FleetMap({
       ) : null}
       {markers.length ? (
         <div className="pointer-events-none absolute left-2 top-2 rounded bg-surface-container-lowest/90 px-2 py-1 text-[10px] text-on-surface-variant shadow">
-          {liveCount} live GPS · {markers.length - liveCount} estimated
+          {liveCount} live GPS
           {routePoints.length > 1 ? ` · route ${routePoints.length} pts` : ""}
         </div>
       ) : null}

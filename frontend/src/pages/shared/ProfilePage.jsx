@@ -10,7 +10,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useProfileUpdate, useTrucks } from "../../hooks/useApi";
 import { api } from "../../services/api";
 import { resolveUploadUrl } from "../../config/api.js";
-import { roleHome } from "../../utils/helpers";
+import { isValidFullName, roleHome } from "../../utils/helpers";
 
 const roleLabels = {
   admin: "Admin",
@@ -58,8 +58,12 @@ export function ProfilePage() {
   async function saveProfile(event) {
     event.preventDefault();
     setError("");
+    if (!isValidFullName(form.name)) {
+      setError("Enter a valid full name (letters and spaces; no numbers).");
+      return;
+    }
     try {
-      const payload = { name: form.name, phone: form.phone };
+      const payload = { name: form.name.trim(), phone: form.phone };
       if (form.password) payload.password = form.password;
       await updateProfile.mutateAsync(payload);
       await refreshUser();
@@ -93,7 +97,7 @@ export function ProfilePage() {
     <div className="space-y-8">
       <PageHeader
         title="Profile"
-        subtitle="Your marketplace account, role details, and uploaded documents."
+        subtitle="Your account, role details, and uploaded documents."
         actions={
           <Button variant="secondary" onClick={openEdit}>
             Edit profile
@@ -193,7 +197,7 @@ export function ProfilePage() {
                 Linked Truck
               </div>
               <dl className="grid gap-3 sm:grid-cols-2">
-                <Info label="Truck number" value={truck.truckNumber} />
+                <Info label="Truck ID" value={truck.truckNumber} />
                 <Info label="Plate" value={truck.plateNumber} />
                 <Info label="Region" value={truck.region || "—"} />
                 <Info label="City" value={truck.city || "—"} />
@@ -257,9 +261,11 @@ export function ProfilePage() {
           <form className="space-y-3" onSubmit={saveProfile}>
             <input
               className="stitch-input w-full"
-              placeholder="Full name"
+              placeholder="e.g. Cabdi Axmed Xaashi"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              maxLength={150}
+              autoComplete="name"
               required
             />
             <input

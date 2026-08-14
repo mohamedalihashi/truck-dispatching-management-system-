@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chapter III — Methodology</title>
+  <link rel="stylesheet" href="just-thesis-style.css" />
+</head>
+<body>
+
+<p class="chapter-title">CHAPTER III<br />METHODOLOGY<br />(Mobile and Web Dev FYPs)</p>
+
+<h2>3.1 Introduction</h2>
+<p>
+  This chapter outlines the system description, features, architecture, development approach,
+  hardware and software requirements, and user requirements for <strong>GaariHel</strong>, a web-based
+  truck dispatch and cargo booking platform developed for Somalia. GaariHel connects cargo owners
+  (customers), truck drivers, and platform administrators in a single digital workflow. The system
+  supports two freight modes: Full Truck Load (FTL), where one customer occupies an entire truck, and
+  Shared load (SHARED), where two or more customers on the same corridor share one truck assigned by the
+  administrator. The chapter provides a structured framework for understanding how the system will
+  achieve the research objectives defined in Chapter I.
+</p>
+<p>
+  The methodology follows an iterative development approach suitable for web applications. Requirements
+  were derived from observation of informal freight practices in Somali cities, consultation with the
+  project supervisor, and analysis of comparable dispatch systems adapted to local constraints such as
+  mobile-money payment (WaafiPay), Somalia administrative geography (gobol, magalo, neighbourhood),
+  cargo measurement by type (kg, litres, livestock head), and GPS-based distance measurement on driver
+  phones. The product does not use driver bidding or a separate dispatcher portal; assignment is performed
+  by the administrator.
+</p>
+
+<h2>3.2 System Overview</h2>
+<p>
+  GaariHel is a Progressive Web Application (PWA) that allows customers to submit cargo requests online,
+  administrators to register drivers and assign verified trucks, and drivers to accept jobs, record pickup
+  measurement, share live GPS location, upload proof of delivery, and complete trips. Customers track
+  shipments, receive notifications, open support complaints, rate completed trips, and pay 100% of the
+  fare after the trip status becomes Delivered. Public visitors see Features, How it Works, and customer
+  testimonials on the landing page, plus informational pages (About, Contact, Help, FAQs, Terms, Privacy).
+</p>
+<p>
+  The final fare is calculated only at Delivered as the sum of (1) a cargo charge based on the measured
+  quantity and unit for that cargo type, and (2) a distance charge based on GPS kilometres travelled after
+  pickup, using pricing rates configured by the administrator. For shared loads, the administrator pools at
+  least two compatible requests onto one SHARED truck. The driver Accepts or Rejects the whole job once,
+  enters measurement per load at pickup, and delivers each booking. The brand slogan is “Hel gaari, dir
+  rarkaaga”; drivers can install the PWA on mobile phones for GPS tracking on the road.
+</p>
+
+<h2>3.3 System Features</h2>
+<p>
+  The following sections describe the main features implemented in GaariHel.
+</p>
+
+<h3>3.3.1 User Registration and Authentication</h3>
+<p>
+  Customers self-register online. Driver accounts are created by administrators (driver self-registration
+  is blocked) and each driver is linked to exactly one truck with a service type of FTL or SHARED. Login
+  uses email or username and password, with optional email OTP verification. JWT tokens maintain session
+  state. Users can reset forgotten passwords and update profile details.
+</p>
+
+<h3>3.3.2 Cargo Booking (FTL and SHARED)</h3>
+<p>
+  Customers submit booking forms with Somalia region, district, neighbourhood, cargo type, description,
+  optional photo, sender and receiver contacts, and preferred pickup date. FTL requests request a full
+  truck; SHARED requests indicate willingness to share a corridor. Quantity may remain TBD until pickup
+  measurement. Where a quote path is used, customers can review quote details on their trips screen;
+  payment remains gated until Delivered.
+</p>
+
+<h3>3.3.3 Administrator Assignment and Operations</h3>
+<p>
+  Administrators assign FTL trucks and pool SHARED requests on the same corridor. They also manage users
+  and customers, fleet/drivers, trips, payments and earnings/payouts, pricing settings, reports, audit
+  logs, support complaints, notifications, SMS tools, and live GPS tracking maps. Audit logs record
+  critical administrative actions (for example driver verification, payment changes, and shared pool
+  assignment) for accountability.
+</p>
+
+<h3>3.3.4 Driver Job Acceptance and Trip Execution</h3>
+<p>
+  FTL drivers Accept or Reject individual assigned trips. Shared drivers Accept or Reject the entire pool
+  once. After acceptance, drivers advance trip status one step at a time:
+  Assigned → En Route to Pickup → Arrived at Pickup → Picked Up → In Transit → Near Destination →
+  Delivered. At pickup they enter cargo measurement. Shared drivers may reorder stops and deliver each
+  booking separately. Proof-of-delivery photos are required before marking Delivered.
+</p>
+
+<h3>3.3.5 Cargo Measurement and Fare Calculation</h3>
+<p>
+  Pickup measurement depends on cargo type: kilograms (KG), litres (LITER), or livestock head (HEAD) with
+  separate rates for camels, sheep, and goats. After Picked Up, GPS distance accumulates with accuracy
+  filters. At Delivered, fare = cargo charge (quantity × unit rate) + distance charge (GPS km × rate per km).
+</p>
+
+<h3>3.3.6 GPS Tracking</h3>
+<p>
+  Drivers share location from the phone browser. Admin and customer live-tracking screens use Leaflet maps.
+  Billing distance starts after pickup. Socket.io pushes updates when the API runs as a long-lived server;
+  otherwise clients poll.
+</p>
+
+<h3>3.3.7 Payments (WaafiPay) and Earnings</h3>
+<p>
+  After Delivered, customers pay 100% via WaafiPay (EVC Plus / ZAAD). Payment is blocked before delivery.
+  Commission splits driver and platform earnings after payment; drivers and administrators can view earnings
+  and payouts.
+</p>
+
+<h3>3.3.8 Notifications, Support, Feedback, and Public Content</h3>
+<p>
+  In-app notifications cover assignment and status events; SMS and email may be sent where configured.
+  Users can open support complaints. After delivery, customers can rate trips; testimonials may appear on
+  the landing page Clients section. Public About, Contact, Help, FAQs, Terms, and Privacy pages are available
+  without login.
+</p>
+
+<h2>3.4 System Architecture</h2>
+<p>
+  GaariHel uses a three-tier client–server architecture. The presentation tier is a React single-page
+  application (Vite PWA) with role-based routes for admin, customer, FTL driver, and shared driver, plus
+  public pages. The application tier is a Node.js Express REST API with Socket.io, Zod validation, and JWT
+  authentication; business rules live in repository modules. The data tier is PostgreSQL accessed through
+  Prisma ORM. External integrations include WaafiPay, SMTP email, SMS, and Cloudinary.
+</p>
+<img class="thesis-figure-diagram" src="screenshots/fig-3-1-architecture.png" alt="GaariHel three-tier architecture" />
+<p class="fig-caption">Figure 3.1: Three-tier architecture of GaariHel</p>
+<p>
+  Data flows from the browser to REST endpoints, through repositories that enforce business rules, to the
+  database. This separation keeps security, pricing, and payment gating on the server.
+</p>
+
+<h2>3.5 Development Methodology</h2>
+<p>
+  The project followed an iterative (evolutionary) process with short build–test cycles rather than a single
+  waterfall delivery. Work was organised into phases aligned with Final Year Project milestones.
+</p>
+
+<h3>3.5.1 Requirements Gathering Methods</h3>
+<p>
+  Requirements were collected using three complementary methods before and during design:
+</p>
+<ol>
+  <li>
+    <strong>Observation of local freight practice.</strong> Informal truck hiring in Somali cities (phone
+    calls, brokers, cash or mobile money after delivery) was observed to identify gaps such as lack of trip
+    visibility, undocumented assignment, and unclear pricing.
+  </li>
+  <li>
+    <strong>Supervisor and stakeholder consultation.</strong> Regular discussions with the project supervisor
+    clarified academic scope, prioritised FTL then SHARED flows, and confirmed constraints such as admin-only
+    assignment and payment after Delivered.
+  </li>
+  <li>
+    <strong>Analysis of comparable systems.</strong> Existing dispatch and logistics applications were reviewed
+    at a high level and adapted to local needs: WaafiPay instead of card escrow, Somalia gobol/magalo fields,
+    browser GPS on driver phones, and cargo measurement by type (kg, litres, head).
+  </li>
+</ol>
+<p>
+  Findings were turned into functional requirements (R1–R15) and non-functional requirements (NFR1–NFR8), then
+  refined iteratively when prototypes exposed issues such as GPS jitter before pickup and weight-only pricing
+  for fuel or livestock.
+</p>
+
+<table>
+  <caption>Table 3.1: Development phases</caption>
+  <thead>
+    <tr><th>Phase</th><th>Activities</th><th>Main outputs</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Requirements</td>
+      <td>Observation, supervisor consultation, comparable-system analysis</td>
+      <td>R1–R15, NFR1–NFR8</td>
+    </tr>
+    <tr>
+      <td>Design</td>
+      <td>Architecture, database schema, trip status chain, shared-pool rules</td>
+      <td>ERD, use cases, Prisma models</td>
+    </tr>
+    <tr>
+      <td>Implementation</td>
+      <td>Frontend dashboards, Express API, WaafiPay, GPS fare, SHARED pool</td>
+      <td>Working prototype modules</td>
+    </tr>
+    <tr>
+      <td>Testing</td>
+      <td>Manual walkthroughs; Vitest suites; security and device checks</td>
+      <td>Test results (Chapter IV)</td>
+    </tr>
+    <tr>
+      <td>Deployment &amp; docs</td>
+      <td>Environment configuration, seed data, thesis documentation</td>
+      <td>Demo-ready system</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  Out of scope for this version: driver bidding auctions, a separate dispatcher login portal, and public truck
+  browsing without registration.
+</p>
+
+<h2>3.6 System Requirements</h2>
+
+<h3>3.6.1 Hardware Requirements</h3>
+<table>
+  <caption>Table 3.2: Hardware requirements</caption>
+  <thead>
+    <tr><th>Component</th><th>Minimum specification</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Developer workstation</td><td>Intel Core i5 or equivalent, 8 GB RAM, 256 GB storage</td><td>Code development, testing, documentation</td></tr>
+    <tr><td>Network</td><td>Broadband internet connection</td><td>API access, deployment, integrations</td></tr>
+    <tr><td>Server (production)</td><td>Cloud VM or hosting with Node.js support</td><td>Host backend API</td></tr>
+    <tr><td>Database server</td><td>PostgreSQL 16 compatible host</td><td>Persistent data storage</td></tr>
+    <tr><td>Driver smartphone</td><td>Android or iOS with GPS and modern browser</td><td>PWA install, live GPS tracking</td></tr>
+    <tr><td>Customer/admin device</td><td>Desktop, laptop, or smartphone with browser</td><td>Booking, assignment, payments</td></tr>
+  </tbody>
+</table>
+
+<h3>3.6.2 Software Requirements</h3>
+<table>
+  <caption>Table 3.3: Software requirements</caption>
+  <thead>
+    <tr><th>Category</th><th>Technology</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Development tools (IDE)</td><td>Visual Studio Code / Cursor, Git</td></tr>
+    <tr><td>Programming languages</td><td>JavaScript (ES modules), HTML, CSS</td></tr>
+    <tr><td>Frontend framework</td><td>React 19, Vite 6, React Router 7, Tailwind CSS 4</td></tr>
+    <tr><td>Backend runtime</td><td>Node.js, Express 4</td></tr>
+    <tr><td>Database</td><td>PostgreSQL 16, Prisma ORM</td></tr>
+    <tr><td>Real-time</td><td>Socket.io</td></tr>
+    <tr><td>Validation</td><td>Zod</td></tr>
+    <tr><td>Authentication</td><td>JSON Web Tokens (JWT), bcrypt password hashing</td></tr>
+    <tr><td>Payment gateway</td><td>WaafiPay API</td></tr>
+    <tr><td>Maps / GPS</td><td>Browser Geolocation API, Leaflet maps</td></tr>
+    <tr><td>Image storage</td><td>Cloudinary (uploads)</td></tr>
+    <tr><td>Testing</td><td>Vitest</td></tr>
+    <tr><td>Operating systems</td><td>Windows 10/11 (development); Linux (server deployment)</td></tr>
+    <tr><td>Browser</td><td>Chrome, Edge, Firefox, Safari (latest versions)</td></tr>
+  </tbody>
+</table>
+
+<h2>3.7 Requirements</h2>
+
+<h3>3.7.1 Functional Requirements</h3>
+<table>
+  <caption>Table 3.4: Functional requirements</caption>
+  <thead>
+    <tr><th>ID</th><th>Requirement</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>R1</td><td>The system shall allow customer self-registration and admin/customer/driver login; administrators shall register drivers; each driver shall be linked to exactly one truck and a service type (FTL or SHARED).</td></tr>
+    <tr><td>R2</td><td>The system shall allow customers to submit FTL cargo requests with Somalia geo fields, cargo type, and optional photo.</td></tr>
+    <tr><td>R3</td><td>The system shall allow customers to submit SHARED cargo requests for corridor-based freight.</td></tr>
+    <tr><td>R4</td><td>The administrator shall assign an available FTL truck to a pending FTL request.</td></tr>
+    <tr><td>R5</td><td>The administrator shall pool at least two SHARED requests on the same corridor onto one SHARED truck.</td></tr>
+    <tr><td>R6</td><td>FTL drivers shall accept or reject an assigned trip; SHARED drivers shall accept or reject the whole pooled job once.</td></tr>
+    <tr><td>R7</td><td>Drivers shall enter actual pickup measurement by cargo type (KG, LITER, or HEAD) before continuing past pickup.</td></tr>
+    <tr><td>R8</td><td>The driver application shall record GPS distance travelled after pickup during an active trip.</td></tr>
+    <tr><td>R9</td><td>The system shall compute final fare only at Delivered using measured quantity rates plus GPS km against admin pricing.</td></tr>
+    <tr><td>R10</td><td>Customers shall pay 100% of fare via WaafiPay only after Delivered; payment shall be blocked before delivery.</td></tr>
+    <tr><td>R11</td><td>Drivers shall upload proof of delivery before marking a trip Delivered.</td></tr>
+    <tr><td>R12</td><td>The system shall send in-app notifications (and SMS/email where configured) for assignment and status events.</td></tr>
+    <tr><td>R13</td><td>Administrators shall manage users, trucks/fleet, pricing rates, payments/earnings, reports, support complaints, and audit logs.</td></tr>
+    <tr><td>R14</td><td>Customers shall rate trips after delivery; testimonials may appear on the landing page; drivers shall view earnings after payment.</td></tr>
+    <tr><td>R15</td><td>Shared drivers shall reorder stops and deliver each booking; shared trip completes when all loads are Delivered.</td></tr>
+  </tbody>
+</table>
+
+<h3>3.7.2 Non-Functional Requirements</h3>
+<table>
+  <caption>Table 3.5: Non-functional requirements</caption>
+  <thead>
+    <tr><th>ID</th><th>Category</th><th>Requirement</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>NFR1</td><td>Security</td><td>All protected API routes shall require valid JWT; role-based access shall restrict admin-only operations.</td></tr>
+    <tr><td>NFR2</td><td>Usability</td><td>Interfaces shall be role-specific dashboards with English and Somali language support.</td></tr>
+    <tr><td>NFR3</td><td>Performance</td><td>List and detail screens shall load within acceptable time under normal operational use.</td></tr>
+    <tr><td>NFR4</td><td>Reliability</td><td>Trip status shall advance only along the defined chain; invalid skips shall be rejected; POD required for Delivered.</td></tr>
+    <tr><td>NFR5</td><td>Maintainability</td><td>Backend shall use layered routes, repositories, and shared validation modules.</td></tr>
+    <tr><td>NFR6</td><td>Portability</td><td>The driver client shall work as a PWA on Android and iOS browsers with GPS permission.</td></tr>
+    <tr><td>NFR7</td><td>Scalability</td><td>Database design shall support growing numbers of users, trips, and shared bookings.</td></tr>
+    <tr><td>NFR8</td><td>Auditability</td><td>Critical admin actions such as shared pool assignment and driver verification shall be logged in audit records.</td></tr>
+  </tbody>
+</table>
+
+<h3>3.7.3 User Requirements (by role)</h3>
+<table>
+  <caption>Table 3.6: User requirements by role</caption>
+  <thead>
+    <tr><th>Role</th><th>Needs from the system</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Customer</td><td>Self-register/login; book FTL or SHARED; track trips; notifications; pay after Delivered; rate delivery; open support.</td></tr>
+    <tr><td>FTL driver</td><td>Admin-registered account with one truck; Accept/Reject jobs; update status; enter measurement; share GPS; upload POD; earnings.</td></tr>
+    <tr><td>SHARED driver</td><td>Accept/Reject whole pool once; reorder stops; enter measurement per booking; deliver each load; earnings.</td></tr>
+    <tr><td>Administrator</td><td>Register drivers; assign FTL and SHARED; manage users/fleet; set pricing; payments/earnings; map and trips; support; reports and audit logs.</td></tr>
+  </tbody>
+</table>
+
+<h2>3.8 Feasibility Study</h2>
+<p>
+  <strong>Technical feasibility:</strong> React, Node.js, PostgreSQL, and Prisma are free for academic use.
+  GPS, mobile money, and hosting are available in Mogadishu. Core modules including cargo measurement and GPS
+  fare have been implemented in the prototype.
+</p>
+<p>
+  <strong>Economic feasibility:</strong> Development uses free or low-cost tools. WaafiPay aligns with local
+  payment habits without card infrastructure. No proprietary hardware is required beyond standard computers
+  and phones.
+</p>
+<p>
+  <strong>Operational feasibility:</strong> The workflow mirrors local practice (admin assigns truck; driver
+  runs trip; customer pays after delivery) with added GPS transparency. PWA install reduces the need for a
+  native app store release in the first version.
+</p>
+<p>
+  <strong>Schedule feasibility:</strong> Prioritising FTL, SHARED, GPS fare, and payment modules enabled a
+  demonstrable system within the academic year.
+</p>
+
+<h2>3.9 UML Diagrams</h2>
+<p>
+  This section presents the main UML views used in design. Larger copies are also placed in the Appendix
+  (Figures A1 and A2) for printing convenience.
+</p>
+
+<h3>3.9.1 Use Case Diagram</h3>
+<p>
+  Primary actors are Customer, FTL Driver, Shared Driver, and Administrator. Supporting actors include
+  WaafiPay, SMS/Email, Cloudinary, and device GPS. Major use cases include Register/Login, Submit Cargo
+  Request, Assign Truck / Pool Shared Loads, Accept/Reject Job, Enter Pickup Measurement, Track GPS, Mark
+  Delivered with POD, Pay Fare, Open Support, Rate Trip, Manage Pricing, View Audit Logs, and Handle Support.
+</p>
+<img class="thesis-figure-diagram" src="screenshots/fig-3-2-use-case.png" alt="GaariHel use case diagram" />
+<p class="fig-caption">Figure 3.2: Use case diagram of GaariHel</p>
+<p>
+  Refer also to Appendix Figure A1 (same diagram, full-page copy).
+</p>
+
+<h3>3.9.2 Entity-Relationship Diagram</h3>
+<p>
+  The ERD shows the main relational entities: User, Truck, CargoRequest, Trip, SharedTrip,
+  SharedTripBooking, Payment, Earning, SupportComplaint, TripFeedback, AuditLog, Notification, and Setting.
+</p>
+<img class="thesis-figure-diagram" src="screenshots/fig-3-3-erd.png" alt="GaariHel entity-relationship diagram" />
+<p class="fig-caption">Figure 3.3: Entity-relationship diagram of GaariHel (simplified)</p>
+<p>
+  Refer also to Appendix Figure A2 (same diagram, full-page copy).
+</p>
+
+<h2>3.10 Testing Methodology</h2>
+<p>
+  Testing was planned alongside development so that each critical requirement could be verified before
+  demonstration. Chapter IV reports detailed results; this section summarises the methods used.
+</p>
+<table>
+  <caption>Table 3.7: Testing methodology</caption>
+  <thead>
+    <tr><th>Type</th><th>Approach</th><th>Examples / tools</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Unit testing</td>
+      <td>Test isolated functions and validation rules</td>
+      <td>Vitest suites for cargo measurement, trip status transitions, payment gating</td>
+    </tr>
+    <tr>
+      <td>Integration testing</td>
+      <td>Exercise repositories and API handlers with mocked or local database layers</td>
+      <td>Registration, shared-trip pool behaviour, booking validation tests</td>
+    </tr>
+    <tr>
+      <td>API / functional testing</td>
+      <td>Black-box walkthrough of role journeys against running API and UI</td>
+      <td>Login, FTL assign, SHARED pool, Accept/Reject, Delivered fare, WaafiPay flow</td>
+    </tr>
+    <tr>
+      <td>Security testing</td>
+      <td>Confirm authentication and authorisation boundaries</td>
+      <td>JWT required on protected routes; customer cannot assign; non-driver cannot accept</td>
+    </tr>
+    <tr>
+      <td>Device compatibility testing</td>
+      <td>Check responsive layout and driver PWA GPS on common devices/browsers</td>
+      <td>Chrome/Edge desktop; Android Chrome; iOS Safari (limited PWA)</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  Defects found during early GPS and pricing tests (for example distance accumulating before pickup, or
+  kg-only fare for livestock) were fixed and re-tested before final documentation.
+</p>
+
+<h2>3.11 Database Design</h2>
+<p>
+  The database uses a relational model in PostgreSQL via Prisma. Core entities include User, CustomerProfile,
+  Truck, CargoRequest, Trip, TripLocationPoint, Payment, Earning, SharedTrip, SharedTripBooking,
+  Notification, Setting, AuditLog, TripFeedback, DeliveryFeedbackToken, SmsNotification,
+  SupportComplaint, and VerificationCode. There is no Bid entity. A driver User has a one-to-one Truck.
+  CargoRequest stores geo fields, cargo type, measuredQuantity, and measurementUnit. Trip stores status,
+  fare, GPS position, and distanceTraveledKm. AuditLog stores actor, action, entity, and metadata for admin
+  accountability.
+</p>
+<table>
+  <caption>Table 3.8: Main database entities</caption>
+  <thead>
+    <tr><th>Entity</th><th>Key attributes</th><th>Relationships</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>User</td><td>id, name, email, role, serviceType</td><td>One truck (driver); many cargo requests (customer)</td></tr>
+    <tr><td>Truck</td><td>id, truckNumber, plateNumber, capacity, status</td><td>Belongs to one driver User</td></tr>
+    <tr><td>CargoRequest</td><td>geo fields, cargoType, measuredQuantity, measurementUnit, loadType, status</td><td>Customer; optional Trip / SharedTripBooking</td></tr>
+    <tr><td>Trip</td><td>status, fare, distanceTraveledKm, lastLat, lastLng</td><td>CargoRequest; driver; truck; payments</td></tr>
+    <tr><td>SharedTrip / SharedTripBooking</td><td>status, capacity; pickupOrder, deliveryOrder</td><td>Driver/truck; many bookings</td></tr>
+    <tr><td>Payment / Earning</td><td>amount, status, reference / payout fields</td><td>Trip; customer / driver</td></tr>
+    <tr><td>AuditLog</td><td>action, actorId, entityType, metadata, createdAt</td><td>Admin / system actions</td></tr>
+    <tr><td>SupportComplaint / TripFeedback / Notification</td><td>message/status; rating; title/body</td><td>User / Trip</td></tr>
+  </tbody>
+</table>
+<p>
+  Primary keys and foreign keys follow the Prisma schema. Money and quantity fields use decimal types.
+  Status fields use controlled enumerations. See Figure 3.3 and Appendix Figure A2 for the ERD view.
+</p>
+
+<h2>3.12 Summary</h2>
+<p>
+  This chapter presented GaariHel’s methodology aligned with the implemented prototype: requirements
+  gathering methods, admin-assigned FTL and SHARED freight, three-tier architecture, iterative development,
+  hardware/software needs, functional and non-functional requirements (R1–R15, NFR1–NFR8), feasibility,
+  UML diagrams (use case and ERD), testing methodology, and database design including AuditLog. Chapter IV
+  reports implementation screenshots and how these requirements were verified.
+</p>
+
+</body>
+</html>

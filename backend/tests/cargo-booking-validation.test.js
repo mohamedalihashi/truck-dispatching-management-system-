@@ -10,34 +10,28 @@ import { normalizeSomaliPhone } from "../lib/phone.js";
 const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 
 const validBooking = {
-  customerRole: "SENDER",
   fromRegion: "Banaadir",
   fromDistrict: "Hodan",
   fromNeighborhood: "Taleex",
   toRegion: "Bay",
   toDistrict: "Baydhabo",
   toNeighborhood: "Horseed",
-  receiverName: "Receiver One",
-  receiverPhone: "+252 61 2345678",
   truckType: "Flatbed",
-  weight: "2.5",
+  weight: "250 kg",
   preferredPickupDate: tomorrow,
   description: "General cargo"
 };
 
 describe("cargo booking validation", () => {
-  it("accepts a complete sender booking", () => {
+  it("accepts a structured booking without sender/receiver", () => {
     expect(cargoRequestSchema.safeParse(validBooking).success).toBe(true);
   });
 
-  it("accepts a complete receiver booking", () => {
+  it("accepts TBD weight for shared-style bookings", () => {
     expect(cargoRequestSchema.safeParse({
       ...validBooking,
-      customerRole: "RECEIVER",
-      receiverName: undefined,
-      receiverPhone: undefined,
-      senderName: "Sender One",
-      senderPhone: "0612345678"
+      weight: "TBD",
+      loadType: "SHARED"
     }).success).toBe(true);
   });
 
@@ -46,21 +40,50 @@ describe("cargo booking validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects invalid phones, blank names, non-positive weights, and past dates", () => {
+  it("rejects non-positive weights and past dates", () => {
     const result = cargoRequestSchema.safeParse({
       ...validBooking,
-      receiverName: "  ",
-      receiverPhone: "12345",
       weight: "0",
       preferredPickupDate: "2020-01-01"
     });
     expect(result.success).toBe(false);
   });
 
-  it("accepts open FTL marketplace requests without a preferred truck", () => {
+  it("requires all structured location fields with clear messages", () => {
+    const result = cargoRequestSchema.safeParse({
+      fromNeighborhood: "Taleex",
+      cargoType: "Food"
+    });
+    expect(result.success).toBe(false);
+    const messages = result.error.issues.map((issue) => issue.message);
+    expect(messages).toContain("From region is required");
+    expect(messages).toContain("To region is required");
+  });
+
+  it("rejects numeric sender names", () => {
+    const result = cargoRequestSchema.safeParse({
+      ...validBooking,
+      cargoType: "Food",
+      senderName: "12345"
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.issues.some((issue) => issue.path.join(".") === "senderName")).toBe(true);
+    expect(result.error.issues.some((issue) => /letters and spaces/i.test(issue.message))).toBe(true);
+  });
+
+  it("requires cargo type when description is missing", () => {
+    const result = cargoRequestSchema.safeParse({
+      ...validBooking,
+      cargoType: "",
+      description: ""
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.issues.some((issue) => issue.path.join(".") === "cargoType")).toBe(true);
+  });
+
+  it("accepts FTL Management-system-style requests without a preferred truck", () => {
     expect(cargoRequestSchema.safeParse({
       ...validBooking,
-      openForBids: true,
       loadType: "FTL"
     }).success).toBe(true);
   });

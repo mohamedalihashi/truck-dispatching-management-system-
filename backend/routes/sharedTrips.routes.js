@@ -3,40 +3,8 @@ import { z } from "zod";
 import { requireAuth, requireRole, requirePasswordChanged } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { db } from "../services/dbService.js";
-import { formatSomaliaLocation } from "../lib/somaliaLocations.js";
-import { normalizeSomaliPhone } from "../lib/phone.js";
-import { sendBookingCreatedSms } from "../services/cargoSmsService.js";
 
 const router = Router();
-
-const sharedTripSchema = z.object({
-  pickup: z.string().trim().min(1),
-  destination: z.string().trim().min(1),
-  fromRegion: z.string().trim().optional(),
-  fromDistrict: z.string().trim().optional(),
-  toRegion: z.string().trim().optional(),
-  toDistrict: z.string().trim().optional(),
-  departureDate: z.string().min(1),
-  durationAmount: z.coerce.number().positive(),
-  durationUnit: z.enum(["hours", "days"]),
-  // Capacity is taken from the driver's registered truck on the server
-  totalCapacityTons: z.coerce.number().positive().optional(),
-  pricePerTon: z.coerce.number().positive(),
-  notes: z.string().trim().max(500).optional(),
-});
-
-const bookSharedSchema = z.object({
-  customerId: z.string().uuid().optional(),
-  weightTons: z.coerce.number().positive(),
-  description: z.string().trim().min(1),
-  customerRole: z.enum(["SENDER", "RECEIVER"]).optional(),
-  fromNeighborhood: z.string().trim().optional(),
-  toNeighborhood: z.string().trim().optional(),
-  senderName: z.string().trim().optional(),
-  senderPhone: z.string().trim().optional(),
-  receiverName: z.string().trim().optional(),
-  receiverPhone: z.string().trim().optional(),
-});
 
 router.get("/public", async (req, res, next) => {
   try {
@@ -99,37 +67,68 @@ router.get("/", requireRole("driver", "admin", "customer"), async (req, res, nex
 
 router.get("/:id", requireRole("driver", "admin", "customer"), async (req, res, next) => {
   try {
-    const trip = await db.getSharedTripById(req.params.id);
+    const trip = await db.getSharedTripById(req.params.id, {
+      includeDriverPhone: req.user.role === "admin",
+      includeCustomerPhone: req.user.role === "admin",
+    });
     if (!trip) return res.status(404).json({ message: "Shared trip not found" });
+    if (req.user.role === "driver" && trip.driverId !== req.user.sub) {
+      return res.status(403).json({ message: "Not allowed to view this shared trip" });
+    }
     res.json(trip);
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/", requireRole("driver"), validate(sharedTripSchema), async (req, res, next) => {
+router.post("/", requireRole("driver"), async (_req, res) => {
+  res.status(403).json({
+    message: "Drivers cannot announce shared routes. Admin assigns SHARED loads from Shared Loads.",
+  });
+});
+
+/** Admin: assign multiple SHARED cargo requests onto one SHARED truck (creates SharedTrip + bookings). */
+const assignPoolSchema = z.object({
+  cargoRequestIds: z.array(z.string().trim().min(1)).min(2),
+  truckId: z.string().trim().min(1),
+  driverId: z.string().uuid(),
+  fare: z.coerce.number().positive().optional(),
+  estimatedTime: z.string().trim().max(100).optional(),
+});
+
+router.post("/assign-pool", requireRole("admin"), validate(assignPoolSchema), async (req, res, next) => {
   try {
-    const trip = await db.createSharedTrip({ ...req.body, driverId: req.user.sub });
-    res.status(201).json(trip);
+    const result = await db.assignSharedLoadsToTruck({
+      cargoRequestIds: req.body.cargoRequestIds,
+      truckId: req.body.truckId,
+      driverId: req.body.driverId,
+      dispatcherId: req.user.sub,
+      fare: req.body.fare,
+      estimatedTime: req.body.estimatedTime,
+    });
+    const io = req.app.get("io");
+    if (io && result?.sharedTrip) {
+      io.emit("shared.pool.assigned", result);
+      for (const booking of result.bookings || []) {
+        if (booking.tripId) io.emit("trip.updated", { id: booking.tripId });
+      }
+    }
+    res.status(201).json(result);
   } catch (error) {
     next(error);
   }
 });
 
-router.patch("/:id", requireRole("driver"), validate(sharedTripSchema.partial()), async (req, res, next) => {
-  try {
-    res.json(await db.updateSharedTrip(req.params.id, req.user.sub, req.body));
-  } catch (error) {
-    next(error);
-  }
+router.patch("/:id", requireRole("driver"), async (_req, res) => {
+  res.status(403).json({
+    message: "Drivers cannot edit shared trip announcements. Run the loads admin assigned to you.",
+  });
 });
 
-router.post("/:id/publish", requireRole("driver"), async (req, res, next) => {
-  try {
-    res.json(await db.publishSharedTrip(req.params.id, req.user.sub));
-  } catch (error) {
-    next(error);
-  }
+router.post("/:id/publish", requireRole("driver"), async (_req, res) => {
+  res.status(403).json({
+    message: "Drivers cannot publish shared routes. Admin assigns SHARED loads from Shared Loads.",
+  });
 });
 
 router.post("/:id/cancel", requireRole("driver"), async (req, res, next) => {
@@ -140,9 +139,33 @@ router.post("/:id/cancel", requireRole("driver"), async (req, res, next) => {
   }
 });
 
+router.post("/:id/accept", requireRole("driver"), async (req, res, next) => {
+  try {
+    const trip = await db.acceptSharedTrip(req.params.id, req.user.sub);
+    req.app.get("io")?.emit("shared.trip.updated", trip);
+    res.json(trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/reject", requireRole("driver"), async (req, res, next) => {
+  try {
+    const trip = await db.rejectSharedTrip(req.params.id, req.user.sub);
+    req.app.get("io")?.emit("shared.trip.updated", trip);
+    res.json(trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/pickup", requireRole("driver"), async (req, res, next) => {
   try {
-    res.json(await db.startSharedTripPickup(req.params.id, req.user.sub));
+    res.json(
+      await db.startSharedTripPickup(req.params.id, req.user.sub, {
+        weightsByBookingId: req.body?.weightsByBookingId || {},
+      })
+    );
   } catch (error) {
     next(error);
   }
@@ -151,7 +174,11 @@ router.post("/:id/pickup", requireRole("driver"), async (req, res, next) => {
 /** @deprecated Prefer POST /:id/pickup */
 router.post("/:id/depart", requireRole("driver"), async (req, res, next) => {
   try {
-    res.json(await db.startSharedTripPickup(req.params.id, req.user.sub));
+    res.json(
+      await db.startSharedTripPickup(req.params.id, req.user.sub, {
+        weightsByBookingId: req.body?.weightsByBookingId || {},
+      })
+    );
   } catch (error) {
     next(error);
   }
@@ -173,6 +200,33 @@ router.post("/:id/deliver", requireRole("driver"), async (req, res, next) => {
   }
 });
 
+router.patch("/:id/stops", requireRole("driver"), async (req, res, next) => {
+  try {
+    res.json(
+      await db.reorderSharedTripStops(req.params.id, req.user.sub, {
+        pickupOrder: req.body?.pickupOrder || [],
+        deliveryOrder: req.body?.deliveryOrder || [],
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/bookings/:bookingId/deliver", requireRole("driver"), async (req, res, next) => {
+  try {
+    const trip = await db.markSharedBookingDelivered(
+      req.params.id,
+      req.params.bookingId,
+      req.user.sub
+    );
+    req.app.get("io")?.emit("trip.status.updated", { tripId: req.params.bookingId });
+    res.json(trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
 /** @deprecated Prefer POST /:id/deliver */
 router.post("/:id/complete", requireRole("driver"), async (req, res, next) => {
   try {
@@ -182,56 +236,11 @@ router.post("/:id/complete", requireRole("driver"), async (req, res, next) => {
   }
 });
 
-router.post("/:id/book", requireRole("customer", "admin"), validate(bookSharedSchema), async (req, res, next) => {
-  try {
-    const customerId = req.user.role === "admin" ? req.body.customerId : req.user.sub;
-    if (!customerId) {
-      return res.status(400).json({ message: "customerId is required" });
-    }
-    const customer = await db.findUserById(customerId);
-    if (!customer || customer.role !== "customer") {
-      return res.status(400).json({ message: "Valid customer is required" });
-    }
-    const trip = await db.getSharedTripById(req.params.id);
-    if (!trip) return res.status(404).json({ message: "Shared trip not found" });
-
-    const payload = {
-      sharedTripId: req.params.id,
-      customerId,
-      customerName: customer?.name,
-      weightTons: req.body.weightTons,
-      description: req.body.description,
-      customerRole: req.body.customerRole,
-      pickup: trip.pickup,
-      destination: trip.destination,
-      fromRegion: trip.fromRegion,
-      fromDistrict: trip.fromDistrict,
-      toRegion: trip.toRegion,
-      toDistrict: trip.toDistrict,
-      fromNeighborhood: req.body.fromNeighborhood,
-      toNeighborhood: req.body.toNeighborhood,
-      senderName: req.body.senderName,
-      receiverName: req.body.receiverName,
-      senderPhone: req.body.senderPhone ? normalizeSomaliPhone(req.body.senderPhone) : undefined,
-      receiverPhone: req.body.receiverPhone ? normalizeSomaliPhone(req.body.receiverPhone) : undefined,
-    };
-
-    if (req.body.customerRole === "SENDER") {
-      payload.senderName = customer.name;
-      payload.senderPhone = customer.phone;
-    }
-    if (req.body.customerRole === "RECEIVER") {
-      payload.receiverName = customer.name;
-      payload.receiverPhone = customer.phone;
-    }
-
-    const request = await db.bookSharedCapacity(payload);
-    void sendBookingCreatedSms(request).catch((error) => console.error("Booking SMS failed:", error.message));
-    req.app.get("io").emit("order.created", request);
-    res.status(201).json(request);
-  } catch (error) {
-    next(error);
-  }
+router.post("/:id/book", requireRole("customer", "admin"), async (_req, res) => {
+  res.status(403).json({
+    message:
+      "Direct booking on announced shared trips is disabled. Submit a SHARED request from Shared booking; admin assigns the truck.",
+  });
 });
 
 export default router;

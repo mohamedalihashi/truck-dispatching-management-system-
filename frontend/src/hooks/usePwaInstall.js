@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import {
   canShowInstallPrompt,
   dismissPwaPrompt,
+  isAndroid,
   isInAppBrowser,
+  isIos,
   isPwaDismissed,
   isStandalone,
   openInSystemBrowser
@@ -11,6 +13,7 @@ import {
 export function usePwaInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [dismissed, setDismissed] = useState(isPwaDismissed);
+  const [showHelp, setShowHelp] = useState(false);
 
   const canShow = canShowInstallPrompt() && !dismissed;
   const canNativeInstall = Boolean(deferredPrompt);
@@ -23,14 +26,26 @@ export function usePwaInstall() {
       setDeferredPrompt(event);
     }
 
+    function onInstalled() {
+      setDeferredPrompt(null);
+      dismissPwaPrompt();
+      setDismissed(true);
+      setShowHelp(false);
+    }
+
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
-    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
   }, [dismissed]);
 
   function dismiss() {
     dismissPwaPrompt();
     setDismissed(true);
     setDeferredPrompt(null);
+    setShowHelp(false);
   }
 
   async function install() {
@@ -47,8 +62,38 @@ export function usePwaInstall() {
       return false;
     }
 
+    // iOS / browsers without beforeinstallprompt — show manual steps.
+    setShowHelp(true);
     return false;
   }
 
-  return { canShow, canNativeInstall, dismiss, install };
+  const helpSteps = isIos()
+    ? [
+        "Taabo Share (↑) Safari footer-ka",
+        "Dooro “Add to Home Screen”",
+        "Taabo Add — GaariHel ayaa phone-kaaga ku soo dhici doonta"
+      ]
+    : isAndroid()
+      ? [
+          "Chrome menu (⋮) → “Install app” ama “Add to Home screen”",
+          "Haddii aadan arkin: fur site-ka Chrome (ha ahayn Facebook/WhatsApp in-app)",
+          "Site-ku waa inuu ahaadaa HTTPS ama localhost"
+        ]
+      : [
+          "Chrome/Edge address bar → Install icon (⊕ / computer icon)",
+          "Ama menu (⋮) → “Install GaariHel…” / “Apps” → Install",
+          "Haddii aadan arkin: hubi Service Worker (Application tab DevTools)"
+        ];
+
+  return {
+    canShow,
+    canNativeInstall,
+    showHelp,
+    setShowHelp,
+    helpSteps,
+    dismiss,
+    install,
+    isIos: isIos(),
+    isAndroid: isAndroid()
+  };
 }

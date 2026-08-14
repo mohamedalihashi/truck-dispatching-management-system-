@@ -9,14 +9,14 @@ export const soPhrases = {
   "Awaiting Approval": "Sugaya ogolaansho",
   "Quote Rejected": "Qiimaha waa la diiday",
   Approved: "La oggolaaday",
-  Assigned: "La qoondeeyay",
-  Accepted: "La aqbalay",
-  "Arrived Pickup": "Yimid pickup",
-  Loaded: "La raray",
-  "In Transit": "Waddada ku jira",
+  Assigned: "Gaari la qoondeeyay",
+  "En Route to Pickup": "Darawalku wuxuu kusoo socdaa goobta xamuulka",
+  "Arrived at Pickup": "Darawalku wuxuu gaaray goobta xamuulka",
+  "Picked Up": "Xamuulka waa la qaaday",
+  "In Transit": "Xamuulku safarka ayuu ku jiraa",
+  "Near Destination": "Wuxuu ku dhow yahay goobta loo wado",
   Delivered: "La geeyay",
   Cancelled: "La joojiyay",
-  Delayed: "Dib u dhacay",
   Available: "La heli karo",
   Busy: "Mashquul",
   Maintenance: "Dayactir",
@@ -38,7 +38,9 @@ export const soPhrases = {
   "Deposit Due": "Deposit la sugayo",
   "Balance Due": "Hadhaaga la sugayo",
   "Payment Due": "Lacag la sugayo",
-  "Awaiting Delivery Confirmation": "Sugaya xaqiijinta gaarsiinta",
+  "Awaiting Delivery Confirmation": "Sugaya gaarsiinta",
+  "Awaiting Delivery": "Sugaya gaarsiinta",
+  "Balance Due": "Lacag hartay",
   Withdrawn: "Laga noqday",
   Rejected: "La diiday",
 
@@ -106,16 +108,21 @@ export const soPhrases = {
   "Audit Logs": "Diiwaanka Audit",
   Bookings: "Booking-yada",
   "Phone Bookings": "Booking Telefoon",
-  "Live Tracking": "Tracking Toos ah",
+  "Live Tracking": "Waddada Firfircoon",
+  "On Route": "Waddada Firfircoon",
   "Fleet / Drivers": "Gaadiidka / Darawalada",
   Payouts: "Bixinta mushaharka",
   "Shared Trips": "Safarada Shared",
   "Truck Profile": "Profile Gaadhiga",
-  "Available Loads": "Xamuulka la heli karo",
+  "Available Loads": "Xamuul Furfuran",
+  "Open Loads": "Xamuul Furfuran",
   "My Offers": "Dalabadayda",
   "FTL Trips": "Safarada FTL",
-  "FTL Book": "FTL Book",
-  "Shared Book": "Shared Book",
+  "Assigned Jobs": "Shaqooyinka la qoondeeyay",
+  "FTL Book": "Codsi FTL",
+  "FTL Request": "Codsi FTL",
+  "Shared Book": "Codsi Shared",
+  "Shared Request": "Codsi Shared",
   "Browse Trucks": "Baadh Gaadiidka",
   "Open Dashboard": "Fur Dashboard",
   Features: "Astaamaha",
@@ -156,19 +163,33 @@ export const soPhrases = {
   "Customer Dashboard": "Dashboard-ka Macmiilka",
   "FTL book, shared book, trips, tracking, and payment — in one place.":
     "FTL book, shared book, safaro, tracking, iyo lacag — meel keliya.",
+  "Submit requests, track trips, and pay 30% then 70% — admin assigns every driver.":
+    "Gudbi codsiyo, raac safaro, bixi 30% ka dibna 70% — admin ayaa darawal kasta u qoondeeya.",
   "Book a full truck where available.": "Book garee gaadhi oo dhan marka la heli karo.",
+  "Submit a full-truck request. Admin assigns a driver.":
+    "Gudbi codsi gaadhi oo dhan. Admin ayaa darawal u qoondeeya.",
   "Book shared trip capacity by the ton.": "Book garee awood shared ah ton ahaan.",
+  "Request shared capacity for your cargo.": "Codso awood shared ah xamuulkaaga.",
   "Follow every booking from start to delivery.": "Raac booking kasta bilow ilaa gaarsiinta.",
+  "Follow every request from assignment to delivery.": "Raac codsi kasta qoondaynta ilaa gaarsiinta.",
   "See live location for active loads.": "Arag goobta tooska ah ee xamuulka firfircoon.",
+  "See live location after your trip starts.": "Arag goobta tooska ah marka safarku bilaabmo.",
   "Pay invoices and view payment history.": "Bixi invoice-yada oo arag taariikhda lacagaha.",
+  "Pay 30% to start, 70% after delivery.": "Bixi 30% bilowga, 70% gaarsiinta ka dib.",
   "Recent trips": "Safaradii dhawaa",
   "Active tracking": "Tracking firfircoon",
   "Book open shared capacity. Pay the full fare once before the driver can start pickup.":
     "Book garee awood shared furan. Bixi lacagta oo dhan hal mar ka hor pickup.",
-  "FTL Book instead": "Halkii FTL Book",
+  "Request open shared capacity. Pay as required before pickup.":
+    "Codso awood shared furan. Bixi sida loogu baahan yahay ka hor pickup.",
+  "FTL Book instead": "Halkii Codsi FTL",
+  "FTL request instead": "Halkii Codsi FTL",
   "Book capacity": "Book awoodda",
+  "Request capacity": "Codso awoodda",
   "FTL: 30% then 70%. Shared trips: pay the full fare once before pickup.":
     "FTL: 30% ka dibna 70%. Shared: lacagta oo dhan hal mar ka hor pickup.",
+  "FTL: 30% after admin assigns, then 70% after delivery. Shared: pay as shown before pickup.":
+    "FTL: 30% ka dib admin qoondaynta, ka dibna 70% gaarsiinta. Shared: bixi sida la muujiyay ka hor pickup.",
   "Pay shared trip fare in full": "Bixi lacagta shared oo dhan",
   "Pay 30% to start the FTL trip": "Bixi 30% si FTL u bilaabmo",
   "Pay with Waafi": "Ku bixi Waafi",
@@ -184,8 +205,11 @@ export const soPhrases = {
     "Abuur safar awood furan leh si macaamiishu ton ahaan u book gareeyaan.",
   "Start with Available Loads — bid on an open FTL request.":
     "Ka bilow Available Loads — bid garee FTL request furan.",
+  "Wait for an admin to assign you a job, or optionally offer on open loads.":
+    "Sug admin inuu shaqo kuu qoondeeyo, ama si ikhtiyaari ah u soo dir dalab xamuul furfuran.",
   "No active load to track right now.": "Hadda ma jiro xamuul firfircoon oo la raaco.",
   "After booking — until delivery ends": "Booking ka dib — ilaa gaarsiinta dhamaato",
+  "From admin assignment through delivery": "Laga bilaabo qoondaynta admin ilaa gaarsiinta",
   Accept: "Aqbal",
   Reject: "Diid",
   Decline: "Diid",
@@ -215,8 +239,16 @@ export const soPhrases = {
     "Safarada FTL: xaqiiji qiimaha & waqtiga → macmiilku wuu aqbalayaa oo bixiyaa 30% → safarka waa la wadaa → 70% delivery ka dib.",
   "Step 1 — browse open FTL requests where full-truck jobs are available, then send an offer.":
     "Tallaabo 1 — baadh FTL requests furan, ka dib dir dalab.",
+  "Optional — send a price offer on open FTL requests. Admin reviews and assigns.":
+    "Ikhtiyaari — dir dalab qiime ah FTL requests furan. Admin ayaa eega oo qoondeeya.",
   "Step 2 — track price offers you sent on Available Loads.":
     "Tallaabo 2 — raac dalabyada qiimaha ee aad dirtay.",
+  "Track price offers you sent. Admin decides assignment — customers do not accept bids.":
+    "Raac dalabyada qiimaha ee aad dirtay. Admin ayaa go'aan ka gaara — macmiilku ma aqbalo bids.",
+  "No offers yet. Browse available loads and submit your first offer.":
+    "Weli dalab ma jiro. Baadh xamuulka furfuran oo soo dir dalabkaaga ugu horreeya.",
+  "No offers yet. Browse open loads and submit an offer for admin review.":
+    "Weli dalab ma jiro. Baadh xamuul furfuran oo soo dir dalab admin uu eego.",
   "View truck details, review documents, and update availability status.":
     "Arag faahfaahinta gaadhiga, dukumeentiyada, oo cusboonaysii xaaladda.",
   "No truck linked to this driver.": "Gaadhi laguma xirin darawalkan.",
@@ -227,6 +259,7 @@ export const soPhrases = {
   "Publish from/to, price per ton, departure date, and duration. Finish the current trip before creating another; one trip per date.":
     "Geli from/to, qiimaha ton-kii, taariikhda, iyo muddada. Dhammee safarka hadda ka hor mid cusub.",
   "Start pickup": "Bilow pickup",
+  "Gather loads & start pickup": "Isku soo ururi oo bilow pickup",
   "Mark In Transit": "Calaamadee In Transit",
   "Mark Delivered": "Calaamadee Delivered",
   "Cancel trip": "Jooji safarka",
@@ -236,7 +269,7 @@ export const soPhrases = {
   // Auth
   "Welcome back": "Kusoo dhawoow",
   "Sign in to manage bookings, trips, and payments.": "Soo gal si aad u maamusho booking, safaro, iyo lacagaha.",
-  "Sign in to the cargo marketplace": "Soo gal marketplace-ka xamuulka",
+  "Sign in to the cargo Management system": "Soo gal nidaamka maareynta xamuulka",
   "Sign in securely with your username and password.": "Si ammaan ah ugu soo gal username iyo password.",
   "Email or phone": "Email ama telefoon",
   "Username or email": "Username ama email",
@@ -249,9 +282,12 @@ export const soPhrases = {
   "Verification code": "Koodhka xaqiijinta",
   "Resend code": "Dib u dir koodhka",
   Verify: "Xaqiiji",
-  "Join the cargo marketplace": "Ku biir marketplace-ka xamuulka",
+  "Join the cargo Management system": "Ku biir nidaamka maareynta xamuulka",
   "Customers can book immediately. Drivers upload documents and wait for admin verification.":
     "Macaamiishu isla markiiba way book gareyn karaan. Darawaladu waxay soo rarayaan dukumeenti oo sugaan xaqiijinta admin.",
+  "Create a customer account and start booking trucks. Drivers are registered by an admin only.":
+    "Samee akoon macmiil oo bilow inaad gaadiid book gareyso. Darawalada waxaa diiwaan geliya admin kaliya.",
+  "Contact us to be added by an admin": "Nala soo xiriir si admin kuu diiwaan geliyo",
   "Create customer account": "Samee akoon macmiil",
   "Create driver account": "Samee akoon darawal",
   "Full name": "Magaca oo buuxa",
@@ -291,9 +327,9 @@ export const soPhrases = {
   Unassigned: "Aan la qoondeyn",
   "No truck": "Gaadhi ma jiro",
   Advance: "Hormar",
-  "Monitor FTL and shared trips separately across the marketplace.":
-    "Kormeer FTL iyo shared trips si gooni ah marketplace-ka.",
-  "Monitor active and historical marketplace trips.": "Kormeer safarada firfircoon iyo kuwii hore.",
+  "Monitor FTL and shared trips separately across the Management system.":
+    "Kormeer FTL iyo shared trips si gooni ah nidaamka maareynta.",
+  "Monitor active and historical Management system trips.": "Kormeer safarada firfircoon iyo kuwii hore.",
   "FTL Trips": "Safarada FTL",
   "Total Trips": "Wadarta safarada",
   "All statuses": "Dhammaan xaaladaha",
@@ -318,21 +354,22 @@ export const soPhrases = {
   "Mark paid": "Calaamadee la bixiyay",
   "Mark all read": "Dhammaan u calaamadee la akhriyay",
   Inbox: "Sanduuqa",
-  "No notifications yet. Marketplace events will appear here.":
-    "Weli ogeysiis ma jiro. Dhacdooyinka marketplace halkan ayay ka muuqanayaan.",
+  "No notifications yet. Management system events will appear here.":
+    "Weli ogeysiis ma jiro. Dhacdooyinka nidaamka maareynta halkan ayay ka muuqanayaan.",
   "Mark read": "Calaamadee la akhriyay",
   "Support Center": "Xarunta Taageerada",
   "Contact support": "La xiriir taageerada",
   "File a complaint": "Gudbi cabasho",
-  "Choose shipment *": "Dooro shixnadda *",
+  "Choose trip *": "Dooro safarka *",
+  "Choose shipment *": "Dooro safarka *",
   "Complaint about *": "Cabashada ku saabsan *",
   "Describe the issue *": "Sharax arrinta *",
   "Submit complaint": "Dir cabashada",
   "My complaints": "Cabashadayda",
   "Customer complaints": "Cabashooyinka macaamiisha",
   "No complaints yet.": "Weli cabasho ma jirto.",
-  "Your marketplace account, role details, and uploaded documents.":
-    "Akoonkaaga marketplace, doorka, iyo dukumeentiyada.",
+  "Your Management system account, role details, and uploaded documents.":
+    "Akoonkaaga nidaamka maareynta, doorka, iyo dukumeentiyada.",
   "Edit profile": "Wax ka beddel profile",
   "Change profile photo": "Beddel sawirka profile",
   "Account Details": "Faahfaahinta akoonka",
@@ -342,7 +379,7 @@ export const soPhrases = {
   "New password (optional)": "Password cusub (ikhtiyaari)",
 
   // Admin
-  "Marketplace Control Center": "Xarunta Kontoroolka Marketplace",
+  "Management System Control Center": "Xarunta Kontoroolka Nidaamka Maareynta",
   "Customers book drivers directly — FTL trucks, shared loads, verification, and payouts in one place.":
     "Macaamiishu si toos ah ayay u book gareeyaan — FTL, shared, xaqiijin, iyo bixin meel keliya.",
   "Verify drivers": "Xaqiiji darawalada",
@@ -391,7 +428,8 @@ export const soPhrases = {
   Truck: "Gaadhi",
   "View info": "Arag macluumaadka",
   "Book truck": "Book gaadhi",
-  "Awaiting verification": "Sugaya xaqiijin",
+  "Not available to book": "Lama heli karo booking",
+  "Awaiting verification": "Lama heli karo booking",
   Shared: "Shared",
   Departs: "Baxaya",
   "View all trucks & loads": "Dhammaan gaadiidka & xamuulka arag",
@@ -453,7 +491,8 @@ export const soPhrases = {
   "Delivery location": "Goobta gaarsiinta",
   "Kilograms (kg)": "Kiilo (kg)",
   Tons: "Ton",
-  "Book with driver": "Book la samee darawalka",
+  "Book with driver": "Codso awoodda",
+  "Request capacity": "Codso awoodda",
   Booking: "Booking…",
   "Could not save trip": "Safarka lama kaydin karin",
 
@@ -481,20 +520,40 @@ export const soPhrases = {
   // Extra journey / form phrases
   "Full truck trip: find load → price & time → customer pays 30% → run trip → 70% after delivery.":
     "Safar FTL: hel xamuul → qiimo & waqti → macmiilku bixiyaa 30% → safar → 70% delivery ka dib.",
+  "Full truck trip: admin assigns → confirm price if asked → customer pays 30% → run trip → 70% after delivery.":
+    "Safar FTL: admin qoondeeyaa → xaqiiji qiimaha haddii la weydiiyo → macmiilku bixiyaa 30% → safar → 70% delivery ka dib.",
+  "1. Admin assigns": "1. Admin qoondeeyaa",
+  "Admin assigns an FTL job to you. You do not deal with customers directly.":
+    "Admin ayaa shaqo FTL kuu qoondeeya. Si toos ah uma macaamilid macaamiisha.",
+  "2. Price & time": "2. Qiimo & waqti",
+  "Confirm price and ETA when admin asks — then wait for the customer deposit.":
+    "Xaqiiji qiimaha iyo ETA marka admin weydiiyo — ka dib sug deposit-ka macmiilka.",
+  "3. Customer pays 30%": "3. Macmiilku bixiyaa 30%",
+  "5. Pay 70% & earn": "5. Bixi 70% & hel dakhli",
+  "After delivery, customer pays 70% — then you receive your payout.":
+    "Gaarsiinta ka dib, macmiilku wuxuu bixiyaa 70% — ka dibna waxaad helaysaa mushahaarkaaga.",
+  "Assigned Jobs": "Shaqooyinka la qoondeeyay",
+  "Trips admin assigned to you.": "Safarada admin kuu qoondeeyay.",
+  "Optional offers for admin review.": "Dalabyo ikhtiyaari ah oo admin eego.",
+  "Price offers you sent (admin decides).": "Dalabyada qiimaha ee aad dirtay (admin ayaa go'aan gaara).",
+  "Paid after customer 30% + 70%.": "Waa la bixiyaa kadib 30% + 70% ee macmiilka.",
   "Browse open FTL requests — full truck jobs available to bid or confirm.":
     "Baadh FTL requests furan — shaqooyin gaadhi oo dhan oo la bid gareyn karo.",
   "Send your FTL price and estimated time. Customer accepts or rejects.":
     "Dir qiimahaaga FTL iyo waqtiga. Macmiilku wuu aqbalayaa ama diidayaa.",
   "Customer accepts and pays 30% deposit — only then the FTL trip can start.":
     "Macmiilku wuu aqbalayaa oo bixiyaa 30% — markaas kaliya FTL wuu bilaabmaa.",
+  "Customer pays 30% deposit — only then the FTL trip can start.":
+    "Macmiilku wuxuu bixiyaa 30% — markaas kaliya FTL wuu bilaabmaa.",
   "Run and track the full-truck trip until delivery.":
     "Wad oo raac safarka FTL ilaa gaarsiinta.",
+  "Update status and deliver with proof of delivery.":
+    "Cusboonaysii xaaladda oo geey POD.",
   "After delivery confirmation, customer pays 70% — then you get paid.":
     "Kadib xaqiijinta gaarsiinta, macmiilku wuxuu bixiyaa 70% — ka dibna waa lagaa bixiyaa.",
   "FTL jobs available to bid on.": "Shaqooyin FTL oo la bid gareyn karo.",
   "Track FTL price offers you sent.": "Raac dalabyada qiimaha ee aad dirtay.",
   "After 30% deposit — until delivery ends.": "30% deposit ka dib — ilaa gaarsiinta dhamaato.",
-  "Live location for active FTL loads.": "Goobta tooska ah ee xamuulka FTL firfircoon.",
   "Paid after customer 30% + 70%.": "Waa la bixiyaa kadib 30% + 70% ee macmiilka.",
   "Customer books a full truck (FTL) trip.": "Macmiilku wuxuu book gareeyaa safar FTL (gaadhi oo dhan).",
   "FTL driver confirms price and estimated delivery time.":
@@ -504,7 +563,9 @@ export const soPhrases = {
   "Driver runs the trip only after the 30% deposit is paid.":
     "Darawalku wuxuu bilaabaa safarka kaliya marka 30% la bixiyo.",
   "When delivered and confirmed, customer pays the remaining 70%.":
-    "Marka la geeyo oo la xaqiijiyo, macmiilku wuxuu bixiyaa 70% hadhay.",
+    "Marka safarku noqdo Delivered, macmiilku wuxuu bixiyaa 70% hadhay.",
+  "When the trip is Delivered, customer pays the remaining 70% (trip fare only — no commission on the customer).":
+    "Marka Delivered noqoto, macmiilku wuxuu bixiyaa 70% hartanka (qiimaha safarka kaliya — commission kuma jiro).",
   "How payment works for every full-truck (FTL) trip — from booking until delivery.":
     "Sida lacagta ugu shaqeyso safar kasta oo FTL — booking ilaa gaarsiin.",
   "FTL trip: book → price & time → accept & pay 30% to start → 70% after delivery.":
@@ -526,13 +587,30 @@ export const soPhrases = {
   "Enter the 6-digit code sent to": "Geli koodhka 6-digit ee loo diray",
   "6-digit code": "Koodhka 6-digit",
   "Register and start booking trucks right away. Your account role is Customer.":
-    "Isdiiwaangeli oo isla markiiba bilow booking. Doorkaagu waa Macmiil.",
+    "Isdiiwaangeli oo isla markiiba bilow codsiyada xamuulka. Doorkaagu waa Macmiil.",
+  "Create a customer account and start booking trucks. Drivers are registered by an admin only.":
+    "Samee akoon macmiil oo bilow codsiyada. Darawalada waxaa diiwaangeliya admin kaliya.",
+  "Contact us to be added by an admin": "Nala soo xiriir si admin kuugu daro",
+  "New registrations appear here until you approve their documents.":
+    "Isdiiwaangelinta cusub waxay halkan ka muuqdaan ilaa aad dukumeentiyada oggolaato.",
+  "New admin-created drivers appear here until you approve their documents.":
+    "Darawalada admin abuuro waxay halkan ka muuqdaan ilaa aad dukumeentiyada oggolaato.",
+  "Full truck trips — agree on price, pay 30% to start, then 70% after delivery.":
+    "Safarada FTL — ku heshii qiimaha, bixi 30% bilowga, ka dibna 70% gaarsiinta ka dib.",
+  "After admin assigns a driver: pay 30% to start, then 70% after delivery.":
+    "Kadib admin qoondaynta: bixi 30% bilowga, ka dibna 70% gaarsiinta ka dib.",
+  "Browse FTL trucks, then submit a cargo request. An admin assigns the driver — no direct contact.":
+    "Baadh FTL, kadib gudbi codsi. Admin ayaa darawalka u qoondeeya — xiriir toos ah ma jiro.",
+  "Submit requests and wait for admin assignment. You do not contact drivers directly. Pay 30% after assignment, 70% after delivery.":
+    "Gudbi codsiyo oo sug qoondaynta admin. Si toos ah uma xiriirin darawalada. Bixi 30% qoondaynta ka dib, 70% gaarsiinta ka dib.",
   "Upload your license and truck documents. An admin will verify before activation.":
     "Soo rar liisanka iyo dukumeentiyada gaadhiga. Admin ayaa xaqiijin doona.",
   "Welcome back, {name}. Publish → book → pay full fare once before pickup → in transit → delivered.":
     "Kusoo dhawoow, {name}. Daabac → book → bixi lacagta oo dhan ka hor pickup → in transit → delivered.",
   "Welcome back, {name}. Available loads, offers, trips, tracking, and earnings.":
     "Kusoo dhawoow, {name}. Xamuul, dalabyo, safaro, tracking, iyo dakhli.",
+  "Welcome back, {name}. Admin assigns jobs — confirm price if asked, run trips after 30%, earn after payment.":
+    "Kusoo dhawoow, {name}. Admin ayaa shaqada kuu qoondeeya — xaqiiji qiimaha haddii la weydiiyo, bilow 30% ka dib, hel mushahaarka lacagta ka dib.",
 
   // Missing page titles / admin phone booking
   result: "natiijo",
@@ -567,7 +645,7 @@ export const soPhrases = {
     "Cusboonaysii xaaladda gaadhiga. Gaadhi cusub: Fleet / Drivers → Add Truck.",
   "Cargo Requests": "Codsiyada Xamuulka",
   "Bookings are auto-priced with ETA from distance (km). Assign a driver — no quotation step.":
-    "Booking-yada waa la qiimeeyaa si toos ah ETA fogaanta. Dooro darawal — quotation ma jirto.",
+    "Geli fare marka aad assign gareynayso — nidaamku ma xisaabiyo qiimo ama ETA si toos ah.",
   "FTL phone booking — same flow: book → driver price & time → customer accept & 30% → trip → 70%.":
     "FTL phone booking — isla flow-ga: book → qiime & waqti → customer aqbal & 30% → trip → 70%.",
   "Create without selecting a driver": "Samee adigoon darawal dooran",
@@ -626,7 +704,7 @@ export const soPhrases = {
     "Hadda ma jiro darawal firfircoon oo diyaar ah.",
   "Direct bookings & open bid loads": "Booking toos ah & xamuul bid furan",
   "Verify FTL & shared drivers": "Xaqiiji darawalada FTL & shared",
-  "Follow active marketplace trips": "Raac safarada marketplace firfircoon",
+  "Follow active Management system trips": "Raac safarada nidaamka maareynta ee firfircoon",
   "Pay drivers after customer payment": "Bixi darawalada kadib lacagta macmiilka",
   "Live tracking": "Tracking toos ah",
   "Cargo requests": "Codsiyada xamuulka",
@@ -634,33 +712,63 @@ export const soPhrases = {
   "We provide the most robust infrastructure for modern truck dispatch, built for precision and speed.":
     "Waxaan bixinnaa kaabayaasha ugu adag ee dispatch gaadiidka casriga ah.",
   "Reliable & Safe": "La isku halleyn karo & Ammaan",
+  "Drivers and trucks are registered by admin with license and truck documents on file.":
+    "Darawalada iyo gaariga waxaa diiwaangeliya admin iyadoo dukumeenti shati iyo gaari ay faylka ku jiraan.",
   "Every truck and driver on our platform undergoes a rigorous 5-step verification process to ensure safety.":
-    "Gaadhi kasta iyo darawal kasta waxay maraan xaqiijin 5 tallaabo ah si loo hubiyo amniga.",
-  "Real-time Tracking": "Tracking Toos ah",
+    "Darawalada iyo gaariga waxaa diiwaangeliya admin iyadoo dukumeenti shati iyo gaari ay faylka ku jiraan.",
+  "Real-time Tracking": "Cusboonaysiinta Xaaladda",
+  "Trip Status Updates": "Cusboonaysiinta Xaaladda",
   "GPS integration across all fleet vehicles provides sub-meter accuracy for real-time shipment monitoring and predictive ETA.":
-    "GPS-ka gaadiidka oo dhan wuxuu bixiyaa monitoring toos ah iyo ETA la saadaalin karo.",
+    "Raac xamuul kasta assignment ilaa pickup, in transit, iyo delivery iyadoo leh cusboonaysiin cad.",
+  "Follow each load from assignment through pickup, in transit, and delivery with clear status updates.":
+    "Raac xamuul kasta assignment ilaa pickup, in transit, iyo delivery iyadoo leh cusboonaysiin cad.",
   "Easy Booking": "Booking Fudud",
   "Browse FTL trucks and shared loads, view details first, then book directly with the driver in a few taps.":
     "Baadh FTL iyo shared, arag faahfaahin, ka dib book toos ah darawalka.",
+  "Submit an FTL or shared request. An admin assigns a driver to start your trip.":
+    "Gudbi FTL ama shared request. Admin ayaa darawal u qoondeeya si safarku u bilowdo.",
+  "Browse FTL trucks and shared loads, then submit a request. An admin assigns a driver to start your trip.":
+    "Gudbi FTL ama shared request. Admin ayaa darawal u qoondeeya si safarku u bilowdo.",
   "Secure Payments": "Lacag Bixin Ammaan ah",
   "Multi-layer encryption and escrow-based payment releases ensure every transaction is protected and transparent.":
-    "Sirta badan iyo escrow waxay hubiyaan in macaamil kasta uu ammaan yahay.",
-  "From browsing to delivery — customers and drivers connect directly on one marketplace":
-    "Laga bilaabo baadhista ilaa gaarsiinta — macaamiisha iyo darawaladu si toos ah ayay ugu xirmaan marketplace keliya",
+    "Sirta badan iyo escrow waxay hubiyaan in macaamil kasta uu ammaan yahay. FTL: 30% bilowga, 70% gaarsiinta ka dib.",
+  "Secure WaafiPay payments after Delivered — pay 100% of the fare when the trip is complete.":
+    "Lacag-bixinta WaafiPay ee ammaan ah Delivered ka dib — bixi 100% marka safarku dhamaado.",
+  "From browsing to delivery — customers and drivers connect directly on one Management system":
+    "Laga bilaabo baadhista ilaa gaarsiinta — macaamiisha iyo darawaladu si toos ah ayay ugu xirmaan nidaamka maareynta",
+  "From request to delivery — admin assigns drivers, customers pay 30% to start and 70% after delivery":
+    "Laga bilaabo codsiga ilaa gaarsiinta — admin ayaa darawal u qoondeeya; macmiilku wuxuu bixiyaa 30% bilowga iyo 70% gaarsiinta ka dib",
+  "From request to delivery — admin assigns drivers, customers pay 100% after Delivered":
+    "Laga bilaabo codsiga ilaa gaarsiinta — admin ayaa darawal u qoondeeya; macmiilku wuxuu bixiyaa 100% Delivered ka dib",
   "1. Browse Trucks & Loads": "1. Baadh Gaadiidka & Xamuulka",
+  "1. Book FTL or Shared": "1. Book FTL ama Shared",
   "See FTL trucks and shared trips together. Filter by type, view full details, then choose what fits.":
     "Arag FTL iyo shared. Shaandhee nooca, arag faahfaahin, ka dib dooro.",
+  "See FTL trucks and shared trips. Filter by type, then submit a cargo request.":
+    "Arag FTL iyo shared. Shaandhee nooca, kadib gudbi codsi xamuul.",
+  "Submit an FTL or shared cargo request with your route and cargo details.":
+    "Gudbi FTL ama shared request oo wata jidkaaga iyo faahfaahinta xamuulka.",
   "2. Book with the Driver": "2. Book la samee Darawalka",
+  "2. Submit Request": "2. Gudbi Codsi",
   "Book a full truck or shared capacity. Tell us if you are sending or receiving the cargo — no middleman.":
     "Book gaadhi oo dhan ama awood shared. Sheeg haddii aad dirayso ama qaadanayso — dhexdhexaadiye ma jiro.",
-  "3. Track in Real Time": "3. Raac Toos ah",
-  "Follow live GPS from pickup to delivery. Drivers update status and share location across Somalia.":
-    "Raac GPS toos ah pickup ilaa delivery. Darawaladu waxay cusboonaysiiyaan xaaladda Soomaaliya oo dhan.",
+  "Send your route and cargo details. An admin reviews and assigns a driver — no direct contact.":
+    "Dir waddadaada iyo faahfaahinta xamuulka. Admin ayaa eega oo darawal u qoondeeya — xiriir toos ah ma jiro.",
+  "3. Follow Trip Status": "3. Raac Xaaladda Safarka",
+  "See pickup, in transit, and delivered updates for every load across Somalia.":
+    "Arag pickup, in transit, iyo delivered cusboonaysiinta xamuul kasta Soomaaliya oo dhan.",
   "4. Deliver & Pay": "4. Geey & Bixi",
+  "4. Deliver & Pay 70%": "4. Geey & Bixi 70%",
+  "4. Deliver & Pay 100%": "4. Geey & Bixi 100%",
   "Confirm delivery, pay securely with WaafiPay, and the driver receives their share automatically.":
     "Xaqiiji gaarsiinta, ku bixi WaafiPay, darawalkuna wuxuu helayaa qaybtiisa si toos ah.",
+  "Confirm delivery, pay the remaining 70% with WaafiPay, and the driver gets their share.":
+    "Xaqiiji gaarsiinta, bixi 70% haray WaafiPay, darawalkuna wuxuu helayaa qaybtiisa.",
+  "After Delivered, pay the full fare with WaafiPay — the driver gets their share.":
+    "Delivered ka dib, bixi lacagta oo dhan WaafiPay — darawalkuna wuxuu helayaa qaybtiisa.",
 
-  "Who are you in this shipment?": "Kee baad tahay shixnaddan?",
+  "Who are you in this trip?": "Kee baad tahay safarkan?",
+  "Who are you in this shipment?": "Kee baad tahay safarkan?",
   "Choose how you are involved in this delivery.": "Dooro sida aad ugu lug leedahay gaarsiintan.",
   "I am sending cargo": "Aniga ayaa xamuulka diraya",
   "I am receiving cargo": "Aniga ayaa xamuulka qaadanaya",
@@ -678,5 +786,22 @@ export const soPhrases = {
   "Receiver phone": "Telefoonka qaataha",
   "Sender name": "Magaca diraha",
   "Sender phone": "Telefoonka diraha",
+  "From request to delivery — admin assigns drivers, customers pay 100% after Delivered": "Laga bilaabo codsiga ilaa gaarsiinta — admin ayaa darawal u qoondeeya; macmiilku wuxuu bixiyaa 100% Delivered ka dib",
+  "FTL: request → admin assigns → driver Accept/Reject → trip → pay 100% after Delivered.": "FTL: codsi → admin qoondeeyaa → darawal Accept/Reject → safar → bixi 100% Delivered ka dib.",
+  "Pay the full trip fare after Delivered — commission is not added to the customer invoice.": "Bixi lacagta safarka oo dhan Delivered ka dib — commission kuma jiro invoice-ka macmiilka.",
+  "FTL trip payment": "Lacag bixinta safarka FTL",
+  "5. Pay 100%": "5. Bixi 100%",
+  "When the trip is Delivered, customer pays the full fare (100%). No deposit before the trip.": "Marka Delivered noqoto, macmiilku wuxuu bixiyaa lacagta oo dhan (100%). Deposit ka hor safarka ma jiro.",
+  "Full truck trip: admin assigns → Accept/Reject → run trip → customer pays 100% after Delivered.": "Safar FTL: admin qoondeeyaa → Accept/Reject → safar → macmiilku bixiyaa 100% Delivered ka dib.",
+  "4. Customer pays 100%": "4. Macmiilku bixiyaa 100%",
+  "After Delivered, customer pays the full fare — then you receive your payout share.": "Delivered ka dib, macmiilku wuxuu bixiyaa lacagta oo dhan — ka dibna waxaad helaysaa qaybtaada.",
+  "Paid after customer pays 100% (Delivered).": "Waa la bixiyaa kadib macmiilku bixiyo 100% (Delivered).",
+  "Submit requests and wait for admin assignment. You do not contact drivers directly. Pay 100% after Delivered.": "Gudbi codsiyo oo sug qoondaynta admin. Si toos ah uma xiriirin darawalada. Bixi 100% Delivered ka dib.",
+  "Welcome back, {name}. Admin assigns jobs — Accept or Reject, then run the trip. Customer pays 100% after Delivered.":
+    "Kusoo dhawoow, {name}. Admin ayaa shaqada kuu qoondeeya — Accept ama Reject, ka dibna bilow safarka. Macmiilku wuxuu bixiyaa 100% Delivered ka dib.",
+  "See pickup, in transit, and delivered updates for every load across Somalia.": "Arag pickup, in transit, iyo delivered cusboonaysiin kasta Soomaaliya oo dhan.",
+  "3. Follow Trip Status": "3. Raac Xaaladda Safarka",
+  "4. Deliver & Pay 100%": "4. Geey & Bixi 100%",
+  "After Delivered, pay the full fare with WaafiPay — the driver gets their share.": "Delivered ka dib, bixi lacagta oo dhan WaafiPay — darawalkuna wuxuu helayaa qaybtiisa.",
+  "Create an account, submit cargo requests, follow trip status, then pay 100% after Delivered.": "Samee akoon, gudbi codsiyo, raac xaaladda safarka, ka dibna bixi 100% Delivered ka dib."
 };
-

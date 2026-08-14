@@ -1,11 +1,8 @@
 import { prisma, withTransaction } from "../../lib/prisma.js";
 import { auditFields } from "../../lib/auditContext.js";
 import { buildWaafiReferenceId } from "../waafiPayService.js";
-import { payloadDistance, estimateFare } from "./helpers.js";
-import {
-  estimateDistanceKm,
-  estimateEtaLabel,
-} from "../pricingService.js";
+import { estimateFare } from "../pricingRates.js";
+import { estimateDistanceKm } from "../pricingService.js";
 import {
   mapCargoRequest,
   mapNotification,
@@ -13,6 +10,11 @@ import {
   reqStatusToDb,
   reqStatusToApi,
 } from "./mappers.js";
+import {
+  TRIP_NOTIFY,
+  formatCustomerNotifyLine,
+  formatNotifyLines,
+} from "../../lib/tripCustomerMessages.js";
 
 export const cargoRepository = {
 async getCargoRequestById(id) {
@@ -24,26 +26,29 @@ async getCargoRequestById(id) {
 },
 
 async listCargoRequests({ status, statuses, customerId, driverId, loadType, search, page = 1, limit = 20 } = {}) {
-  const where = {};
-  if (status) where.status = reqStatusToDb(status);
-  if (statuses?.length) where.status = { in: statuses.map(reqStatusToDb) };
-  if (customerId) where.customerId = customerId;
-  if (driverId) where.driverId = driverId;
-  if (loadType) where.loadType = loadType;
+  const and = [];
+  if (status) and.push({ status: reqStatusToDb(status) });
+  if (statuses?.length) and.push({ status: { in: statuses.map(reqStatusToDb) } });
+  if (customerId) and.push({ customerId });
+  if (driverId) and.push({ driverId });
+  if (loadType) and.push({ loadType });
   if (search) {
-    where.OR = [
-      { id: { contains: search, mode: "insensitive" } },
-      { pickup: { contains: search, mode: "insensitive" } },
-      { destination: { contains: search, mode: "insensitive" } },
-      { description: { contains: search, mode: "insensitive" } },
-      { customer: { name: { contains: search, mode: "insensitive" } } },
-      { driver: { name: { contains: search, mode: "insensitive" } } },
-    ];
+    and.push({
+      OR: [
+        { id: { contains: search, mode: "insensitive" } },
+        { pickup: { contains: search, mode: "insensitive" } },
+        { destination: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { customer: { name: { contains: search, mode: "insensitive" } } },
+        { driver: { name: { contains: search, mode: "insensitive" } } },
+      ],
+    });
   }
+  const where = and.length ? { AND: and } : {};
   const offset = (Number(page) - 1) * Number(limit);
   const [data, total] = await Promise.all([
     prisma.cargoRequest.findMany({
-      where,
+    where,
       include: cargoRequestInclude,
       orderBy: { createdAt: "desc" },
       take: Number(limit),
@@ -59,7 +64,15 @@ async cargoRequestSummary({ customerId, statuses } = {}) {
   if (customerId) where.customerId = customerId;
   if (statuses?.length) where.status = { in: statuses.map(reqStatusToDb) };
 
-  const activeStatuses = ["Approved", "Assigned", "Accepted", "Arrived_Pickup", "Loaded", "In_Transit"];
+  const activeStatuses = [
+    "Approved",
+    "Assigned",
+    "En_Route_to_Pickup",
+    "Arrived_at_Pickup",
+    "Picked_Up",
+    "In_Transit",
+    "Near_Destination",
+  ];
 
   const [total, pending, active, awaitingApproval, delivered, cancelled] = await Promise.all([
     prisma.cargoRequest.count({ where }),
@@ -83,33 +96,27 @@ async createCargoRequest(payload) {
   }
   const id = `REQ-${Math.floor(9000 + Math.random() * 1000)}`;
 
-  const distanceKm = estimateDistanceKm(payload.pickup, payload.destination, {
-    fromRegion: payload.fromRegion,
-    fromDistrict: payload.fromDistrict,
-    toRegion: payload.toRegion,
-    toDistrict: payload.toDistrict,
-  });
-  const routeFields = {
-    distanceKm,
-    quotedEstimatedTime: estimateEtaLabel(distanceKm),
-  };
-
   let truckId = payload.truckId || null;
   let driverId = payload.driverId || null;
   let loadType = payload.loadType || "FTL";
-  let truckType = payload.truckType;
+  let truckType = payload.truckType || "Any";
+  const cargoType = payload.cargoType?.trim() || null;
+  const description =
+    payload.description?.trim() ||
+    (cargoType
+      ? `${cargoType} — ${payload.weight || "cargo"}`
+      : `Cargo weighing ${payload.weight || ""}`.trim());
 
   if (payload.preferredTruckId) {
     const truck = await prisma.truck.findUnique({
       where: { id: payload.preferredTruckId },
       select: {
         id: true,
-        driverId: true,
+        truckNumber: true,
         truckType: true,
         status: true,
         driver: {
           select: {
-            id: true,
             role: true,
             serviceType: true,
             status: true,
@@ -123,7 +130,7 @@ async createCargoRequest(payload) {
       throw error;
     }
     if (truck.driver.serviceType === "SHARED") {
-      const error = new Error("This truck only offers shared load capacity. Use Shared Loads marketplace.");
+      const error = new Error("This truck only offers shared load capacity. Use Shared booking in the Management system.");
       error.status = 400;
       throw error;
     }
@@ -132,13 +139,64 @@ async createCargoRequest(payload) {
       error.status = 400;
       throw error;
     }
-    truckId = truck.id;
-    driverId = truck.driverId;
+    // Customer preference only — admin assigns the driver; no direct link at booking time.
     loadType = "FTL";
     truckType = truck.truckType;
+    if (!payload.specialInstructions?.includes(truck.truckNumber)) {
+      payload.specialInstructions = [
+        payload.specialInstructions,
+        `Preferred truck: ${truck.truckNumber}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+  }
+
+  const route = {
+    pickup: payload.pickup,
+    destination: payload.destination,
+    fromRegion: payload.fromRegion,
+    fromDistrict: payload.fromDistrict,
+    toRegion: payload.toRegion,
+    toDistrict: payload.toDistrict,
+  };
+  let distanceKm =
+    payload.distanceKm != null && Number.isFinite(Number(payload.distanceKm))
+      ? Number(payload.distanceKm)
+      : null;
+  if (distanceKm == null && payload.pickup && payload.destination) {
+    const estimated = estimateDistanceKm(payload.pickup, payload.destination, route);
+    if (Number.isFinite(estimated) && estimated > 0) distanceKm = estimated;
+  }
+  const quotedEstimatedTime = payload.quotedEstimatedTime?.trim() || null;
+  let calculatedPrice =
+    payload.calculatedPrice != null && Number(payload.calculatedPrice) > 0
+      ? Number(payload.calculatedPrice)
+      : null;
+  const weightIsKnown = (() => {
+    const raw = String(payload.weight || "").trim().toLowerCase();
+    if (!raw || raw === "tbd" || raw === "pending" || raw === "n/a") return false;
+    return Number.parseFloat(raw.replace(/,/g, "")) > 0;
+  })();
+  if (calculatedPrice == null && weightIsKnown) {
+    calculatedPrice = await estimateFare(payload.weight, loadType, {
+      ...route,
+      distanceKm,
+    });
   }
 
   return withTransaction(async (tx) => {
+    const customer = await tx.user.findUnique({
+      where: { id: payload.customerId },
+      select: { name: true },
+    });
+    const customerName =
+      payload.customerName ||
+      payload.senderName ||
+      payload.receiverName ||
+      customer?.name ||
+      null;
+
     const request = await tx.cargoRequest.create({
       data: {
         id,
@@ -150,8 +208,9 @@ async createCargoRequest(payload) {
         pickup: payload.pickup,
         destination: payload.destination,
         truckType,
+        cargoType,
         weight: payload.weight,
-        description: payload.description,
+        description,
         receiver: payload.receiver || null,
         sender: payload.sender || null,
         customerRole: payload.customerRole || null,
@@ -171,7 +230,9 @@ async createCargoRequest(payload) {
           ? new Date(payload.preferredPickupDate)
           : null,
         status: "Pending",
-        ...routeFields,
+        calculatedPrice,
+        distanceKm,
+        quotedEstimatedTime,
       },
       include: cargoRequestInclude,
     });
@@ -179,9 +240,19 @@ async createCargoRequest(payload) {
     const [notification] = await Promise.all([
       tx.notification.create({
         data: {
-          type: "order.created",
-          message: `${id} created by ${payload.customerName || "Customer"}`,
-          ...(driverId ? { userId: driverId } : {}),
+          userId: payload.customerId,
+          type: "booking.created",
+          message: formatCustomerNotifyLine(TRIP_NOTIFY.bookingCreated, {
+            bookingId: id,
+            status: "Pending",
+            customerName,
+            pickup: request.pickup,
+            destination: request.destination,
+            fromRegion: request.fromRegion,
+            fromDistrict: request.fromDistrict,
+            toRegion: request.toRegion,
+            toDistrict: request.toDistrict,
+          }),
         },
       }),
       tx.auditLog.create({
@@ -190,12 +261,7 @@ async createCargoRequest(payload) {
           action: "cargo.created",
           entityType: "cargo_requests",
           entityId: id,
-          meta: routeFields.distanceKm != null
-            ? {
-                distanceKm: Number(routeFields.distanceKm),
-                estimatedTime: routeFields.quotedEstimatedTime,
-              }
-            : {},
+          meta: {},
         },
       }),
     ]);
@@ -223,6 +289,7 @@ async updateCargoRequest(id, payload, { customerId } = {}) {
   if (payload.pickup !== undefined) data.pickup = payload.pickup;
   if (payload.destination !== undefined) data.destination = payload.destination;
   if (payload.truckType !== undefined) data.truckType = payload.truckType;
+  if (payload.cargoType !== undefined) data.cargoType = payload.cargoType;
   if (payload.weight !== undefined) data.weight = payload.weight;
   if (payload.description !== undefined) data.description = payload.description;
   if (payload.receiver !== undefined) data.receiver = payload.receiver;
@@ -243,29 +310,6 @@ async updateCargoRequest(id, payload, { customerId } = {}) {
     data.preferredPickupDate = payload.preferredPickupDate
       ? new Date(payload.preferredPickupDate)
       : null;
-  }
-
-  const routeChanged = [
-    "pickup",
-    "destination",
-    "weight",
-    "fromRegion",
-    "fromDistrict",
-    "toRegion",
-    "toDistrict",
-  ].some((key) => data[key] !== undefined);
-
-  if (routeChanged) {
-    const pickup = data.pickup ?? existing.pickup;
-    const destination = data.destination ?? existing.destination;
-    const distanceKm = estimateDistanceKm(pickup, destination, {
-      fromRegion: data.fromRegion ?? existing.fromRegion,
-      fromDistrict: data.fromDistrict ?? existing.fromDistrict,
-      toRegion: data.toRegion ?? existing.toRegion,
-      toDistrict: data.toDistrict ?? existing.toDistrict,
-    });
-    data.distanceKm = distanceKm;
-    data.quotedEstimatedTime = estimateEtaLabel(distanceKm);
   }
 
   if (Object.keys(data).length > 0) {
@@ -314,6 +358,7 @@ async submitCargoQuote(id, { quotedPrice, quotedEstimatedTime, quoteNotes, drive
         where: { id: driverId },
         select: {
           id: true,
+          name: true,
           role: true,
           truck: { select: { id: true } },
         },
@@ -361,7 +406,23 @@ async submitCargoQuote(id, { quotedPrice, quotedEstimatedTime, quoteNotes, drive
       data: {
         userId: updated.customerId,
         type: "quote.sent",
-        message: `Driver sent price $${price.toLocaleString()} for booking ${id}`,
+        message: formatNotifyLines(`Qiimo: $${price.toLocaleString()}`, {
+          bookingId: id,
+          status: "Awaiting Approval",
+          customerName:
+            updated.customer?.name ||
+            updated.senderName ||
+            updated.receiverName ||
+            null,
+          driverName: driver?.name || updated.driver?.name || null,
+          pickup: updated.pickup,
+          destination: updated.destination,
+          fromRegion: updated.fromRegion,
+          fromDistrict: updated.fromDistrict,
+          toRegion: updated.toRegion,
+          toDistrict: updated.toDistrict,
+          body: "Fadlan aqbal ama diid qiimaha darawalka soo diray.",
+        }),
       },
     });
 
@@ -369,11 +430,11 @@ async submitCargoQuote(id, { quotedPrice, quotedEstimatedTime, quoteNotes, drive
   });
 },
 
-async acceptCargoQuote(id, { customerId }) {
+async acceptCargoQuote(id, { customerId, allowAdmin = false } = {}) {
   return withTransaction(async (tx) => {
     const existing = await tx.cargoRequest.findUnique({ where: { id } });
     if (!existing) return null;
-    if (existing.customerId !== customerId) {
+    if (!allowAdmin && existing.customerId !== customerId) {
       const error = new Error("Not allowed to accept this quote");
       error.status = 403;
       throw error;
@@ -432,7 +493,7 @@ async acceptCargoQuote(id, { customerId }) {
         provider: "waafipay",
         currency: process.env.WAAFI_CURRENCY || "SLSH",
         referenceId: buildWaafiReferenceId(tripId),
-        description: `Shipment ${tripId} — 30% deposit required before trip can start; 70% after delivery`,
+        description: `Shipment ${tripId} — pay 100% after delivery`,
       },
     });
 
@@ -440,7 +501,18 @@ async acceptCargoQuote(id, { customerId }) {
       data: {
         userId: existing.driverId,
         type: "quote.accepted",
-        message: `Customer accepted your quote for ${id}. Trip ${tripId} created — starts after 30% deposit.`,
+        message: formatNotifyLines("Macmiilku wuu aqbalay qiimaha", {
+          bookingId: id,
+          tripId,
+          status: "Assigned",
+          pickup: existing.pickup,
+          destination: existing.destination,
+          fromRegion: existing.fromRegion,
+          fromDistrict: existing.fromDistrict,
+          toRegion: existing.toRegion,
+          toDistrict: existing.toDistrict,
+          body: "Safar ayaa la abuuray — lacagta 100% waxaa la bixiyaa Delivered ka dib.",
+        }),
       },
     });
 
@@ -477,7 +549,16 @@ async rejectCargoQuote(id, { customerId, note }) {
       data: {
         userId: existing.driverId,
         type: "quote.rejected",
-        message: `Customer rejected your quote for ${id}${note ? `: ${note}` : ""}`,
+        message: formatNotifyLines("Macmiilku wuu diiday qiimaha", {
+          bookingId: id,
+          pickup: existing.pickup,
+          destination: existing.destination,
+          fromRegion: existing.fromRegion,
+          fromDistrict: existing.fromDistrict,
+          toRegion: existing.toRegion,
+          toDistrict: existing.toDistrict,
+          body: note ? `Sabab: ${note}` : undefined,
+        }),
       },
     });
   }
@@ -529,19 +610,33 @@ async declineCargoBooking(id, { driverId, note }) {
     data: {
       userId: existing.customerId,
       type: "booking.declined",
-      message: `Driver declined booking ${id}: ${String(note).trim()}`,
+      message: formatNotifyLines("Darawalku wuu diiday dalabka", {
+        bookingId: id,
+        status: "Cancelled",
+        customerName: existing.senderName || existing.receiverName || null,
+        pickup: existing.pickup,
+        destination: existing.destination,
+        fromRegion: existing.fromRegion,
+        fromDistrict: existing.fromDistrict,
+        toRegion: existing.toRegion,
+        toDistrict: existing.toDistrict,
+        body: `Sabab: ${String(note).trim()}`,
+      }),
     },
   });
 
   return mapCargoRequest(updated);
 },
 
-async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
+async assignCargoRequest(id, { driverId, truckId, dispatcherId, fare, estimatedTime } = {}) {
   return withTransaction(async (tx) => {
     const truckCheck = await tx.truck.findFirst({
       where: { id: truckId, driverId },
+      include: {
+        driver: { select: { id: true, role: true, status: true, serviceType: true, name: true } },
+      },
     });
-    if (!truckCheck) {
+    if (!truckCheck || !truckCheck.driver || truckCheck.driver.role !== "driver") {
       const error = new Error("Truck must belong to the selected driver");
       error.status = 400;
       throw error;
@@ -549,25 +644,71 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
 
     const current = await tx.cargoRequest.findUnique({ where: { id } });
     if (!current) return null;
-    if (current.loadType === "SHARED") {
-      const error = new Error("Shared bookings are already linked to the driver who created the shared trip");
-      error.status = 400;
-      throw error;
-    }
     if (current.driverId || current.truckId) {
-      const error = new Error("This direct booking is already linked to a driver and truck");
+      const error = new Error("This booking is already linked to a driver and truck");
       error.status = 400;
       throw error;
     }
 
-    const normalizeType = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-    if (normalizeType(truckCheck.truckType) !== normalizeType(current.truckType)) {
+    const loadType = current.loadType === "SHARED" ? "SHARED" : "FTL";
+    const driverServiceType = truckCheck.driver.serviceType === "SHARED" ? "SHARED" : "FTL";
+    if (loadType === "SHARED") {
       const error = new Error(
-        `Truck type does not match. Request needs "${current.truckType}", selected truck is "${truckCheck.truckType}".`
+        "SHARED loads must be assigned from Shared Loads (pool assign) to a SHARED driver — not here."
       );
       error.status = 400;
       throw error;
     }
+    if (driverServiceType !== "FTL") {
+      const error = new Error("FTL loads can only be assigned to an FTL driver.");
+      error.status = 400;
+      throw error;
+    }
+
+    if (truckCheck.driver.status !== "Active") {
+      const error = new Error("This driver is not available (inactive). Choose another driver.");
+      error.status = 400;
+      throw error;
+    }
+
+    const truckStatus = String(truckCheck.status || "");
+    const unavailableTruck = ["Maintenance", "Unavailable", "Pending Verification", "Pending_Verification"].includes(
+      truckStatus
+    );
+    if (unavailableTruck) {
+      const error = new Error(
+        `This truck is ${truckStatus.replaceAll("_", " ")}. You cannot assign a load until it is Available.`
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    if (truckStatus === "Busy") {
+      const inProgressTrips = await tx.trip.count({
+        where: {
+          OR: [{ truckId }, { driverId }],
+          status: {
+            notIn: ["Delivered", "Cancelled", "Assigned"],
+          },
+        },
+      });
+      // SHARED pool may stack multiple Assigned loads onto one truck before pickup starts.
+      // FTL (and any trip already underway) must not get another assignment.
+      if (current.loadType !== "SHARED" || inProgressTrips > 0) {
+        const error = new Error(
+          "This driver/truck is busy with another load. Assign an available truck instead."
+        );
+        error.status = 400;
+        throw error;
+      }
+    } else if (truckStatus !== "Available") {
+      const error = new Error("Selected truck is not available for assignment");
+      error.status = 400;
+      throw error;
+    }
+
+    // Any available truck of the correct service type (FTL/SHARED) may be assigned —
+    // do not block on truckType string match (e.g. "ud" vs "truck niic").
 
     const currentStatus = reqStatusToApi(current.status);
     const assignable = ["Pending", "Awaiting Approval", "Quote Rejected", "Approved", "Assigned"];
@@ -579,34 +720,24 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
       throw error;
     }
 
+    // Fare is finalized at Delivered from GPS km + pickup weight — not at assign.
+    const fareFromBody = fare != null ? Number(fare) : null;
     const suggestedPrice =
-      current.finalPrice != null
-        ? Number(current.finalPrice)
-        : current.calculatedPrice != null
-          ? Number(current.calculatedPrice)
-          : current.quotedPrice != null
-            ? Number(current.quotedPrice)
-            : null;
+      fareFromBody != null && Number.isFinite(fareFromBody) && fareFromBody > 0
+        ? Math.round(fareFromBody * 100) / 100
+        : null;
 
-    if (suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0) {
-      const error = new Error("Request has no calculated price yet. Recalculate pricing before assigning.");
-      error.status = 400;
-      throw error;
-    }
-
-    const distanceKm =
-      current.distanceKm != null
-        ? Number(current.distanceKm)
-        : estimateDistanceKm(current.pickup, current.destination);
-    const tripEta = estimateEtaLabel(distanceKm);
+    const tripEta =
+      (estimatedTime != null && String(estimatedTime).trim()) ||
+      current.quotedEstimatedTime ||
+      null;
 
     const quoteFields = {
-      quotedPrice: suggestedPrice,
-      quotedEstimatedTime: tripEta,
-      finalPrice: suggestedPrice,
+      ...(suggestedPrice != null ? { quotedPrice: suggestedPrice, finalPrice: suggestedPrice } : {}),
+      ...(tripEta ? { quotedEstimatedTime: tripEta } : {}),
     };
 
-    const tripFare = suggestedPrice;
+    const tripFare = suggestedPrice != null ? suggestedPrice : 0;
 
     // Release previous truck if reassigning
     if (current.truckId && current.truckId !== truckId) {
@@ -662,7 +793,7 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
           truckId,
           pickup: updated.pickup,
           destination: updated.destination,
-          distance: payloadDistance(updated.pickup, updated.destination),
+          distance: null,
           estimatedTime: tripEta,
           status: "Assigned",
           fare: tripFare,
@@ -676,7 +807,7 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
     });
 
     const payment = await tx.payment.findFirst({ where: { tripId } });
-    if (!payment) {
+    if (!payment && tripFare > 0) {
       await tx.payment.create({
         data: {
           tripId,
@@ -688,24 +819,62 @@ async assignCargoRequest(id, { driverId, truckId, dispatcherId }) {
           provider: "waafipay",
           currency: process.env.WAAFI_CURRENCY || "SLSH",
           referenceId: buildWaafiReferenceId(tripId),
-          description: `Shipment ${tripId} — 30% deposit required before trip can start`,
+          description: `Shipment ${tripId} — pay 100% after delivery`,
         },
       });
     }
+
+    const customerRow = await tx.user.findUnique({
+      where: { id: updated.customerId },
+      select: { name: true },
+    });
+    const customerName =
+      current.senderName || current.receiverName || customerRow?.name || null;
+    const driverName = truckCheck.driver?.name || null;
+    const truckFields = {
+      truckType: truckCheck.truckType || current.truckType || null,
+      plateNumber: truckCheck.plateNumber || null,
+      truckNumber: truckCheck.truckNumber || null,
+    };
+    const routeFields = {
+      pickup: updated.pickup || current.pickup,
+      destination: updated.destination || current.destination,
+      fromRegion: current.fromRegion,
+      fromDistrict: current.fromDistrict,
+      toRegion: current.toRegion,
+      toDistrict: current.toDistrict,
+    };
 
     const notification = await tx.notification.create({
       data: {
         userId: driverId,
         type: "driver.assigned",
-        message: `${id} assigned to driver`,
+        message: formatNotifyLines("Dalab cusub — Accept ama Reject", {
+          bookingId: id,
+          tripId,
+          status: "Assigned",
+          customerName,
+          driverName,
+          ...truckFields,
+          ...routeFields,
+          body: "Fadlan aqbal ama diid shaqadan.",
+        }),
       },
     });
 
     await tx.notification.create({
       data: {
         userId: updated.customerId,
-        type: "driver.assigned",
-        message: `${id} assigned. Trip ${tripId} created — pay 30% deposit before the trip starts.`,
+        type: "booking.assigned",
+        message: formatCustomerNotifyLine(TRIP_NOTIFY.assigned, {
+          bookingId: id,
+          tripId,
+          status: "Assigned",
+          customerName,
+          driverName,
+          ...truckFields,
+          ...routeFields,
+        }),
       },
     });
 
@@ -742,7 +911,7 @@ async cancelCargoRequest(id, actorId, { customerId } = {}) {
     }
 
     const apiStatus = reqStatusToApi(existing.status);
-    const nonCancelable = ["Loaded", "In Transit", "Delivered", "Cancelled"];
+    const nonCancelable = ["Picked Up", "In Transit", "Near Destination", "Delivered", "Cancelled"];
     if (nonCancelable.includes(apiStatus)) {
       const error = new Error("Cannot cancel a request in this status");
       error.status = 400;
@@ -777,7 +946,17 @@ async cancelCargoRequest(id, actorId, { customerId } = {}) {
       data: {
         userId: existing.customerId,
         type: "order.cancelled",
-        message: `${id} cancelled`,
+        message: formatNotifyLines("Dalabka waa la joojiyay", {
+          bookingId: id,
+          status: "Cancelled",
+          customerName: existing.senderName || existing.receiverName || null,
+          pickup: existing.pickup,
+          destination: existing.destination,
+          fromRegion: existing.fromRegion,
+          fromDistrict: existing.fromDistrict,
+          toRegion: existing.toRegion,
+          toDistrict: existing.toDistrict,
+        }),
       },
     });
 
@@ -786,7 +965,16 @@ async cancelCargoRequest(id, actorId, { customerId } = {}) {
         data: {
           userId: actorId,
           type: "order.cancelled",
-          message: `${id} cancelled by dispatcher`,
+          message: formatNotifyLines("Dalabka waa la joojiyay (admin)", {
+            bookingId: id,
+            status: "Cancelled",
+            pickup: existing.pickup,
+            destination: existing.destination,
+            fromRegion: existing.fromRegion,
+            fromDistrict: existing.fromDistrict,
+            toRegion: existing.toRegion,
+            toDistrict: existing.toDistrict,
+          }),
         },
       });
     }
@@ -848,7 +1036,17 @@ async restoreCargoRequest(id, actorId, { customerId } = {}) {
       data: {
         userId: existing.customerId,
         type: "order.restored",
-        message: `${id} restored to ${status}`,
+        message: formatNotifyLines(`Dalabka waa la soo celiyay → ${status}`, {
+          bookingId: id,
+          status,
+          customerName: existing.senderName || existing.receiverName || null,
+          pickup: existing.pickup,
+          destination: existing.destination,
+          fromRegion: existing.fromRegion,
+          fromDistrict: existing.fromDistrict,
+          toRegion: existing.toRegion,
+          toDistrict: existing.toDistrict,
+        }),
       },
     });
 

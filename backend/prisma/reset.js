@@ -8,10 +8,8 @@ async function main() {
   // Child / dependent tables first (FK-safe order)
   await prisma.sharedTripBooking.deleteMany();
   await prisma.sharedTrip.deleteMany();
-  await prisma.bid.deleteMany();
   await prisma.deliveryFeedbackToken.deleteMany();
   await prisma.tripFeedback.deleteMany();
-  await prisma.tripLocationPoint.deleteMany();
   await prisma.earning.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.supportComplaint.deleteMany();
@@ -23,10 +21,8 @@ async function main() {
   await prisma.verificationCode.deleteMany();
   await prisma.truck.deleteMany();
   await prisma.customerProfile.deleteMany();
-  await prisma.dispatcherProfile.deleteMany();
   await prisma.setting.deleteMany();
   await prisma.user.deleteMany();
-  await prisma.truckType.deleteMany();
 
   console.log("Database records cleared successfully. Tables and schema unchanged.");
 }

@@ -1,13 +1,14 @@
-/** Driver must advance one step at a time along this chain. */
+/** Driver advances one step at a time along this chain. */
 export const DRIVER_TRIP_NEXT = {
-  Assigned: "Accepted",
-  Accepted: "Arrived Pickup",
-  "Arrived Pickup": "Loaded",
-  Loaded: "In Transit",
-  "In Transit": "Delivered",
+  Assigned: "En Route to Pickup",
+  "En Route to Pickup": "Arrived at Pickup",
+  "Arrived at Pickup": "Picked Up",
+  "Picked Up": "In Transit",
+  "In Transit": "Near Destination",
+  "Near Destination": "Delivered",
 };
 
-export const DISPATCHER_TRIP_STATUSES = ["Delayed", "Cancelled"];
+export const DISPATCHER_TRIP_STATUSES = ["Cancelled"];
 
 /**
  * Validate a trip status change for a given role.
@@ -43,7 +44,6 @@ export function validateTripStatusChange({
 
 /** Cargo request status synced from a trip status update. */
 export function cargoStatusFromTripStatus(tripStatus) {
-  if (tripStatus === "Delayed") return "In Transit";
   if (tripStatus === "Cancelled") return "Cancelled";
   return tripStatus;
 }

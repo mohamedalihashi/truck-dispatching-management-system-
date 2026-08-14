@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireRole, requirePasswordChanged, requirePermission } from "../middleware/auth.js";
 import { db } from "../services/dbService.js";
 import { getWaafiPublicConfig } from "../services/waafiPayService.js";
+import { emitUserNotification } from "../lib/notifyRealtime.js";
 
 const router = Router();
 
@@ -46,9 +47,9 @@ router.post("/waafi/purchase", requireRole("customer"), async (req, res, next) =
     const io = req.app.get("io");
     if (io) {
       io.emit("payment.completed", result.payment);
-      if (result.notification) io.emit("notification.created", result.notification);
+      emitUserNotification(io, result.notification);
       for (const notification of result.adminNotifications || []) {
-        io.emit("notification.created", notification);
+        emitUserNotification(io, notification);
       }
       if (result.earnings?.length) {
         io.emit("earnings.distributed", { paymentId, count: result.earnings.length });

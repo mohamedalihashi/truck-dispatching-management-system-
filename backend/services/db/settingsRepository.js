@@ -1,6 +1,19 @@
 import { prisma } from "../../lib/prisma.js";
 import { getRolePermissions, invalidateRolePermissionsCache } from "../../lib/permissionsCache.js";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG } from "../../lib/permissions.js";
+import { DEFAULT_COMMISSION, getCommissionSettings } from "../commissionService.js";
+import { getPricingSettings, normalizePricingInput } from "../pricingRates.js";
+
+function normalizeCommissionInput(value = {}) {
+  let driver = Number(value.driver ?? DEFAULT_COMMISSION.driver);
+  let dispatcher = Number(value.dispatcher ?? 0);
+  let platform = Number(value.platform ?? DEFAULT_COMMISSION.platform);
+  if (dispatcher > 0) {
+    platform += dispatcher;
+    dispatcher = 0;
+  }
+  return { driver, dispatcher: 0, platform };
+}
 
 export const settingsRepository = {
   async getSupportContact() {
@@ -17,6 +30,8 @@ export const settingsRepository = {
     const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
     return {
       ...settings,
+      commission: await getCommissionSettings(),
+      pricing: await getPricingSettings(),
       rolePermissions: await getRolePermissions(),
       permissionCatalog: PERMISSION_CATALOG,
     };
@@ -55,10 +70,13 @@ export const settingsRepository = {
     if (key === "rolePermissions") {
       return this.updateRolePermissions(value);
     }
+    let nextValue = value;
+    if (key === "commission") nextValue = normalizeCommissionInput(value);
+    if (key === "pricing") nextValue = normalizePricingInput(value);
     return prisma.setting.upsert({
       where: { key },
-      update: { value, updatedAt: new Date() },
-      create: { key, value },
+      update: { value: nextValue, updatedAt: new Date() },
+      create: { key, value: nextValue },
     });
   },
 };

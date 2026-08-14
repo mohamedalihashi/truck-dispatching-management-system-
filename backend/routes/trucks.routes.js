@@ -7,7 +7,7 @@ import { db } from "../services/dbService.js";
 const router = Router();
 
 const truckSchema = z.object({
-  truckNumber: z.string().min(1),
+  truckNumber: z.string().min(1).optional(),
   plateNumber: z.string().min(1),
   capacity: z.string().min(1),
   truckType: z.string().min(1).optional(),
@@ -21,7 +21,6 @@ const truckSchema = z.object({
 router.use(requireAuth);
 router.use(requirePasswordChanged);
 
-// Dispatchers need truck lists to assign drivers even without full fleet admin access.
 router.get("/", requireRole("admin", "driver"), async (req, res, next) => {
   try {
     const result = await db.listTrucks({
@@ -44,15 +43,57 @@ router.get("/summary", requireRole("admin", "driver"), async (_req, res, next) =
   }
 });
 
-router.use(requirePermission("trucks"));
-
-router.get("/types", async (_req, res, next) => {
+router.get("/live", requireRole("admin"), async (req, res, next) => {
   try {
-    res.json({ data: await db.listTruckTypes() });
+    const result = await db.listLiveFleet({
+      search: req.query.search,
+      gpsStatus: req.query.gpsStatus,
+      io: req.app.get("io"),
+    });
+    res.json(result);
   } catch (error) {
     next(error);
   }
 });
+
+router.get("/geofences", requireRole("admin"), async (_req, res, next) => {
+  try {
+    res.json({ data: await db.listGeofences() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/geofences", requireRole("admin"), async (req, res, next) => {
+  try {
+    const { name, zoneType, centerLat, centerLng, radiusM, active } = req.body || {};
+    if (!name || !Number.isFinite(Number(centerLat)) || !Number.isFinite(Number(centerLng))) {
+      return res.status(400).json({ message: "name, centerLat, centerLng are required" });
+    }
+    const radius = Number(radiusM);
+    if (!(radius > 0)) {
+      return res.status(400).json({ message: "radiusM must be > 0" });
+    }
+    const fence = await db.createGeofence(
+      { name, zoneType, centerLat, centerLng, radiusM: radius, active },
+      req.user.sub
+    );
+    res.status(201).json(fence);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/geofences/:id", requireRole("admin"), async (req, res, next) => {
+  try {
+    await db.deleteGeofence(req.params.id);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.use(requirePermission("trucks"));
 
 router.post("/", requireRole("admin"), validate(truckSchema), async (req, res, next) => {
   try {

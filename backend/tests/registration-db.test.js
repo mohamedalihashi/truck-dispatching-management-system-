@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => {
   const tx = {
     user: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     truck: { create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-    customerProfile: { create: vi.fn() }, dispatcherProfile: { create: vi.fn() },
+    customerProfile: { create: vi.fn() },
     auditLog: { create: vi.fn() }, notification: { create: vi.fn() },
     verificationCode: { create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   };

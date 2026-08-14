@@ -68,8 +68,8 @@ async function resolveReferenceForCustomer(referenceId, customerId) {
 export const supportComplaintRepository = {
   async createSupportComplaint({ customerId, againstRole, referenceId, subject, message, actorId }) {
     const role = String(againstRole || "").toLowerCase();
-    if (!["driver", "dispatcher"].includes(role)) {
-      const error = new Error("You can only complain about a driver or dispatcher");
+    if (!["driver", "dispatcher", "platform"].includes(role)) {
+      const error = new Error("You can only complain about a driver, dispatcher, or platform support");
       error.status = 400;
       throw error;
     }
@@ -80,32 +80,51 @@ export const supportComplaintRepository = {
       throw error;
     }
 
-    const resolved = await resolveReferenceForCustomer(referenceId, customerId);
-    if (!resolved) {
-      const error = new Error("Trip or request ID not found for your account. Check the ID and try again.");
-      error.status = 404;
-      throw error;
-    }
+    let againstUserId = null;
+    let againstName = null;
+    let referenceType = "general";
+    let resolvedReferenceId = String(referenceId || "").trim() || "GENERAL";
 
-    const target = role === "driver" ? resolved.driver : resolved.dispatcher;
-    if (!target?.id) {
-      const error = new Error(
-        role === "driver"
-          ? "No driver is assigned on this trip/request yet"
-          : "No dispatcher is linked to this trip/request yet"
-      );
-      error.status = 400;
-      throw error;
+    if (role === "platform") {
+      againstName = "Platform support";
+      if (referenceId) {
+        const resolved = await resolveReferenceForCustomer(referenceId, customerId);
+        if (resolved) {
+          referenceType = resolved.referenceType;
+          resolvedReferenceId = resolved.referenceId;
+        }
+      }
+    } else {
+      const resolved = await resolveReferenceForCustomer(referenceId, customerId);
+      if (!resolved) {
+        const error = new Error("Trip or request ID not found for your account. Check the ID and try again.");
+        error.status = 404;
+        throw error;
+      }
+      referenceType = resolved.referenceType;
+      resolvedReferenceId = resolved.referenceId;
+      const target = role === "driver" ? resolved.driver : resolved.dispatcher;
+      if (!target?.id) {
+        const error = new Error(
+          role === "driver"
+            ? "No driver is assigned on this trip/request yet"
+            : "No dispatcher is linked to this trip/request yet"
+        );
+        error.status = 400;
+        throw error;
+      }
+      againstUserId = target.id;
+      againstName = target.name;
     }
 
     const row = await prisma.supportComplaint.create({
       data: {
         customerId,
         againstRole: role,
-        againstUserId: target.id,
-        againstName: target.name,
-        referenceType: resolved.referenceType,
-        referenceId: resolved.referenceId,
+        againstUserId,
+        againstName,
+        referenceType,
+        referenceId: resolvedReferenceId,
         subject: String(subject || "").trim() || `Complaint about ${role}`,
         message: text.slice(0, 2000),
         status: "Open"
@@ -119,22 +138,39 @@ export const supportComplaintRepository = {
         action: "support.complaint.created",
         entityType: "support_complaints",
         entityId: row.id,
-        description: `Customer complaint against ${role} on ${resolved.referenceId}`,
+        description: `Customer complaint against ${role} on ${resolvedReferenceId}`,
         newValues: {
           againstRole: role,
-          againstUserId: target.id,
-          referenceId: resolved.referenceId
+          againstUserId,
+          referenceId: resolvedReferenceId
         }
       })
     });
 
-    await prisma.notification.create({
-      data: {
-        userId: target.id,
-        type: "support.complaint",
-        message: `A customer filed a support complaint about you on ${resolved.referenceId}.`
+    if (againstUserId) {
+      await prisma.notification.create({
+        data: {
+          userId: againstUserId,
+          type: "support.complaint",
+          message: `A customer filed a support complaint about you on ${resolvedReferenceId}.`
+        }
+      });
+    } else {
+      const admins = await prisma.user.findMany({
+        where: { role: "admin", status: "Active" },
+        select: { id: true },
+        take: 20
+      });
+      if (admins.length) {
+        await prisma.notification.createMany({
+          data: admins.map((admin) => ({
+            userId: admin.id,
+            type: "support.complaint",
+            message: `New customer support complaint on ${resolvedReferenceId}.`
+          }))
+        });
       }
-    });
+    }
 
     return mapComplaint(row);
   },

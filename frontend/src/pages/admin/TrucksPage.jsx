@@ -58,7 +58,7 @@ export function TrucksPage() {
         await mutations.update.mutateAsync({
           id: editing.id,
           payload: {
-            truckNumber: values.truckNumber,
+            truckNumber: editing.truckNumber,
             plateNumber: values.plateNumber,
             capacity: values.capacity,
             truckType: values.truckType,
@@ -70,7 +70,6 @@ export function TrucksPage() {
         });
       } else {
         await mutations.create.mutateAsync({
-          truckNumber: values.truckNumber,
           plateNumber: values.plateNumber,
           capacity: values.capacity,
           truckType: values.truckType,
@@ -132,7 +131,7 @@ export function TrucksPage() {
           <DataTable
             rows={data?.data || []}
             columns={[
-              { key: "truckNumber", label: "Truck" },
+              { key: "truckNumber", label: "Truck ID" },
               { key: "plateNumber", label: "Plate" },
               { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
               { key: "type", label: "Type" },
@@ -188,7 +187,16 @@ export function TrucksPage() {
       {open && (
         <Modal title={editing ? "Edit truck" : "Add truck"} onClose={() => setOpen(false)} wide>
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-            <input className="stitch-input" placeholder="Truck number" {...register("truckNumber", { required: true })} />
+            {editing ? (
+              <div className="sm:col-span-2 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm">
+                <span className="text-xs font-semibold text-on-surface-variant">Truck ID</span>
+                <p className="font-semibold text-on-surface">{editing.truckNumber}</p>
+              </div>
+            ) : (
+              <p className="sm:col-span-2 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant">
+                Truck ID is generated automatically when you save (e.g. TRK-…).
+              </p>
+            )}
             <input className="stitch-input" placeholder="Plate number" {...register("plateNumber", { required: true })} />
             <input className="stitch-input" placeholder="Capacity" {...register("capacity", { required: true })} />
             <input className="stitch-input" placeholder="Write truck type" {...register("truckType", { required: true })} />

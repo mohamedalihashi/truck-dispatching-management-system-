@@ -84,7 +84,11 @@ export function EarningsPage() {
           <MetricCard
             icon={Send}
             label="Commission split"
-            value={`${summary?.commission?.driver ?? 90}% driver / ${summary?.commission?.platform ?? 10}% platform`}
+            value={
+              summary?.commission
+                ? `${summary.commission.driver}% driver / ${summary.commission.platform}% platform`
+                : "90% driver / 10% platform"
+            }
             tone="warn"
           />
         </div>

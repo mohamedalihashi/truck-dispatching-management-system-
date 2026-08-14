@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { CheckCircle2, Clock, Eye, FileText, Pencil, Plus, RotateCcw, Trash2, Truck, XCircle } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
@@ -7,6 +8,12 @@ import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { MetricCard } from "../../components/ui/MetricCard";
+import {
+  CargoBookingFields,
+  EMPTY_CARGO_BOOKING,
+  bookingDefaultsFromRequest,
+  buildCargoBookingPayload
+} from "../../components/CargoBookingFields";
 import {
   useAssignCargo,
   useCancelCargo,
@@ -20,25 +27,42 @@ import {
 } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
-import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES, money } from "../../utils/helpers";
+import { api } from "../../services/api";
+import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES, fareAfterDelivered } from "../../utils/helpers";
+import { applyFormValidationIssues } from "../../utils/bookingValidation";
 
-const normalizeTruckType = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+function truckServiceType(truck) {
+  if (truck?.driverServiceType === "SHARED" || truck?.serviceType === "SHARED") return "SHARED";
+  return "FTL";
+}
 
 export function RequestsPage() {
   const [status, setStatus] = useState("");
+  const [loadTypeFilter, setLoadTypeFilter] = useState(() =>
+    typeof window !== "undefined" && window.location.pathname.startsWith("/admin") ? "FTL" : ""
+  );
   const [selected, setSelected] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [truckId, setTruckId] = useState("");
   const [error, setError] = useState("");
+  const [cargoPhoto, setCargoPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoError, setPhotoError] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const createSubmissionKey = useRef(crypto.randomUUID());
   const { user } = useAuth();
   const { search } = useDashboardSearch();
   const showCreate = user.role === "admin";
   const canAssign = user.role === "admin";
   const canEdit = user.role === "admin";
   const canRestore = user.role === "admin";
-  const { data, isLoading } = useCargoRequests({ status: status || undefined, search: search || undefined });
+  const { data, isLoading } = useCargoRequests({
+    status: status || undefined,
+    search: search || undefined,
+    loadType: loadTypeFilter || undefined
+  });
   const { data: summary } = useCargoRequestSummary();
   const { data: trucks } = useTrucks();
   const { data: customers } = useCustomers({ enabled: showCreate });
@@ -48,42 +72,77 @@ export function RequestsPage() {
   const create = useCreateCargo();
   const update = useUpdateCargo();
   const fleet = trucks?.data || [];
+  const requiredServiceType = selected?.loadType === "SHARED" ? "SHARED" : "FTL";
   const assignmentFleet = selected
-    ? [...fleet].sort((a, b) => {
-        const aMatch = normalizeTruckType(a.truckType || a.type) === normalizeTruckType(selected.truckType);
-        const bMatch = normalizeTruckType(b.truckType || b.type) === normalizeTruckType(selected.truckType);
-        return Number(bMatch) - Number(aMatch);
-      })
+    ? fleet
+        .filter(
+          (truck) =>
+            truck.status === "Available" &&
+            truck.driverId &&
+            truckServiceType(truck) === requiredServiceType
+        )
+        .sort((a, b) => String(a.truckNumber || "").localeCompare(String(b.truckNumber || "")))
     : fleet;
 
   const {
     register: registerCreate,
     handleSubmit: handleCreate,
     reset: resetCreate,
-    formState: { isSubmitting: creatingForm }
+    watch: watchCreate,
+    setValue: setCreateValue,
+    setError: setCreateFieldError,
+    formState: { errors: createErrors, isSubmitting: creatingForm }
   } = useForm({
-    defaultValues: {
-      pickup: "",
-      destination: "",
-      truckType: "",
-      weight: "1.0 tons",
-      description: "",
-      customerId: ""
-    }
+    defaultValues: { ...EMPTY_CARGO_BOOKING }
   });
 
   const {
     register: registerEdit,
     handleSubmit: handleEdit,
     reset: resetEdit,
-    formState: { isSubmitting: editingForm }
+    watch: watchEdit,
+    setValue: setEditValue,
+    setError: setEditFieldError,
+    formState: { errors: editErrors, isSubmitting: editingForm }
   } = useForm();
 
+  function clearCreatePhoto() {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setCargoPhoto(null);
+    setPhotoPreview("");
+    setPhotoError("");
+  }
+
+  function selectCreatePhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setCargoPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoError("");
+  }
+
+  function closeCreate() {
+    clearCreatePhoto();
+    resetCreate({ ...EMPTY_CARGO_BOOKING });
+    setCreating(false);
+    setError("");
+    createSubmissionKey.current = crypto.randomUUID();
+  }
+
   function openAssign(row) {
+    if (row.loadType === "SHARED") {
+      setSelected(row);
+      setTruckId("");
+      setError("");
+      return;
+    }
     setSelected(row);
-    const requiredType = normalizeTruckType(row.truckType);
     const matched = fleet.find(
-      (truck) => truck.status === "Available" && normalizeTruckType(truck.truckType || truck.type) === requiredType
+      (truck) =>
+        truck.status === "Available" &&
+        truck.driverId &&
+        truckServiceType(truck) === "FTL"
     );
     setTruckId(matched?.id || "");
     setError("");
@@ -92,29 +151,35 @@ export function RequestsPage() {
   function openEdit(row) {
     setEditing(row);
     setError("");
-    resetEdit({
-      pickup: row.pickup,
-      destination: row.destination,
-      truckType: row.truckType,
-      weight: row.weight,
-      description: row.description,
-      sender: row.sender || "",
-      receiver: row.receiver || "",
-      specialInstructions: row.specialInstructions || ""
-    });
+    resetEdit(bookingDefaultsFromRequest(row));
   }
 
   async function onAssign() {
     setError("");
-    const truck = fleet.find((t) => t.id === truckId) || fleet.find((t) => t.status === "Available");
+    if (selected?.loadType === "SHARED") {
+      setError("SHARED loads are assigned from Shared Loads to a SHARED driver only.");
+      return;
+    }
+    const truck = assignmentFleet.find((t) => t.id === truckId);
     if (!selected || !truck) {
-      setError("Select an available truck");
+      setError("Select an available FTL truck. Shared drivers cannot take FTL loads.");
+      return;
+    }
+    if (truckServiceType(truck) !== "FTL") {
+      setError("FTL loads can only be assigned to an FTL driver.");
+      return;
+    }
+    if (truck.status !== "Available") {
+      setError("This truck/driver is busy or unavailable. Choose an available truck.");
       return;
     }
     try {
       await assign.mutateAsync({
         id: selected.id,
-        payload: { driverId: truck.driverId, truckId: truck.id }
+        payload: {
+          driverId: truck.driverId,
+          truckId: truck.id
+        }
       });
       setSelected(null);
     } catch (err) {
@@ -142,33 +207,71 @@ export function RequestsPage() {
 
   async function onCreate(values) {
     setError("");
+    setPhotoError("");
+    if (!cargoPhoto) {
+      setPhotoError("Cargo photo is required");
+      return;
+    }
     try {
-      await create.mutateAsync({ ...values, customerId: values.customerId });
-      setCreating(false);
-      resetCreate();
+      const payload = {
+        ...buildCargoBookingPayload(values, { requireCustomer: true }),
+        submissionKey: createSubmissionKey.current
+      };
+      const request = await create.mutateAsync(payload);
+      setUploadingImage(true);
+      try {
+        const formData = new FormData();
+        formData.append("cargoImage", cargoPhoto);
+        await api.uploadCargoImage(request.id, formData);
+      } catch (uploadError) {
+        setError(uploadError.message || "Cargo photo upload failed");
+        return;
+      } finally {
+        setUploadingImage(false);
+      }
+      closeCreate();
     } catch (err) {
-      setError(err.message);
+      if (err.issues) applyFormValidationIssues(setCreateFieldError, err.issues);
+      setError(err.details?.issues?.[0]?.message || err.message);
     }
   }
 
   async function onUpdate(values) {
     setError("");
     try {
-      await update.mutateAsync({ id: editing.id, payload: values });
+      const payload = buildCargoBookingPayload({
+        ...values,
+        loadType: editing.loadType === "SHARED" ? "SHARED" : values.loadType || "FTL"
+      });
+      // Keep existing load type on edit; do not reassign customer
+      delete payload.customerId;
+      payload.loadType = editing.loadType || payload.loadType;
+      await update.mutateAsync({ id: editing.id, payload });
       setEditing(null);
     } catch (err) {
-      setError(err.message);
+      if (err.issues) applyFormValidationIssues(setEditFieldError, err.issues);
+      setError(err.details?.issues?.[0]?.message || err.message);
     }
   }
 
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Cargo Requests"
-        subtitle="Bookings are auto-priced with ETA from distance (km). Assign a driver — no quotation step."
+        title={user.role === "admin" ? "Customer requests" : "Cargo Requests"}
+        subtitle={
+          user.role === "admin"
+            ? "FTL bookings: assign FTL drivers only. SHARED loads go to Shared Loads → SHARED drivers."
+            : "Submit requests and wait for admin assignment. You do not contact drivers directly. Pay 100% after Delivered."
+        }
         actions={
           showCreate ? (
-            <Button onClick={() => { setCreating(true); setError(""); }}>
+            <Button onClick={() => {
+              resetCreate({ ...EMPTY_CARGO_BOOKING });
+              clearCreatePhoto();
+              createSubmissionKey.current = crypto.randomUUID();
+              setError("");
+              setCreating(true);
+            }}>
               <Plus size={16} /> New request
             </Button>
           ) : null
@@ -194,6 +297,17 @@ export function RequestsPage() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        {user.role === "admin" ? (
+          <select
+            className="stitch-input max-w-xs"
+            value={loadTypeFilter}
+            onChange={(e) => setLoadTypeFilter(e.target.value)}
+          >
+            <option value="FTL">FTL only (assign FTL drivers)</option>
+            <option value="SHARED">SHARED only (use Shared Loads to assign)</option>
+            <option value="">All load types</option>
+          </select>
+        ) : null}
       </div>
 
       <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
@@ -213,14 +327,23 @@ export function RequestsPage() {
                 label: "Route",
                 render: (row) => `${row.pickup} → ${row.destination}`
               },
-              { key: "truckType", label: "Type" },
+              {
+                key: "loadType",
+                label: "Type",
+                render: (row) => row.loadType || "FTL"
+              },
+              {
+                key: "cargoType",
+                label: "Cargo type",
+                render: (row) => row.cargoType || row.description || "—"
+              },
               { key: "weight", label: "Weight" },
               {
                 key: "price",
                 label: "Price",
                 render: (row) => {
-                  const price = row.finalPrice ?? row.quotedPrice;
-                  return price != null ? money(price) : "—";
+                  const price = row.finalPrice ?? row.quotedPrice ?? row.calculatedPrice;
+                  return fareAfterDelivered(row.status, price);
                 }
               },
               {
@@ -247,13 +370,19 @@ export function RequestsPage() {
                       </button>
                     )}
                     {canAssign &&
-                      row.loadType !== "SHARED" &&
                       !row.driverId &&
-                      ["Pending", "Awaiting Approval", "Quote Rejected", "Approved", "Assigned"].includes(row.status) &&
-                      (row.finalPrice != null || row.quotedPrice != null) && (
+                      ["Pending", "Awaiting Approval", "Quote Rejected", "Approved", "Assigned"].includes(row.status) && (
+                      row.loadType === "SHARED" ? (
+                        <Link to="/admin/shared-trips" className="inline-flex">
+                          <Button className="px-2 py-1 text-xs" type="button">
+                            Assign via Shared
+                          </Button>
+                        </Link>
+                      ) : (
                       <Button className="px-2 py-1 text-xs" onClick={() => openAssign(row)}>
-                        Assign driver
+                        Assign FTL driver
                       </Button>
+                      )
                     )}
                     {CANCELABLE_REQUEST_STATUSES.includes(row.status) && (
                       <button type="button" className="p-1 text-error" onClick={() => onCancel(row.id)} title="Cancel">
@@ -280,59 +409,74 @@ export function RequestsPage() {
       </section>
 
       {selected && (
-        <Modal title={`${["Assigned"].includes(selected.status) ? "Reassign" : "Assign driver"} ${selected.id}`} onClose={() => setSelected(null)}>
-          {(selected.finalPrice != null || selected.quotedPrice != null) ? (
-            <p className="mb-3 text-sm text-on-surface-variant">
-              Price: {money(selected.finalPrice ?? selected.quotedPrice)}
-              {selected.quotedEstimatedTime
-                ? ` · ETA ${selected.quotedEstimatedTime}`
-                : selected.distanceKm != null
-                  ? ` · ${selected.distanceKm} km`
-                  : ""}
-            </p>
-          ) : null}
-          <p className="mb-2 text-sm font-medium text-on-surface-variant">
-            Required truck type: <strong className="text-on-surface">{selected.truckType}</strong>
+        <Modal
+          title={
+            selected.loadType === "SHARED"
+              ? `SHARED load ${selected.id}`
+              : `${["Assigned"].includes(selected.status) ? "Reassign" : "Assign FTL driver"} ${selected.id}`
+          }
+          onClose={() => setSelected(null)}
+        >
+          {selected.loadType === "SHARED" ? (
+            <>
+              <p className="mb-3 text-sm text-on-surface-variant">
+                SHARED loads can only be assigned to a <strong>SHARED driver</strong> from{" "}
+                <Link className="underline" to="/admin/shared-trips">Shared Loads</Link> (pool assign).
+              </p>
+              {error && <p className="mb-3 text-sm text-error">{error}</p>}
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>
+                <Link to="/admin/shared-trips">
+                  <Button type="button">Open Shared Loads</Button>
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+          <p className="mb-3 text-sm text-on-surface-variant">
+            Assign an available <strong>FTL</strong> driver/truck only. Fare is set automatically at Delivered (GPS km + pickup weight).
+          </p>
+          <p className="mb-3 text-sm font-medium text-on-surface-variant">
+            Cargo type: <strong className="text-on-surface">{selected.cargoType || selected.description || "—"}</strong>
           </p>
           <select className="mb-4 w-full stitch-input" value={truckId} onChange={(e) => setTruckId(e.target.value)}>
-            <option value="">Select a matching truck</option>
-            {assignmentFleet.map((truck) => {
-              const matches = normalizeTruckType(truck.truckType || truck.type) === normalizeTruckType(selected.truckType);
-              return (
-                <option key={truck.id} value={truck.id}>
-                  {matches ? "✓ " : ""}
-                  {truck.truckNumber} — {truck.driver || "No driver"} · {truck.truckType || truck.type} ({truck.status})
-                </option>
-              );
-            })}
+            <option value="">Select available FTL truck / driver</option>
+            {assignmentFleet.map((truck) => (
+              <option key={truck.id} value={truck.id}>
+                {truck.truckNumber} — {truck.driver || "No driver"} · FTL · {truck.truckType || truck.type}
+              </option>
+            ))}
           </select>
           {!fleet.length ? (
             <p className="mb-3 text-sm text-error">
-              No trucks loaded. Check that verified drivers with trucks exist, then refresh the page.
+              No trucks loaded. Check that active drivers with trucks exist, then refresh the page.
             </p>
           ) : null}
-          {fleet.length > 0 &&
-          !assignmentFleet.some(
-            (truck) =>
-              truck.status === "Available" &&
-              normalizeTruckType(truck.truckType || truck.type) === normalizeTruckType(selected.truckType)
-          ) ? (
+          {fleet.length > 0 && !assignmentFleet.length ? (
             <p className="mb-3 text-sm text-amber-800 dark:text-amber-200">
-              No available truck currently matches type &quot;{selected.truckType}&quot;. You can still pick another truck below, or register a matching truck first.
+              No available FTL trucks right now. Shared drivers cannot take FTL loads.
+            </p>
+          ) : null}
+          {fleet.some((truck) => truck.status === "Busy" || truck.status === "Unavailable") ? (
+            <p className="mb-3 text-xs text-on-surface-variant">
+              Busy / unavailable trucks are hidden from this list until they become Available.
             </p>
           ) : null}
           {truckId ? (
             <p className="mb-3 text-sm text-on-surface-variant">
-              Selected type: {fleet.find((truck) => truck.id === truckId)?.truckType || "Unknown"}
+              Selected truck: {fleet.find((truck) => truck.id === truckId)?.truckNumber || "—"} ·{" "}
+              {fleet.find((truck) => truck.id === truckId)?.truckType || "Unknown"} · FTL
             </p>
           ) : null}
           {error && <p className="mb-3 text-sm text-error">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>
-            <Button onClick={onAssign} disabled={assign.isPending || !fleet.length}>
+            <Button onClick={onAssign} disabled={assign.isPending || !assignmentFleet.length || !truckId}>
               {assign.isPending ? "Saving…" : "Confirm"}
             </Button>
           </div>
+            </>
+          )}
         </Modal>
       )}
 
@@ -351,18 +495,14 @@ export function RequestsPage() {
                   : "—"
               }
             />
-            <Detail label="Truck type" value={viewing.truckType} />
+            <Detail label="Type" value={viewing.loadType || "FTL"} />
+            <Detail label="Cargo type" value={viewing.cargoType || viewing.description || "—"} />
             <Detail label="Weight" value={viewing.weight} />
-            <Detail label="Price" value={viewing.finalPrice != null || viewing.quotedPrice != null ? money(viewing.finalPrice ?? viewing.quotedPrice) : "—"} />
+            <Detail label="Price" value={fareAfterDelivered(viewing.status, viewing.finalPrice ?? viewing.quotedPrice)} />
             <Detail label="ETA" value={viewing.quotedEstimatedTime || "—"} />
             <Detail label="Distance" value={viewing.distanceKm != null ? `${viewing.distanceKm} km` : "—"} />            <Detail label="Driver" value={viewing.driver || "—"} />
             <Detail label="Truck" value={viewing.truck || "—"} />
             <Detail label="Description" value={viewing.description} className="sm:col-span-2" />
-            <Detail label="Booking customer role" value={viewing.customerRole ? `Customer is the ${viewing.customerRole.toLowerCase()}` : "—"} />
-            <Detail label="Sender" value={viewing.senderName || viewing.sender || "—"} />
-            <Detail label="Sender phone" value={viewing.senderPhone || "—"} />
-            <Detail label="Receiver" value={viewing.receiverName || viewing.receiver || "—"} />
-            <Detail label="Receiver phone" value={viewing.receiverPhone || "—"} />
             <Detail label="Instructions" value={viewing.specialInstructions || "—"} className="sm:col-span-2" />
           </dl>
         </Modal>
@@ -370,17 +510,16 @@ export function RequestsPage() {
 
       {editing && (
         <Modal title={`Edit ${editing.id}`} onClose={() => setEditing(null)} wide>
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleEdit(onUpdate)}>
-            <input className="stitch-input" placeholder="Pickup" {...registerEdit("pickup", { required: true })} />
-            <input className="stitch-input" placeholder="Destination" {...registerEdit("destination", { required: true })} />
-            <input className="stitch-input" placeholder="Write required truck type" {...registerEdit("truckType", { required: true })} />
-            <input className="stitch-input" placeholder="Weight" {...registerEdit("weight", { required: true })} />
-            <input className="stitch-input" placeholder="Sender" {...registerEdit("sender")} />
-            <input className="stitch-input" placeholder="Receiver" {...registerEdit("receiver")} />
-            <textarea className="stitch-input min-h-20 sm:col-span-2" placeholder="Description" {...registerEdit("description", { required: true })} />
-            <textarea className="stitch-input min-h-16 sm:col-span-2" placeholder="Special instructions" {...registerEdit("specialInstructions")} />
-            {error && <p className="sm:col-span-2 text-sm text-error">{error}</p>}
-            <div className="sm:col-span-2 flex justify-end gap-2">
+          <form className="space-y-4" onSubmit={handleEdit(onUpdate)}>
+            <CargoBookingFields
+              register={registerEdit}
+              errors={editErrors}
+              watch={watchEdit}
+              setValue={setEditValue}
+              showLoadType={false}
+            />
+            {error && <p className="text-sm text-error">{error}</p>}
+            <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button>
               <Button disabled={editingForm || update.isPending}>Save changes</Button>
             </div>
@@ -389,23 +528,30 @@ export function RequestsPage() {
       )}
 
       {creating && (
-        <Modal title="Create cargo request" onClose={() => setCreating(false)} wide>
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleCreate(onCreate)}>
-            <select className="stitch-input sm:col-span-2" {...registerCreate("customerId", { required: true })}>
-              <option value="">Select customer</option>
-              {(customers?.data || []).map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
-              ))}
-            </select>
-            <input className="stitch-input" placeholder="Pickup" {...registerCreate("pickup", { required: true })} />
-            <input className="stitch-input" placeholder="Destination" {...registerCreate("destination", { required: true })} />
-            <input className="stitch-input" placeholder="Write required truck type" {...registerCreate("truckType", { required: true })} />
-            <input className="stitch-input" placeholder="Weight" {...registerCreate("weight", { required: true })} />
-            <textarea className="stitch-input min-h-20 sm:col-span-2" placeholder="Description" {...registerCreate("description", { required: true })} />
-            {error && <p className="sm:col-span-2 text-sm text-error">{error}</p>}
-            <div className="sm:col-span-2 flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setCreating(false)}>Cancel</Button>
-              <Button disabled={creatingForm || create.isPending}>Create request</Button>
+        <Modal title="Create cargo request" onClose={closeCreate} wide>
+          <form className="space-y-4" onSubmit={handleCreate(onCreate)}>
+            <p className="text-sm text-on-surface-variant">
+              Same flow as customer booking: Somalia locations, cargo type, and photo. Weight is set at pickup.
+            </p>
+            <CargoBookingFields
+              register={registerCreate}
+              errors={createErrors}
+              watch={watchCreate}
+              setValue={setCreateValue}
+              customers={customers?.data || []}
+              showContactFields
+              photoPreview={photoPreview}
+              photoError={photoError}
+              onSelectPhoto={selectCreatePhoto}
+              onClearPhoto={clearCreatePhoto}
+              requirePhoto
+            />
+            {error && <p className="text-sm text-error">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={closeCreate}>Cancel</Button>
+              <Button disabled={creatingForm || create.isPending || uploadingImage}>
+                {uploadingImage ? "Uploading photo…" : create.isPending ? "Creating…" : "Create request"}
+              </Button>
             </div>
           </form>
         </Modal>

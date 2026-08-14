@@ -145,25 +145,41 @@ export function verificationPayload(email, emailResult = {}) {
   return body;
 }
 
-/** Welcome email when an admin creates a user. */
-export async function sendWelcomeEmail(email, tempPassword) {
+/** Welcome email when an admin creates a user (driver, customer, etc.). */
+export async function sendWelcomeEmail(email, tempPassword, { name, role } = {}) {
   const appName = "GaariHel";
-  const subject = `${appName} â€” your new account`;
+  const loginUrl = (process.env.APP_PUBLIC_URL || "http://localhost:5173").replace(/\/$/, "");
+  const roleLabel =
+    role === "driver" ? "driver" : role === "customer" ? "customer" : role === "admin" ? "admin" : "user";
+  const greeting = name ? `Hi ${name},` : "Hello,";
+  const roleLine =
+    role === "driver"
+      ? "Your driver account is ready. An administrator registered you on GaariHel."
+      : "An administrator created your account on GaariHel.";
+  const subject = `${appName} — your new ${roleLabel} account`;
   const text = [
-    `Welcome to ${appName}!`,
+    greeting,
     "",
-    `An administrator created an account for you.`,
+    roleLine,
     "",
+    `Sign in: ${loginUrl}/login`,
+    `Email: ${email}`,
     `Temporary password: ${tempPassword}`,
+    "",
     "Steps:",
     "1. Sign in with your email and the temporary password above.",
-    "2. You will be asked to set a new password before accessing the dashboard."
+    "2. You will be asked to set a new password before using the dashboard."
   ].join("\n");
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
       <h2 style="color:#0d1c32;margin:0 0 12px">${appName}</h2>
-      <p style="color:#444;line-height:1.6">An administrator created an account for <strong>${email}</strong>.</p>
+      <p style="color:#444;line-height:1.6">${greeting}</p>
+      <p style="color:#444;line-height:1.6">${roleLine}</p>
       <div style="background:#f5f7fb;border-radius:8px;padding:16px;margin:20px 0">
+        <p style="margin:0 0 8px;color:#666;font-size:13px">Sign in</p>
+        <p style="margin:0 0 12px"><a href="${loginUrl}/login" style="color:#fe6b00">${loginUrl}/login</a></p>
+        <p style="margin:0 0 8px;color:#666;font-size:13px">Email</p>
+        <p style="margin:0 0 12px;font-weight:600;color:#0d1c32">${email}</p>
         <p style="margin:0 0 8px;color:#666;font-size:13px">Temporary password</p>
         <p style="margin:0;font-size:20px;font-weight:700;letter-spacing:1px;color:#0d1c32">${tempPassword}</p>
       </div>
@@ -173,24 +189,37 @@ export async function sendWelcomeEmail(email, tempPassword) {
     </div>
   `;
 
-  if (isLocalDemoEmail(email) && isEmailDevMode()) {
-    console.log(`[EMAIL] Welcome ${email} â€” password: ${tempPassword}`);
-    return { devPassword: tempPassword };
+  if (isEmailDevMode()) {
+    console.log(`[EMAIL] Welcome ${email} — password: ${tempPassword}`);
+    return {
+      sent: false,
+      devPassword: tempPassword,
+      userMessage: "Dev mode: share the temporary password shown below with the user."
+    };
   }
 
   const mailer = await getTransporter();
   if (!mailer) {
-    console.error(`[EMAIL] SMTP is not configured for welcome email to ${email}`);
-    return {};
+    console.log(`[EMAIL] SMTP not configured — welcome password for ${email}: ${tempPassword}`);
+    return {
+      sent: false,
+      devPassword: tempPassword,
+      userMessage: "SMTP is not configured. Share the temporary password below with the driver."
+    };
   }
 
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await mailer.sendMail({ from, to: email, subject, text, html });
     console.log(`Welcome email sent to ${email}`);
-    return { userMessage: `Account credentials sent to ${email}.` };
+    return { sent: true, userMessage: `Login password sent to ${email}.` };
   } catch (error) {
     console.error(`[EMAIL] Welcome failed for ${email}:`, error.message);
-    return {};
+    console.log(`[EMAIL] Fallback password for ${email}: ${tempPassword}`);
+    return {
+      sent: false,
+      devPassword: tempPassword,
+      userMessage: `Email could not be sent. Share the temporary password below with the driver.`
+    };
   }
 }

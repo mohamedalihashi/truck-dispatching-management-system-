@@ -17,7 +17,6 @@ import earningsRoutes from "./routes/earnings.routes.js";
 import feedbackRoutes from "./routes/feedback.routes.js";
 import quotesRoutes from "./routes/quotes.routes.js";
 import supportRoutes from "./routes/support.routes.js";
-import marketplaceRoutes from "./routes/marketplace.routes.js";
 import sharedTripsRoutes from "./routes/sharedTrips.routes.js";
 import publicRoutes from "./routes/public.routes.js";
 import { auditContextMiddleware } from "./lib/auditContext.js";
@@ -112,12 +111,38 @@ function buildAllowedOrigins() {
   ].filter(Boolean))];
 }
 
+/** Allow Vite dev server on LAN (phone/tablet on same Wi‑Fi) — dev only. */
+export function isDevLanOrigin(origin) {
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL) return false;
+  if (!origin || typeof origin !== "string") return false;
+  try {
+    const url = new URL(origin);
+    const devPorts = new Set(["5173", "4173", "3000"]);
+    const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    if (!devPorts.has(port)) return false;
+
+    const host = url.hostname;
+    if (host === "localhost" || host === "127.0.0.1") return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function isOriginAllowed(origin, allowedOrigins) {
+  if (!origin) return true;
+  return allowedOrigins.includes(origin) || isDevLanOrigin(origin);
+}
+
 export function createApp({ io } = {}) {
   const app = express();
   const uniqueOrigins = buildAllowedOrigins();
 
   function corsOrigin(origin, callback) {
-    if (!origin || uniqueOrigins.includes(origin)) {
+    if (isOriginAllowed(origin, uniqueOrigins)) {
       callback(null, true);
       return;
     }
@@ -236,7 +261,6 @@ export function createApp({ io } = {}) {
   app.use("/api/admin", adminRoutes);
   app.use("/api/quotes", quotesRoutes);
   app.use("/api/support", supportRoutes);
-  app.use("/api/marketplace", marketplaceRoutes);
   app.use("/api/shared-trips", sharedTripsRoutes);
   app.use(notFound);
   app.use(errorHandler);

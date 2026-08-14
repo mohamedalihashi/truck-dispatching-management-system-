@@ -1,8 +1,13 @@
 import { prisma, withTransaction } from "../../lib/prisma.js";
-import { mapCargoRequest, cargoRequestInclude } from "./mappers.js";
-import { estimateDistanceKm, estimateEtaLabel } from "../pricingService.js";
+import { mapCargoRequest, cargoRequestInclude, reqStatusToApi } from "./mappers.js";
 import { buildWaafiReferenceId } from "../waafiPayService.js";
-import { hasStartPaymentPaid } from "../../lib/paymentWorkflow.js";
+import { auditFields } from "../../lib/auditContext.js";
+import { fareFromTraveledKm } from "../pricingRates.js";
+import {
+  TRIP_NOTIFY,
+  formatCustomerNotifyLine,
+  formatNotifyLines,
+} from "../../lib/tripCustomerMessages.js";
 
 /** Capacity always comes from the registered truck — never from free-form input. */
 function resolveTruckCapacityTons(truck) {
@@ -13,8 +18,69 @@ function resolveTruckCapacityTons(truck) {
   return Number.isFinite(fromLabel) && fromLabel > 0 ? fromLabel : 0;
 }
 
+function parseWeightTons(weight) {
+  const raw = String(weight || "").trim();
+  const n = Number.parseFloat(raw.replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (raw.toLowerCase().includes("kg")) return n / 1000;
+  return n;
+}
+
+function normalizePlace(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Shared loads may only pool when they share the same corridor:
+ * same pickup gobol+magalo (region+district) AND same delivery gobol+magalo.
+ * Neighborhood can differ within the same city.
+ */
+export function sharedCorridorKey(request) {
+  const fromRegion = normalizePlace(request?.fromRegion);
+  const fromDistrict = normalizePlace(request?.fromDistrict);
+  const toRegion = normalizePlace(request?.toRegion);
+  const toDistrict = normalizePlace(request?.toDistrict);
+
+  const from =
+    fromRegion && fromDistrict
+      ? `${fromRegion}::${fromDistrict}`
+      : normalizePlace(request?.pickup);
+  const to =
+    toRegion && toDistrict
+      ? `${toRegion}::${toDistrict}`
+      : normalizePlace(request?.destination);
+
+  if (!from || !to) return "";
+  return `${from}=>${to}`;
+}
+
+function assertSharedLoadsSameCorridor(requests) {
+  if (!requests?.length) return;
+  const keys = requests.map((r) => ({ id: r.id, key: sharedCorridorKey(r) }));
+  const missing = keys.find((row) => !row.key);
+  if (missing) {
+    const error = new Error(
+      `Request ${missing.id} is missing region/district. Shared loads need the same gobol + magalo (pickup and delivery).`
+    );
+    error.status = 400;
+    throw error;
+  }
+  const primary = keys[0].key;
+  const mismatch = keys.find((row) => row.key !== primary);
+  if (mismatch) {
+    const error = new Error(
+      "Shared loads on different routes cannot share one truck. Only requests with the same gobol + magalo (pickup and delivery) can be pooled."
+    );
+    error.status = 400;
+    throw error;
+  }
+}
+
 /** Statuses that block publishing another shared trip. */
-const ACTIVE_SHARED_STATUSES = ["Open for booking", "Full", "Pickup", "In Transit", "Departed"];
+const ACTIVE_SHARED_STATUSES = ["Assigned", "Open for booking", "Full", "Pickup", "In Transit", "Departed"];
 
 const TERMINAL_SHARED_STATUSES = ["Delivered", "Completed", "Cancelled"];
 
@@ -25,16 +91,17 @@ function parseDepartureDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function mapSharedTrip(row) {
+function mapSharedTrip(row, { includeDriverPhone = false } = {}) {
   if (!row) return null;
   return {
     id: row.id,
     driverId: row.driverId,
     driver: row.driver?.name || null,
-    driverPhone: row.driver?.phone || null,
+    driverPhone: includeDriverPhone ? row.driver?.phone || null : null,
     truckId: row.truckId,
     truck: row.truck?.truckNumber || null,
     truckType: row.truck?.truckType || null,
+    plateNumber: row.truck?.plateNumber || null,
     pickup: row.pickup,
     destination: row.destination,
     fromRegion: row.fromRegion,
@@ -61,7 +128,7 @@ const sharedTripInclude = {
   _count: { select: { bookings: true } },
 };
 
-/** Create shipment + full invoice when a customer books (pay once before pickup). */
+/** Create shipment. Final fare + invoice are set at Delivered from GPS km. */
 async function createBookingTripAndPayment(tx, { request, sharedTrip, bookingId = null }) {
   if (!request) return null;
 
@@ -71,11 +138,6 @@ async function createBookingTripAndPayment(tx, { request, sharedTrip, bookingId 
       : request.quotedPrice != null
         ? Number(request.quotedPrice)
         : 0;
-  if (!(fare > 0)) {
-    const error = new Error(`Booking ${request.id} has no fare for payment`);
-    error.status = 400;
-    throw error;
-  }
 
   let trip = await tx.trip.findFirst({ where: { cargoRequestId: request.id } });
   if (!trip) {
@@ -92,73 +154,58 @@ async function createBookingTripAndPayment(tx, { request, sharedTrip, bookingId 
         distance: request.distanceKm != null ? `${request.distanceKm} km` : null,
         estimatedTime: request.quotedEstimatedTime,
         status: "Assigned",
-        fare,
+        fare: Number.isFinite(fare) && fare > 0 ? fare : 0,
       },
     });
   }
 
-  const existingPayment = await tx.payment.findFirst({
-    where: { tripId: trip.id },
-    orderBy: { createdAt: "desc" },
-  });
-  if (!existingPayment) {
-    await tx.payment.create({
-      data: {
-        tripId: trip.id,
-        customerId: request.customerId,
-        amount: fare,
-        amountPaid: 0,
-        status: "Pending",
-        method: "waafipay",
-        provider: "waafipay",
-        currency: process.env.WAAFI_CURRENCY || "SLSH",
-        referenceId: buildWaafiReferenceId(trip.id),
-        description: `Shared trip ${sharedTrip.id} / ${trip.id} — pay full amount once before pickup`,
-      },
+  // Invoice only when fare is known (Delivered / GPS).
+  if (fare > 0) {
+    const existingPayment = await tx.payment.findFirst({
+      where: { tripId: trip.id },
+      orderBy: { createdAt: "desc" },
     });
+    if (!existingPayment) {
+      await tx.payment.create({
+        data: {
+          tripId: trip.id,
+          customerId: request.customerId,
+          amount: fare,
+          amountPaid: 0,
+          status: "Pending",
+          method: "waafipay",
+          provider: "waafipay",
+          currency: process.env.WAAFI_CURRENCY || "SLSH",
+          referenceId: buildWaafiReferenceId(trip.id),
+          description: `Shared trip ${sharedTrip.id} / ${trip.id} — pay 100% after delivery`,
+        },
+      });
+    }
   }
 
   if (request.status !== "Assigned") {
     await tx.cargoRequest.update({
       where: { id: request.id },
-      data: { status: "Assigned", finalPrice: fare },
+      data: { status: "Assigned" },
     });
   }
 
   if (bookingId) {
     await tx.sharedTripBooking.update({
       where: { id: bookingId },
-      data: { status: "Awaiting deposit" },
+      data: { status: "Confirmed" },
     });
   }
 
   return trip;
 }
 
-async function listUnpaidBookingIds(bookings = []) {
-  const unpaid = [];
-  for (const booking of bookings) {
-    const trip = booking.cargoRequest?.trips?.[0];
-    const payment = trip?.payments?.[0];
-    const fare = Number(payment?.amount ?? trip?.fare ?? booking.cargoRequest?.finalPrice ?? 0);
-    if (
-      !hasStartPaymentPaid({
-        amount: fare,
-        amountPaid: payment?.amountPaid ?? 0,
-        fullPaymentOnce: true,
-      })
-    ) {
-      unpaid.push(booking.cargoRequestId || booking.id);
-    }
-  }
-  return unpaid;
-}
-
 export const sharedTripRepository = {
   async sharedTripsSummary({ driverId } = {}) {
     const where = driverId ? { driverId } : {};
-    const [total, open, full, pickup, inTransit, delivered] = await Promise.all([
+    const [total, assigned, open, full, pickup, inTransit, delivered] = await Promise.all([
       prisma.sharedTrip.count({ where }),
+      prisma.sharedTrip.count({ where: { ...where, status: "Assigned" } }),
       prisma.sharedTrip.count({ where: { ...where, status: "Open for booking" } }),
       prisma.sharedTrip.count({ where: { ...where, status: "Full" } }),
       prisma.sharedTrip.count({
@@ -171,6 +218,7 @@ export const sharedTripRepository = {
     ]);
     return {
       total,
+      assigned,
       open,
       full,
       pickup,
@@ -212,10 +260,14 @@ export const sharedTripRepository = {
       }),
       prisma.sharedTrip.count({ where }),
     ]);
-    return { data: data.map(mapSharedTrip), total, page: Number(page) };
+    return {
+      data: data.map((row) => mapSharedTrip(row, { includeDriverPhone: !publicOnly })),
+      total,
+      page: Number(page),
+    };
   },
 
-  async getSharedTripById(id) {
+  async getSharedTripById(id, { includeDriverPhone = false, includeCustomerPhone = false } = {}) {
     const row = await prisma.sharedTrip.findUnique({
       where: { id },
       include: {
@@ -223,22 +275,31 @@ export const sharedTripRepository = {
         bookings: {
           include: {
             customer: { select: { id: true, name: true, phone: true } },
-            cargoRequest: { include: cargoRequestInclude },
+            cargoRequest: {
+              include: {
+                ...cargoRequestInclude,
+                trips: { select: { id: true, status: true, lastLat: true, lastLng: true, distanceTraveledKm: true } },
+              },
+            },
           },
         },
       },
     });
     if (!row) return null;
     return {
-      ...mapSharedTrip(row),
+      ...mapSharedTrip(row, { includeDriverPhone }),
       bookings: (row.bookings || []).map((b) => ({
         id: b.id,
         customerId: b.customerId,
         customer: b.customer?.name || null,
-        customerPhone: b.customer?.phone || null,
+        customerPhone: includeCustomerPhone ? b.customer?.phone || null : null,
         weightTons: Number(b.weightTons),
         status: b.status,
+        pickupOrder: b.pickupOrder ?? null,
+        deliveryOrder: b.deliveryOrder ?? null,
         cargoRequestId: b.cargoRequestId,
+        tripId: b.cargoRequest?.trips?.[0]?.id || null,
+        tripStatus: b.cargoRequest?.trips?.[0]?.status || null,
         cargoRequest: b.cargoRequest ? mapCargoRequest(b.cargoRequest) : null,
         createdAt: b.createdAt,
       })),
@@ -434,6 +495,11 @@ export const sharedTripRepository = {
       error.status = 404;
       throw error;
     }
+    if (row.status === "Assigned") {
+      const error = new Error("Use Reject to decline this assignment");
+      error.status = 400;
+      throw error;
+    }
     if ([...TERMINAL_SHARED_STATUSES, "Pickup", "In Transit", "Departed"].includes(row.status)) {
       const error = new Error(`Cannot cancel a trip that is ${row.status}`);
       error.status = 400;
@@ -448,18 +514,183 @@ export const sharedTripRepository = {
   },
 
   /**
-   * Driver starts pickup only after every customer paid the full shared fare once.
-   * Legacy bookings without invoices get invoices created, but pickup still waits for payment.
+   * Driver accepts the whole shared assignment (one action for all loads on the same corridor).
    */
-  async startSharedTripPickup(id, driverId) {
+  async acceptSharedTrip(id, driverId) {
     return withTransaction(async (tx) => {
       const row = await tx.sharedTrip.findUnique({
         where: { id },
         include: {
           bookings: {
             include: {
+              cargoRequest: { include: { trips: true } },
+            },
+          },
+        },
+      });
+      if (!row || row.driverId !== driverId) {
+        const error = new Error("Shared trip not found");
+        error.status = 404;
+        throw error;
+      }
+      if (row.status !== "Assigned") {
+        const error = new Error("Only Assigned shared trips can be accepted");
+        error.status = 400;
+        throw error;
+      }
+      if (!row.bookings?.length) {
+        const error = new Error("No loads on this shared trip");
+        error.status = 400;
+        throw error;
+      }
+
+      const availableTons = Number(row.availableTons) || 0;
+      const nextStatus = availableTons <= 0.001 ? "Full" : "Open for booking";
+
+      for (const booking of row.bookings) {
+        const childTrip = booking.cargoRequest?.trips?.[0];
+        if (childTrip && ["Assigned", "ASSIGNED"].includes(String(childTrip.status))) {
+          await tx.trip.update({
+            where: { id: childTrip.id },
+            data: { status: "En_Route_to_Pickup" },
+          });
+        }
+      }
+
+      const updated = await tx.sharedTrip.update({
+        where: { id },
+        data: { status: nextStatus },
+        include: sharedTripInclude,
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: driverId,
+          type: "shared.accepted",
+          message: `${id} accepted — ${row.bookings.length} load(s) on one route. Gather cargo, then start pickup.`,
+        },
+      });
+
+      return mapSharedTrip(updated);
+    });
+  },
+
+  /**
+   * Driver rejects the whole shared assignment — all loads return to Pending for admin reassign.
+   */
+  async rejectSharedTrip(id, driverId) {
+    return withTransaction(async (tx) => {
+      const row = await tx.sharedTrip.findUnique({
+        where: { id },
+        include: {
+          driver: { select: { id: true, name: true } },
+          truck: { select: { id: true, truckNumber: true, plateNumber: true } },
+          bookings: {
+            include: {
+              cargoRequest: { include: { trips: true } },
+            },
+          },
+        },
+      });
+      if (!row || row.driverId !== driverId) {
+        const error = new Error("Shared trip not found");
+        error.status = 404;
+        throw error;
+      }
+      if (row.status !== "Assigned") {
+        const error = new Error("Only Assigned shared trips can be rejected");
+        error.status = 400;
+        throw error;
+      }
+
+      for (const booking of row.bookings) {
+        const childTrip = booking.cargoRequest?.trips?.[0];
+        if (childTrip && childTrip.status !== "Delivered" && childTrip.status !== "Cancelled") {
+          await tx.trip.update({
+            where: { id: childTrip.id },
+            data: { status: "Cancelled" },
+          });
+        }
+        if (booking.cargoRequestId) {
+          await tx.cargoRequest.update({
+            where: { id: booking.cargoRequestId },
+            data: {
+              status: "Pending",
+              driverId: null,
+              truckId: null,
+              assignedByAdminId: null,
+              assignedAt: null,
+              dispatcherId: null,
+            },
+          });
+        }
+        await tx.sharedTripBooking.delete({ where: { id: booking.id } });
+      }
+
+      if (row.truckId) {
+        await tx.truck.update({
+          where: { id: row.truckId },
+          data: { status: "Available" },
+        });
+      }
+
+      const updated = await tx.sharedTrip.update({
+        where: { id },
+        data: { status: "Cancelled" },
+        include: sharedTripInclude,
+      });
+
+      const driverName = row.driver?.name || "Darawal";
+      const truckLabel =
+        row.truck?.truckNumber ||
+        row.truck?.plateNumber ||
+        row.truckId ||
+        "—";
+      const adminUsers = await tx.user.findMany({
+        where: { role: "admin" },
+        select: { id: true },
+        take: 20,
+      });
+      for (const admin of adminUsers) {
+        await tx.notification.create({
+          data: {
+            userId: admin.id,
+            type: "shared.rejected",
+            message: formatNotifyLines("Darawalku wuu diiday shared loads", {
+              tripId: id,
+              status: "Cancelled",
+              driverName,
+              pickup: row.pickup,
+              destination: row.destination,
+              fromRegion: row.fromRegion,
+              fromDistrict: row.fromDistrict,
+              toRegion: row.toRegion,
+              toDistrict: row.toDistrict,
+              body: `Darawal ${driverName} (gaari ${truckLabel}) ayaa diiday — ${row.bookings.length} xamuul ayaa dib ugu noqday Pending.`,
+            }),
+          },
+        });
+      }
+
+      return mapSharedTrip(updated);
+    });
+  },
+
+  /**
+   * Driver starts pickup and must enter weight for each assigned load (sent as kg).
+   * Payload: { weightsByBookingId: { [bookingId]: kgNumber } }
+   */
+  async startSharedTripPickup(id, driverId, { weightsByBookingId = {} } = {}) {
+    return withTransaction(async (tx) => {
+      const row = await tx.sharedTrip.findUnique({
+        where: { id },
+        include: {
+          driver: { select: { id: true, name: true } },
+          bookings: {
+            include: {
               cargoRequest: {
                 include: {
+                  customer: { select: { id: true, name: true } },
                   trips: { include: { payments: true } },
                 },
               },
@@ -483,44 +714,60 @@ export const sharedTripRepository = {
         throw error;
       }
 
+      const weightMap = weightsByBookingId && typeof weightsByBookingId === "object" ? weightsByBookingId : {};
       for (const booking of row.bookings) {
-        await createBookingTripAndPayment(tx, {
-          request: booking.cargoRequest,
+        const kg = Number(weightMap[booking.id]);
+        if (!(kg > 0)) {
+          const error = new Error(
+            `Enter pickup weight for load ${booking.cargoRequestId || booking.id}`
+          );
+          error.status = 400;
+          throw error;
+        }
+      }
+
+      for (const booking of row.bookings) {
+        const kg = Number(weightMap[booking.id]);
+        const weightLabel = `${kg} kg`;
+        const tons = Math.round((kg / 1000) * 1000) / 1000;
+        const request = booking.cargoRequest;
+        // Weight only at pickup — final price is set at Delivered from GPS km.
+        const updatedRequest = await tx.cargoRequest.update({
+          where: { id: request.id },
+          data: {
+            weight: weightLabel,
+            status: "Assigned",
+          },
+          include: cargoRequestInclude,
+        });
+
+        await tx.sharedTripBooking.update({
+          where: { id: booking.id },
+          data: { weightTons: tons, status: "Confirmed" },
+        });
+
+        const shipment = await createBookingTripAndPayment(tx, {
+          request: updatedRequest,
           sharedTrip: row,
           bookingId: booking.id,
         });
-      }
 
-      // Re-load payments after ensuring invoices exist
-      const fresh = await tx.sharedTrip.findUnique({
-        where: { id },
-        include: {
-          bookings: {
-            include: {
-              cargoRequest: {
-                include: {
-                  trips: { include: { payments: true } },
-                },
-              },
-            },
-          },
-        },
-      });
-
-      const unpaid = await listUnpaidBookingIds(fresh?.bookings || []);
-      if (unpaid.length) {
-        const error = new Error(
-          `Lacagta oo dhan waa in la bixiyaa ka hor pickup. Waiting on: ${unpaid.join(", ")}`
-        );
-        error.status = 400;
-        throw error;
-      }
-
-      for (const booking of fresh.bookings || []) {
-        const childTrip = booking.cargoRequest?.trips?.[0];
-        if (childTrip && childTrip.status === "Assigned") {
-          await tx.trip.update({ where: { id: childTrip.id }, data: { status: "Accepted" } });
+        if (shipment?.id) {
+          await tx.trip.update({
+            where: { id: shipment.id },
+            data: { status: "En_Route_to_Pickup" },
+          });
         }
+      }
+
+      const totalBookedTons = row.bookings.reduce((sum, booking) => {
+        const kg = Number(weightMap[booking.id]);
+        return sum + kg / 1000;
+      }, 0);
+      const capacity = Number(row.totalCapacityTons) || 0;
+      const availableTons = Math.max(0, Math.round((capacity - totalBookedTons) * 100) / 100);
+
+      for (const booking of row.bookings) {
         await tx.sharedTripBooking.update({
           where: { id: booking.id },
           data: { status: "Pickup" },
@@ -530,7 +777,24 @@ export const sharedTripRepository = {
             data: {
               userId: booking.cargoRequest.customerId,
               type: "shared.pickup",
-              message: `Driver started pickup for shared trip ${id}.`,
+              message: formatCustomerNotifyLine(TRIP_NOTIFY.enRoutePickup, {
+                bookingId: booking.cargoRequestId,
+                tripId: id,
+                status: "En Route to Pickup",
+                customerName:
+                  booking.cargoRequest.customer?.name ||
+                  booking.cargoRequest.senderName ||
+                  booking.cargoRequest.receiverName ||
+                  null,
+                driverName: row.driver?.name || null,
+                pickup: booking.cargoRequest.pickup || row.pickup,
+                destination: booking.cargoRequest.destination || row.destination,
+                fromRegion: booking.cargoRequest.fromRegion || row.fromRegion,
+                fromDistrict: booking.cargoRequest.fromDistrict || row.fromDistrict,
+                toRegion: booking.cargoRequest.toRegion || row.toRegion,
+                toDistrict: booking.cargoRequest.toDistrict || row.toDistrict,
+                extra: "Culeyska / cabbirka waa la diiwaangeliyay.",
+              }),
             },
           });
         }
@@ -542,7 +806,10 @@ export const sharedTripRepository = {
 
       const updated = await tx.sharedTrip.update({
         where: { id },
-        data: { status: "Pickup" },
+        data: {
+          status: "Pickup",
+          availableTons,
+        },
         include: sharedTripInclude,
       });
       return mapSharedTrip(updated);
@@ -668,7 +935,12 @@ export const sharedTripRepository = {
     return withTransaction(async (tx) => {
       const trip = await tx.sharedTrip.findUnique({
         where: { id: sharedTripId },
-        include: { driver: { include: { truck: true } } },
+        include: {
+          driver: { select: { id: true, name: true } },
+          truck: {
+            select: { id: true, truckType: true, plateNumber: true, truckNumber: true },
+          },
+        },
       });
       if (!trip || trip.status !== "Open for booking") {
         const error = new Error("Shared trip is not open for booking");
@@ -687,6 +959,23 @@ export const sharedTripRepository = {
         throw error;
       }
 
+      const bookingCorridor = sharedCorridorKey({
+        fromRegion: locationFields.fromRegion || trip.fromRegion,
+        fromDistrict: locationFields.fromDistrict || trip.fromDistrict,
+        toRegion: locationFields.toRegion || trip.toRegion,
+        toDistrict: locationFields.toDistrict || trip.toDistrict,
+        pickup: locationFields.pickup || trip.pickup,
+        destination: locationFields.destination || trip.destination,
+      });
+      const tripCorridor = sharedCorridorKey(trip);
+      if (tripCorridor && bookingCorridor && bookingCorridor !== tripCorridor) {
+        const error = new Error(
+          "This load is on a different corridor. Shared bookings must match the trip gobol + magalo (pickup and delivery)."
+        );
+        error.status = 400;
+        throw error;
+      }
+
       const pricePerTon = trip.pricePerTon != null ? Number(trip.pricePerTon) : null;
       if (pricePerTon == null || !Number.isFinite(pricePerTon) || pricePerTon <= 0) {
         const error = new Error("This shared trip has no price per ton set by the driver");
@@ -694,12 +983,6 @@ export const sharedTripRepository = {
         throw error;
       }
       const sharedPrice = pricePerTon * tons;
-      const distanceKm = estimateDistanceKm(trip.pickup, trip.destination, {
-        fromRegion: trip.fromRegion,
-        fromDistrict: trip.fromDistrict,
-        toRegion: trip.toRegion,
-        toDistrict: trip.toDistrict,
-      });
 
       const requestId = `REQ-${Math.floor(9000 + Math.random() * 1000)}`;
       const request = await tx.cargoRequest.create({
@@ -711,7 +994,7 @@ export const sharedTripRepository = {
           loadType: "SHARED",
           pickup: locationFields.pickup || trip.pickup,
           destination: locationFields.destination || trip.destination,
-          truckType: trip.driver.truck?.truckType || "Shared",
+          truckType: trip.truck?.truckType || "Shared",
           weight: `${tons} tons`,
           description: description || `Shared load booking on ${sharedTripId}`,
           customerRole: customerRole || null,
@@ -725,8 +1008,6 @@ export const sharedTripRepository = {
           toRegion: locationFields.toRegion || trip.toRegion,
           toDistrict: locationFields.toDistrict || trip.toDistrict,
           toNeighborhood: locationFields.toNeighborhood || null,
-          distanceKm,
-          quotedEstimatedTime: estimateEtaLabel(distanceKm),
           finalPrice: sharedPrice,
           quotedPrice: sharedPrice,
           status: "Assigned",
@@ -740,7 +1021,7 @@ export const sharedTripRepository = {
           customerId,
           cargoRequestId: requestId,
           weightTons: tons,
-          status: "Awaiting deposit",
+          status: "Confirmed",
         },
       });
 
@@ -763,25 +1044,595 @@ export const sharedTripRepository = {
         data: {
           userId: trip.driverId,
           type: "shared.booking",
-          message: `${customerName || "Customer"} booked ${tons}t on ${sharedTripId}`,
+          message: formatNotifyLines("Shared booking cusub", {
+            bookingId: requestId,
+            tripId: shipment?.id,
+            customerName: customerName || null,
+            driverName: trip.driver?.name || null,
+            truckType: trip.truck?.truckType || null,
+            plateNumber: trip.truck?.plateNumber || null,
+            truckNumber: trip.truck?.truckNumber || null,
+            pickup: request.pickup || trip.pickup,
+            destination: request.destination || trip.destination,
+            fromRegion: request.fromRegion || trip.fromRegion,
+            fromDistrict: request.fromDistrict || trip.fromDistrict,
+            toRegion: request.toRegion || trip.toRegion,
+            toDistrict: request.toDistrict || trip.toDistrict,
+            body: `${tons}t ayaa lagu buuxiyay ${sharedTripId}.`,
+          }),
         },
       });
 
       await tx.notification.create({
         data: {
           userId: customerId,
-          type: "shared.deposit_due",
-          message: `Pay the full fare for ${shipment?.id || requestId} once before the driver can start pickup.`,
+          type: "shared.assigned",
+          message: formatCustomerNotifyLine(TRIP_NOTIFY.assigned, {
+            bookingId: requestId,
+            tripId: shipment?.id,
+            status: "Assigned",
+            customerName: customerName || null,
+            driverName: trip.driver?.name || null,
+            truckType: trip.truck?.truckType || null,
+            plateNumber: trip.truck?.plateNumber || null,
+            truckNumber: trip.truck?.truckNumber || null,
+            pickup: request.pickup || trip.pickup,
+            destination: request.destination || trip.destination,
+            fromRegion: request.fromRegion || trip.fromRegion,
+            fromDistrict: request.fromDistrict || trip.fromDistrict,
+            toRegion: request.toRegion || trip.toRegion,
+            toDistrict: request.toDistrict || trip.toDistrict,
+            extra: "Lacagta 100% waxaa la bixiyaa Delivered ka dib.",
+          }),
         },
       });
 
       return {
         ...mapCargoRequest(request),
         tripId: shipment?.id || null,
-        depositRequired: true,
-        depositPercent: 100,
-        fullPaymentOnce: true,
+        depositRequired: false,
+        depositPercent: 0,
+        fullPaymentOnce: false,
+        payAfterDelivery: true,
       };
+    });
+  },
+
+  /**
+   * Admin: pool existing SHARED cargo requests onto one SHARED truck.
+   * Creates one SharedTrip + bookings so the driver can gather → pickup → deliver.
+   */
+  async assignSharedLoadsToTruck({
+    cargoRequestIds = [],
+    truckId,
+    driverId,
+    dispatcherId,
+    fare,
+    estimatedTime,
+  } = {}) {
+    const ids = [...new Set((cargoRequestIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+    if (!ids.length) {
+      const error = new Error("Select at least one shared cargo request");
+      error.status = 400;
+      throw error;
+    }
+    if (ids.length < 2) {
+      const error = new Error("Shared pool needs at least 2 loads on the same corridor");
+      error.status = 400;
+      throw error;
+    }
+    if (!truckId || !driverId) {
+      const error = new Error("truckId and driverId are required");
+      error.status = 400;
+      throw error;
+    }
+
+    return withTransaction(async (tx) => {
+      const truck = await tx.truck.findFirst({
+        where: { id: truckId, driverId },
+        include: {
+          driver: {
+            select: { id: true, role: true, status: true, serviceType: true, name: true },
+          },
+        },
+      });
+      if (!truck?.driver || truck.driver.role !== "driver") {
+        const error = new Error("Truck must belong to the selected driver");
+        error.status = 400;
+        throw error;
+      }
+      if (truck.driver.serviceType !== "SHARED") {
+        const error = new Error("Assign shared loads only to a SHARED driver/truck");
+        error.status = 400;
+        throw error;
+      }
+      if (truck.driver.status !== "Active") {
+        const error = new Error("This driver is not available (inactive)");
+        error.status = 400;
+        throw error;
+      }
+      if (String(truck.status) !== "Available") {
+        const error = new Error(
+          `This truck is ${String(truck.status).replaceAll("_", " ")}. Choose an available SHARED truck.`
+        );
+        error.status = 400;
+        throw error;
+      }
+
+      const capacityTons = resolveTruckCapacityTons(truck);
+      if (!(capacityTons > 0)) {
+        const error = new Error("Selected truck has no registered capacity (tons)");
+        error.status = 400;
+        throw error;
+      }
+
+      const activeShared = await tx.sharedTrip.count({
+        where: {
+          driverId,
+          status: { in: ACTIVE_SHARED_STATUSES },
+        },
+      });
+      if (activeShared > 0) {
+        const error = new Error("This SHARED driver already has an active shared trip");
+        error.status = 400;
+        throw error;
+      }
+
+      const requests = await tx.cargoRequest.findMany({
+        where: { id: { in: ids } },
+        include: { customer: { select: { id: true, name: true } } },
+      });
+      if (requests.length !== ids.length) {
+        const error = new Error("One or more cargo requests were not found");
+        error.status = 404;
+        throw error;
+      }
+
+      const assignableStatuses = new Set([
+        "Pending",
+        "Awaiting Approval",
+        "Quote Rejected",
+        "Approved",
+      ]);
+      for (const request of requests) {
+        if (request.loadType !== "SHARED") {
+          const error = new Error(`Request ${request.id} is not a SHARED load`);
+          error.status = 400;
+          throw error;
+        }
+        if (request.driverId || request.truckId) {
+          const error = new Error(`Request ${request.id} is already assigned`);
+          error.status = 400;
+          throw error;
+        }
+        const statusApi = reqStatusToApi(request.status);
+        if (!assignableStatuses.has(statusApi)) {
+          const error = new Error(`Request ${request.id} cannot be assigned (status ${statusApi})`);
+          error.status = 400;
+          throw error;
+        }
+      }
+
+      assertSharedLoadsSameCorridor(requests);
+
+      const requestTons = [];
+      for (const request of requests) {
+        // Weight TBD until pickup; price TBD until Delivered (GPS km).
+        requestTons.push({
+          request,
+          tons: 0,
+          fare: null,
+          weightLabel: "TBD",
+        });
+      }
+      const totalTons = requestTons.reduce((sum, row) => sum + row.tons, 0);
+      if (totalTons > capacityTons + 0.001) {
+        const error = new Error(
+          `Selected loads are ${totalTons.toFixed(2)}t but truck capacity is ${capacityTons}t`
+        );
+        error.status = 400;
+        throw error;
+      }
+
+      const primary = requests[0];
+      const departureDate = parseDepartureDate(new Date().toISOString().slice(0, 10));
+      const sharedTripId = `ST-${Date.now().toString(36).toUpperCase()}`;
+      const sharedTrip = await tx.sharedTrip.create({
+        data: {
+          id: sharedTripId,
+          driverId,
+          truckId: truck.id,
+          pickup: primary.pickup,
+          destination: primary.destination,
+          fromRegion: primary.fromRegion || null,
+          fromDistrict: primary.fromDistrict || null,
+          toRegion: primary.toRegion || null,
+          toDistrict: primary.toDistrict || null,
+          departureDate,
+          durationAmount: 1,
+          durationUnit: "days",
+          totalCapacityTons: capacityTons,
+          availableTons: capacityTons,
+          pricePerTon: null,
+          notes: `Admin pool assign (${ids.length} loads)`,
+          status: "Assigned",
+        },
+      });
+
+      let availableTons = capacityTons;
+      const booked = [];
+
+      for (let stopIndex = 0; stopIndex < requestTons.length; stopIndex += 1) {
+        const { request, tons, weightLabel } = requestTons[stopIndex];
+        const stopNum = stopIndex + 1;
+        const tripEta =
+          (estimatedTime != null && String(estimatedTime).trim()) ||
+          request.quotedEstimatedTime ||
+          null;
+
+        const updatedRequest = await tx.cargoRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "Assigned",
+            driverId,
+            truckId: truck.id,
+            dispatcherId: dispatcherId || null,
+            assignedByAdminId: dispatcherId || null,
+            assignedAt: new Date(),
+            weight: weightLabel || request.weight,
+            ...(tripEta ? { quotedEstimatedTime: tripEta } : {}),
+          },
+          include: cargoRequestInclude,
+        });
+
+        const booking = await tx.sharedTripBooking.create({
+          data: {
+            sharedTripId: sharedTrip.id,
+            customerId: request.customerId,
+            cargoRequestId: request.id,
+            weightTons: tons,
+            status: "Confirmed",
+            pickupOrder: stopNum,
+            deliveryOrder: stopNum,
+          },
+        });
+
+        let shipment = await createBookingTripAndPayment(tx, {
+          request: updatedRequest,
+          sharedTrip: { ...sharedTrip, driverId, truckId: truck.id },
+          bookingId: booking.id,
+        });
+
+        if (shipment?.id && dispatcherId) {
+          await tx.trip.update({
+            where: { id: shipment.id },
+            data: {
+              dispatcherId,
+              ...(tripEta ? { estimatedTime: tripEta } : {}),
+            },
+          }).catch(() => null);
+        }
+
+        availableTons = Math.max(0, Math.round((availableTons - tons) * 100) / 100);
+
+        await tx.notification.create({
+          data: {
+            userId: request.customerId,
+            type: "booking.assigned",
+            message: formatCustomerNotifyLine(TRIP_NOTIFY.assigned, {
+              bookingId: request.id,
+              tripId: shipment?.id,
+              status: "Assigned",
+              customerName:
+                request.customer?.name ||
+                request.senderName ||
+                request.receiverName ||
+                null,
+              driverName: truck.driver?.name || null,
+              truckType: truck.truckType || null,
+              plateNumber: truck.plateNumber || null,
+              truckNumber: truck.truckNumber || null,
+              pickup: request.pickup || sharedTrip.pickup,
+              destination: request.destination || sharedTrip.destination,
+              fromRegion: request.fromRegion || sharedTrip.fromRegion,
+              fromDistrict: request.fromDistrict || sharedTrip.fromDistrict,
+              toRegion: request.toRegion || sharedTrip.toRegion,
+              toDistrict: request.toDistrict || sharedTrip.toDistrict,
+            }),
+          },
+        });
+
+        booked.push({
+          cargoRequestId: request.id,
+          bookingId: booking.id,
+          tripId: shipment?.id || null,
+          tons,
+          fare: null,
+        });
+      }
+
+      // Wait for one driver Accept/Reject for the whole pool (same corridor).
+      const updatedShared = await tx.sharedTrip.update({
+        where: { id: sharedTrip.id },
+        data: {
+          availableTons,
+          status: "Assigned",
+        },
+        include: sharedTripInclude,
+      });
+
+      await tx.truck.update({
+        where: { id: truck.id },
+        data: { status: "Busy" },
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: driverId,
+          type: "shared.assigned",
+          message: formatNotifyLines("Shared loads — Accept ama Reject", {
+            tripId: sharedTripId,
+            status: "Assigned",
+            driverName: truck.driver?.name || null,
+            pickup: sharedTrip.pickup,
+            destination: sharedTrip.destination,
+            fromRegion: sharedTrip.fromRegion,
+            fromDistrict: sharedTrip.fromDistrict,
+            toRegion: sharedTrip.toRegion,
+            toDistrict: sharedTrip.toDistrict,
+            body: `${booked.length} xamuul oo jid isku mid ah — aqbal ama diid shaqada oo dhan.`,
+          }),
+        },
+      });
+
+      if (dispatcherId) {
+        await tx.auditLog.create({
+          data: auditFields({
+            userId: dispatcherId,
+            action: "shared.pool.assigned",
+            entityType: "shared_trips",
+            entityId: sharedTripId,
+            description: `Admin assigned ${booked.length} SHARED request(s) to ${sharedTripId}`,
+            newValues: {
+              truckId: truck.id,
+              driverId,
+              cargoRequestIds: ids,
+              totalTons,
+              capacityTons,
+            },
+          }),
+        });
+      }
+
+      return {
+        sharedTrip: mapSharedTrip(updatedShared, { includeDriverPhone: true }),
+        bookings: booked,
+        totalTons,
+        capacityTons,
+      };
+    });
+  },
+
+  /** Driver reorders pickup / delivery stop sequence. */
+  async reorderSharedTripStops(id, driverId, { pickupOrder = [], deliveryOrder = [] } = {}) {
+    const row = await prisma.sharedTrip.findUnique({
+      where: { id },
+      include: { bookings: true },
+    });
+    if (!row || row.driverId !== driverId) {
+      const error = new Error("Shared trip not found");
+      error.status = 404;
+      throw error;
+    }
+    if (["Delivered", "Completed", "Cancelled"].includes(row.status)) {
+      const error = new Error("Cannot reorder stops on a finished trip");
+      error.status = 400;
+      throw error;
+    }
+    const bookingIds = new Set(row.bookings.map((b) => b.id));
+    for (const list of [pickupOrder, deliveryOrder]) {
+      for (const bid of list) {
+        if (!bookingIds.has(String(bid))) {
+          const error = new Error("Invalid booking in stop order");
+          error.status = 400;
+          throw error;
+        }
+      }
+    }
+
+    await withTransaction(async (tx) => {
+      for (let i = 0; i < pickupOrder.length; i += 1) {
+        await tx.sharedTripBooking.update({
+          where: { id: pickupOrder[i] },
+          data: { pickupOrder: i + 1 },
+        });
+      }
+      for (let i = 0; i < deliveryOrder.length; i += 1) {
+        await tx.sharedTripBooking.update({
+          where: { id: deliveryOrder[i] },
+          data: { deliveryOrder: i + 1 },
+        });
+      }
+    });
+
+    return this.getSharedTripById(id, { includeDriverPhone: true });
+  },
+
+  /** Mark one shared load as Delivered (per customer). Completes trip when all loads delivered. */
+  async markSharedBookingDelivered(sharedTripId, bookingId, driverId) {
+    return withTransaction(async (tx) => {
+      const row = await tx.sharedTrip.findUnique({
+        where: { id: sharedTripId },
+        include: {
+          driver: { select: { id: true, name: true } },
+          bookings: {
+            include: {
+              cargoRequest: {
+                include: {
+                  customer: { select: { id: true, name: true } },
+                  trips: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!row || row.driverId !== driverId) {
+        const error = new Error("Shared trip not found");
+        error.status = 404;
+        throw error;
+      }
+      if (!["In Transit", "Departed", "Pickup"].includes(row.status)) {
+        const error = new Error("Trip must be In Transit before delivering loads");
+        error.status = 400;
+        throw error;
+      }
+
+      const booking = row.bookings.find((b) => b.id === bookingId);
+      if (!booking) {
+        const error = new Error("Booking not found on this shared trip");
+        error.status = 404;
+        throw error;
+      }
+      if (booking.status === "Delivered") {
+        const error = new Error("This load is already delivered");
+        error.status = 400;
+        throw error;
+      }
+
+      const childTrip = booking.cargoRequest?.trips?.[0];
+      if (childTrip && childTrip.status !== "Delivered") {
+        let finalFare = Number(childTrip.fare || 0);
+        const traveledKm = Number(childTrip.distanceTraveledKm || 0);
+        const cargo = booking.cargoRequest;
+        if (cargo) {
+          const gpsFare = await fareFromTraveledKm(
+            cargo.weight || "1 kg",
+            cargo.loadType || "SHARED",
+            traveledKm
+          );
+          if (gpsFare != null) {
+            finalFare = gpsFare;
+            const kmLabel = `${Math.round(traveledKm * 10) / 10} km (GPS)`;
+            await tx.trip.update({
+              where: { id: childTrip.id },
+              data: {
+                status: "Delivered",
+                fare: finalFare,
+                distance: kmLabel,
+                distanceTraveledKm: Math.round(traveledKm * 100) / 100,
+              },
+            });
+            await tx.cargoRequest.update({
+              where: { id: cargo.id },
+              data: {
+                status: "Delivered",
+                finalPrice: finalFare,
+                quotedPrice: finalFare,
+                calculatedPrice: finalFare,
+                distanceKm: Math.round(traveledKm * 100) / 100,
+              },
+            });
+          } else {
+            await tx.trip.update({
+              where: { id: childTrip.id },
+              data: { status: "Delivered" },
+            });
+            await tx.cargoRequest.update({
+              where: { id: cargo.id },
+              data: { status: "Delivered" },
+            });
+          }
+        } else {
+          await tx.trip.update({
+            where: { id: childTrip.id },
+            data: { status: "Delivered" },
+          });
+        }
+
+        if (finalFare > 0 && booking.cargoRequest?.customerId) {
+          const existingPayment = await tx.payment.findFirst({
+            where: { tripId: childTrip.id },
+            orderBy: { createdAt: "desc" },
+          });
+          if (!existingPayment) {
+            await tx.payment.create({
+              data: {
+                tripId: childTrip.id,
+                customerId: booking.cargoRequest.customerId,
+                amount: finalFare,
+                amountPaid: 0,
+                status: "Pending",
+                method: "waafipay",
+                provider: "waafipay",
+                currency: process.env.WAAFI_CURRENCY || "SLSH",
+                referenceId: buildWaafiReferenceId(childTrip.id),
+                description: `Shared trip ${sharedTripId} / ${childTrip.id} — pay 100% after delivery`,
+              },
+            });
+          } else if (Number(existingPayment.amountPaid || 0) <= 0) {
+            await tx.payment.update({
+              where: { id: existingPayment.id },
+              data: { amount: finalFare },
+            });
+          }
+        }
+      } else if (booking.cargoRequestId) {
+        await tx.cargoRequest.update({
+          where: { id: booking.cargoRequestId },
+          data: { status: "Delivered" },
+        });
+      }
+
+      await tx.sharedTripBooking.update({
+        where: { id: booking.id },
+        data: { status: "Delivered" },
+      });
+
+      if (booking.cargoRequest?.customerId) {
+        await tx.notification.create({
+          data: {
+            userId: booking.cargoRequest.customerId,
+            type: "trip.delivered",
+            message: formatCustomerNotifyLine(TRIP_NOTIFY.delivered, {
+              bookingId: booking.cargoRequestId,
+              tripId: childTrip?.id || sharedTripId,
+              status: "Delivered",
+              customerName:
+                booking.cargoRequest.customer?.name ||
+                booking.cargoRequest.senderName ||
+                booking.cargoRequest.receiverName ||
+                null,
+              driverName: row.driver?.name || null,
+              pickup: booking.cargoRequest.pickup || row.pickup,
+              destination: booking.cargoRequest.destination || row.destination,
+              fromRegion: booking.cargoRequest.fromRegion || row.fromRegion,
+              fromDistrict: booking.cargoRequest.fromDistrict || row.fromDistrict,
+              toRegion: booking.cargoRequest.toRegion || row.toRegion,
+              toDistrict: booking.cargoRequest.toDistrict || row.toDistrict,
+            }),
+          },
+        });
+      }
+
+      const pending = row.bookings.filter(
+        (b) => b.id !== booking.id && b.status !== "Delivered"
+      );
+      if (!pending.length) {
+        if (row.truckId) {
+          await tx.truck.update({ where: { id: row.truckId }, data: { status: "Available" } });
+        }
+        await tx.sharedTrip.update({
+          where: { id: sharedTripId },
+          data: { status: "Delivered" },
+        });
+      }
+
+      const updated = await tx.sharedTrip.findUnique({
+        where: { id: sharedTripId },
+        include: sharedTripInclude,
+      });
+      return mapSharedTrip(updated);
     });
   },
 };

@@ -4,14 +4,15 @@ import { api } from "../services/api";
 import { useTrips } from "./useApi";
 import { LIVE_TRACKING_STATUSES } from "../utils/helpers";
 
-const SEND_INTERVAL_MS = 5_000;
+const SEND_INTERVAL_MS = 10_000;
 
+/** Stream driver GPS (lat/lng/speed/heading) while a trip is active. */
 export function useDriverGpsTracking() {
   const { user } = useAuth();
   const isDriver = user?.role === "driver";
   const { data } = useTrips(
     { limit: 50 },
-    { enabled: isDriver, refetchInterval: isDriver ? 30_000 : false, refetchIntervalInBackground: false }
+    { enabled: isDriver, refetchInterval: isDriver ? 30_000 : false, refetchIntervalInBackground: true }
   );
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
@@ -46,16 +47,27 @@ export function useDriverGpsTracking() {
     setActive(true);
     setError("");
 
-    async function sendLocation(lat, lng, force = false) {
+    async function sendLocation(coords, force = false) {
       const tripId = tripIdRef.current;
-      if (!tripId) return;
+      if (!tripId || !coords) return;
 
       const now = Date.now();
       if (!force && now - lastSendRef.current < SEND_INTERVAL_MS) return;
 
       lastSendRef.current = now;
+      const speedMs = Number(coords.speed);
+      const speedKmh =
+        Number.isFinite(speedMs) && speedMs >= 0 ? Math.round(speedMs * 3.6 * 10) / 10 : null;
+      const heading = Number(coords.heading);
       try {
-        await api.updateTripLocation(tripId, { lat, lng });
+        await api.updateTripLocation(tripId, {
+          lat: coords.latitude,
+          lng: coords.longitude,
+          ...(Number.isFinite(coords.accuracy) ? { accuracy: coords.accuracy } : {}),
+          ...(speedKmh != null ? { speedKmh } : {}),
+          ...(Number.isFinite(heading) && heading >= 0 ? { heading } : {}),
+          timestamp: new Date().toISOString(),
+        });
         setLastSentAt(new Date());
         setError("");
       } catch (err) {
@@ -65,15 +77,13 @@ export function useDriverGpsTracking() {
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        positionRef.current = { lat, lng };
-        sendLocation(lat, lng);
+        positionRef.current = pos.coords;
+        sendLocation(pos.coords);
       },
       (geoError) => {
         setActive(false);
         if (geoError?.code === geoError.PERMISSION_DENIED) {
-          setError("Allow location access in the browser so live tracking can work.");
+          setError("Allow location access so live tracking and distance billing can work.");
         } else {
           setError("Waiting for GPS signal…");
         }
@@ -82,15 +92,16 @@ export function useDriverGpsTracking() {
     );
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, true),
+      (pos) => {
+        positionRef.current = pos.coords;
+        sendLocation(pos.coords, true);
+      },
       () => {},
       { enableHighAccuracy: true, timeout: 15_000 }
     );
 
     const timer = setInterval(() => {
-      if (positionRef.current) {
-        sendLocation(positionRef.current.lat, positionRef.current.lng, true);
-      }
+      if (positionRef.current) sendLocation(positionRef.current, true);
     }, SEND_INTERVAL_MS);
 
     return () => {
@@ -105,8 +116,9 @@ export function useDriverGpsTracking() {
 
   return {
     trackingTripId: trackingTrip?.id ?? null,
+    distanceTraveledKm: trackingTrip?.distanceTraveledKm ?? null,
     active,
     error,
-    lastSentAt
+    lastSentAt,
   };
 }

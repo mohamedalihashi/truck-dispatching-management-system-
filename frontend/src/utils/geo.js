@@ -1,4 +1,4 @@
-import { SOMALIA_CITIES, SOMALIA_CENTER } from "../constants/map";
+import { SOMALIA_BOUNDS, SOMALIA_CITIES, SOMALIA_CENTER } from "../constants/map";
 
 const CITY_LIST = Object.values(SOMALIA_CITIES);
 
@@ -11,13 +11,13 @@ const CITY_ALIASES = [
   { lat: 8.4021, lng: 48.4847, names: ["garowe", "garoowe"] }
 ];
 
-/** Random coordinates near a major Somali city (for demo / GPS fallback). */
-export function randomSomaliaCoords() {
-  const base = CITY_LIST[Math.floor(Math.random() * CITY_LIST.length)];
-  return {
-    lat: base.lat + (Math.random() - 0.5) * 0.12,
-    lng: base.lng + (Math.random() - 0.5) * 0.12
-  };
+export function isInSomalia(lat, lng) {
+  return (
+    lat >= SOMALIA_BOUNDS.south &&
+    lat <= SOMALIA_BOUNDS.north &&
+    lng >= SOMALIA_BOUNDS.west &&
+    lng <= SOMALIA_BOUNDS.east
+  );
 }
 
 export function matchSomaliaCity(text = "") {
@@ -52,12 +52,7 @@ export function resolveTripMapPosition(trip) {
     const lat = Number(trip.lastLocation.lat);
     const lng = Number(trip.lastLocation.lng);
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      const updatedAt = trip.lastLocation.updatedAt
-        ? new Date(trip.lastLocation.updatedAt).getTime()
-        : 0;
-      // Treat location as live GPS only when a recent driver update exists.
-      const live = Boolean(updatedAt) && Date.now() - updatedAt < 10 * 60 * 1000;
-      return { lat, lng, live };
+      return { lat, lng, live: true };
     }
   }
 
@@ -73,19 +68,25 @@ export function resolveTripMapPosition(trip) {
   };
 }
 
-/** Build map markers from trip list (includes trips without live GPS). */
+/** Build map markers from trips that have real GPS only. Trips without GPS are excluded. */
 export function tripsToMarkers(trips = []) {
-  return (trips || []).map((trip) => {
+  const markers = [];
+  for (const trip of trips || []) {
     const position = resolveTripMapPosition(trip);
-    return {
+    if (!position.live) continue; // skip trips without real GPS
+    markers.push({
       id: trip.id,
       lat: position.lat,
       lng: position.lng,
-      live: position.live,
-      label: trip.id,
-      subtitle: `${trip.pickup} → ${trip.destination}`,
+      live: true,
+      label: trip.truckNumber || trip.truck || trip.id,
+      subtitle: `${trip.pickup || trip.activeTrip?.pickup || "—"} → ${trip.destination || trip.activeTrip?.destination || "—"}`,
       driver: trip.driver,
-      status: trip.status
-    };
-  });
+      status: trip.status || trip.activeTrip?.status,
+      gpsStatus: trip.gpsStatus || trip.lastLocation?.gpsStatus || null,
+      speedKmh: trip.lastLocation?.speedKmh ?? trip.speedKmh ?? null,
+      lastSeenLabel: trip.lastSeenLabel || null,
+    });
+  }
+  return markers;
 }

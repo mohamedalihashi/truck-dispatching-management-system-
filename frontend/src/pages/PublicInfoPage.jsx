@@ -8,47 +8,44 @@ const PAGES = {
   about: {
     title: "About Us",
     body: [
-      `${APP_NAME} is a Somalia-focused truck and cargo marketplace that connects customers, drivers, and admins in one workflow.`,
-      "Book cargo, get quotes, assign trucks, track trips with live GPS, upload proof of delivery, and settle payments with WaafiPay (EVC / ZAAD).",
-      "Our design rule is simple: one driver account equals one truck, so assignment and accountability stay clear."
+      `${APP_NAME} is a Somalia-focused truck and cargo Management system. Customers submit cargo requests; admins assign drivers; drivers run the trips.`,
+      "Submit a request, wait for admin assignment, follow trip status updates, confirm delivery, then pay 100% with WaafiPay (EVC / ZAAD).",
+      "Only customers self-register. Drivers are created by an admin (one driver = one truck) so assignment and accountability stay clear."
     ]
   },
   contact: {
     title: "Contact",
     body: [
-      "Need help with booking, dispatch, or your account?",
+      "Need help with a cargo request, driver registration, or your account?",
       `Email support: ${import.meta.env.VITE_SUPPORT_EMAIL || "support@gaarihel.so"}`,
       `Phone / WhatsApp: ${import.meta.env.VITE_SUPPORT_PHONE || "+252 61 XXX XXXX"}`,
-      "For account access issues, use Forgot Password on the login page, or ask your admin to reset your user."
+      "Drivers: contact support or an admin to be added to the fleet. Customers: use Forgot Password on the login page if you cannot sign in."
     ]
   },
   help: {
     title: "Help Center",
     body: [
-      "Customers: book a truck or post a load for bids, track the trip, confirm delivery, then pay.",
-      "Drivers: accept jobs, update status (arrived → loaded → in transit → delivered), share GPS, and upload POD.",
-      "Admins: manage users, fleet, payments, earnings payouts, and audit logs."
+      "Customer: create an account → submit a cargo request → admin assigns a driver → follow trip status → pay 100% after Delivered.",
+      "Driver: admin registers you → receive assigned jobs → update status (arrived → loaded → in transit → delivered) → upload POD → get paid.",
+      "Admin: register drivers, review all customer requests, assign drivers/trucks, manage payments, payouts, and reports."
     ]
   },
   faqs: {
     title: "FAQs",
     body: [
-      "How do I register as a driver? Use Register → Driver and enter truck details (number, plate, capacity, type). One driver = one truck.",
-      "How do payments work? After delivery confirmation, customers pay via WaafiPay. Earnings split by platform commission settings (default 90% driver / 10% platform).",
-      "Why is OTP skipped sometimes? Admins can set AUTH_OTP_ENABLED=false for local development. Production should keep OTP on.",
-      "Where is proof of delivery stored? With Cloudinary when configured; otherwise files are saved on the API server under /uploads."
+      "How do I become a driver? Only an admin can create your account. Contact support with license and truck documents.",
+      "How do I book cargo? Register as a customer, submit a request. An admin assigns a driver — you do not contact drivers directly.",
+      "How do payments work? For FTL, pay 100% after Delivered via WaafiPay. Shared trips pay full fare before pickup. Earnings follow platform commission settings.",
+      "Where is proof of delivery stored? With Cloudinary when configured; otherwise on the API server under /uploads."
     ]
   },
   terms: {
     title: "Terms & Conditions",
     body: [
       "By using GaariHel you agree to provide accurate booking, vehicle, and contact information.",
-      "Drivers are responsible for trip updates and delivery proof. Customers are responsible for timely payment after confirmed delivery.",
-      "The platform may suspend accounts that abuse quotes, fake GPS, or payment disputes.",
-      "These terms govern use of the GaariHel marketplace for cargo booking, dispatch, tracking, and payments in Somalia.",
-      "By using GaariHel you agree to provide accurate booking, vehicle, and contact information.",
-      "Drivers are responsible for trip updates and delivery proof. Customers are responsible for timely payment after confirmed delivery.",
-      "The platform may suspend accounts that abuse quotes, fake GPS, or payment disputes.",
+      "Customers submit requests through the platform. Direct off-platform deals with drivers are not supported.",
+      "Drivers are responsible for trip updates and delivery proof. Customers pay 100% after confirmed delivery (FTL).",
+      "The platform may suspend accounts that abuse pricing or payment disputes.",
       "Platform commission and payout rules follow the admin commission settings at the time of payment.",
       "Contact support for dispute escalation. These terms may be updated; continued use means acceptance of the latest version."
     ]
@@ -56,10 +53,10 @@ const PAGES = {
   privacy: {
     title: "Privacy Policy",
     body: [
-      "We store account data (name, email, phone, role), cargo and trip records, GPS points during active trips, payment references, and uploaded proof images.",
+      "We store account data (name, email, phone, role), cargo and trip records, payment references, and uploaded proof images.",
       "Payment card data is not stored by GaariHel; mobile wallet charges go through WaafiPay.",
-      "Location history is used for live tracking and dispute support. Access is limited by role permissions.",
-      "Documents such as licenses, national ID images, and truck papers are stored for verification and operational use.",
+      "Driver phone numbers are not shared with customers for direct contact.",
+      "Documents such as licenses and truck papers are stored for admin verification and operational use.",
       `Contact ${import.meta.env.VITE_SUPPORT_EMAIL || "support@truckdispatch.so"} to request account correction or deletion subject to legal and operational retention needs.`
     ]
   }
@@ -68,31 +65,23 @@ const PAGES = {
 export function PublicInfoPage() {
   const { pathname } = useLocation();
   const slug = pathname.replace(/^\//, "");
-  const page = PAGES[slug] || PAGES.help;
+  const page = PAGES[slug] || PAGES.about;
 
   return (
     <div className="min-h-screen bg-background text-on-surface">
-      <PublicSiteHeader variant="auth" />
-      <main className="mx-auto max-w-3xl px-6 pb-20 pt-[calc(5.5rem+env(safe-area-inset-top))]">
-        <Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-on-surface-variant hover:text-primary">
-          <ArrowLeft size={16} /> Back to home
+      <PublicSiteHeader variant="public" />
+      <main className="mx-auto max-w-3xl px-4 pb-16 pt-[calc(5rem+env(safe-area-inset-top))]">
+        <Link to="/" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-secondary-container hover:underline">
+          <ArrowLeft size={16} /> Back home
         </Link>
-        <div className="mb-6 flex items-center gap-3">
-          <BrandLogo size="sm" linkToHome={false} className="max-h-10" />
-          <h1 className="text-3xl font-bold text-primary">{page.title}</h1>
+        <div className="mb-8">
+          <BrandLogo size="sm" linkToHome={false} />
         </div>
-        <div className="space-y-4 text-base leading-relaxed text-on-surface-variant">
+        <h1 className="text-3xl font-bold text-primary">{page.title}</h1>
+        <div className="mt-6 space-y-4 text-on-surface-variant">
           {page.body.map((paragraph) => (
             <p key={paragraph}>{paragraph}</p>
           ))}
-        </div>
-        <div className="mt-10 flex flex-wrap gap-3">
-          <Link to="/register" className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white">
-            Get started
-          </Link>
-          <Link to="/login" className="rounded-xl border border-outline-variant px-5 py-2.5 text-sm font-semibold">
-            Sign in
-          </Link>
         </div>
       </main>
     </div>

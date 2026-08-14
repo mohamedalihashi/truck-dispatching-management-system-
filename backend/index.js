@@ -3,11 +3,11 @@ import http from "node:http";
 import { Server } from "socket.io";
 import { connectDatabase, disconnectDatabase } from "./config/db.js";
 import { db } from "./services/dbService.js";
-import { createApp } from "./createApp.js";
+import { createApp, isOriginAllowed } from "./createApp.js";
 import { retryDueSms } from "./services/smsService.js";
 
 const port = Number(process.env.PORT || 4000);
-const uniqueOrigins = [
+const allowedOrigins = [
   ...(process.env.CLIENT_ORIGIN || "").split(",").map((s) => s.trim()).filter(Boolean),
   "https://truck-dispatche.netlify.app",
   "https://truck-dispa.vercel.app",
@@ -20,7 +20,13 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: [...new Set(uniqueOrigins)],
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin, allowedOrigins)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked: ${origin}`));
+    },
     credentials: true
   }
 });
@@ -29,11 +35,11 @@ app.set("io", io);
 
 io.on("connection", (socket) => {
   socket.emit("system.ready", { message: "GaariHel realtime connected" });
-  socket.on("location.updated", (payload) => {
-    socket.broadcast.emit("location.updated", payload);
-  });
   socket.on("join", (room) => {
     if (room) socket.join(String(room));
+  });
+  socket.on("location.updated", (payload) => {
+    socket.broadcast.emit("location.updated", payload);
   });
 });
 

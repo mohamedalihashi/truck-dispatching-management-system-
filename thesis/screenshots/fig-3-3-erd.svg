@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="780" viewBox="0 0 1100 780">
+  <rect width="1100" height="780" fill="#ffffff"/>
+  <text x="550" y="28" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="16" font-weight="bold" fill="#111">GaariHel Entity-Relationship Diagram (Simplified)</text>
+
+  <!-- User -->
+  <rect x="40" y="60" width="200" height="130" rx="4" fill="#e8f0fe" stroke="#222"/>
+  <rect x="40" y="60" width="200" height="28" fill="#c5d8f7" stroke="#222"/>
+  <text x="140" y="80" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">User</text>
+  <text x="50" y="105" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="50" y="122" font-family="Times New Roman, Times, serif" font-size="11">name, email, role</text>
+  <text x="50" y="139" font-family="Times New Roman, Times, serif" font-size="11">serviceType (FTL/SHARED)</text>
+  <text x="50" y="156" font-family="Times New Roman, Times, serif" font-size="11">status, phone</text>
+  <text x="50" y="173" font-family="Times New Roman, Times, serif" font-size="11">passwordHash</text>
+
+  <!-- Truck -->
+  <rect x="320" y="60" width="200" height="130" rx="4" fill="#e6f4ea" stroke="#222"/>
+  <rect x="320" y="60" width="200" height="28" fill="#c8e6c9" stroke="#222"/>
+  <text x="420" y="80" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">Truck</text>
+  <text x="330" y="105" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="330" y="122" font-family="Times New Roman, Times, serif" font-size="11">FK driverId -&gt; User</text>
+  <text x="330" y="139" font-family="Times New Roman, Times, serif" font-size="11">truckNumber, plateNumber</text>
+  <text x="330" y="156" font-family="Times New Roman, Times, serif" font-size="11">capacity, status</text>
+  <text x="330" y="173" font-family="Times New Roman, Times, serif" font-size="11">type / images</text>
+
+  <!-- CargoRequest -->
+  <rect x="40" y="240" width="220" height="160" rx="4" fill="#fef7e0" stroke="#222"/>
+  <rect x="40" y="240" width="220" height="28" fill="#ffe082" stroke="#222"/>
+  <text x="150" y="260" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">CargoRequest</text>
+  <text x="50" y="285" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="50" y="302" font-family="Times New Roman, Times, serif" font-size="11">FK customerId -&gt; User</text>
+  <text x="50" y="319" font-family="Times New Roman, Times, serif" font-size="11">geo fields, cargoType</text>
+  <text x="50" y="336" font-family="Times New Roman, Times, serif" font-size="11">measuredQuantity, unit</text>
+  <text x="50" y="353" font-family="Times New Roman, Times, serif" font-size="11">loadType (FTL/SHARED)</text>
+  <text x="50" y="370" font-family="Times New Roman, Times, serif" font-size="11">status, preferredPickupDate</text>
+
+  <!-- Trip -->
+  <rect x="320" y="240" width="220" height="160" rx="4" fill="#fce8e6" stroke="#222"/>
+  <rect x="320" y="240" width="220" height="28" fill="#f5b7b1" stroke="#222"/>
+  <text x="430" y="260" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">Trip</text>
+  <text x="330" y="285" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="330" y="302" font-family="Times New Roman, Times, serif" font-size="11">FK cargoRequestId, driverId</text>
+  <text x="330" y="319" font-family="Times New Roman, Times, serif" font-size="11">FK truckId</text>
+  <text x="330" y="336" font-family="Times New Roman, Times, serif" font-size="11">status, fare</text>
+  <text x="330" y="353" font-family="Times New Roman, Times, serif" font-size="11">distanceTraveledKm</text>
+  <text x="330" y="370" font-family="Times New Roman, Times, serif" font-size="11">lastLat, lastLng</text>
+
+  <!-- SharedTrip -->
+  <rect x="600" y="60" width="220" height="130" rx="4" fill="#f3e5f5" stroke="#222"/>
+  <rect x="600" y="60" width="220" height="28" fill="#e1bee7" stroke="#222"/>
+  <text x="710" y="80" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">SharedTrip</text>
+  <text x="610" y="105" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="610" y="122" font-family="Times New Roman, Times, serif" font-size="11">FK driverId, truckId</text>
+  <text x="610" y="139" font-family="Times New Roman, Times, serif" font-size="11">status, capacity</text>
+  <text x="610" y="156" font-family="Times New Roman, Times, serif" font-size="11">route fields</text>
+  <text x="610" y="173" font-family="Times New Roman, Times, serif" font-size="11">availableTons</text>
+
+  <!-- SharedTripBooking -->
+  <rect x="600" y="240" width="220" height="145" rx="4" fill="#f3e5f5" stroke="#222"/>
+  <rect x="600" y="240" width="220" height="28" fill="#e1bee7" stroke="#222"/>
+  <text x="710" y="260" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="12" font-weight="bold">SharedTripBooking</text>
+  <text x="610" y="285" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="610" y="302" font-family="Times New Roman, Times, serif" font-size="11">FK sharedTripId</text>
+  <text x="610" y="319" font-family="Times New Roman, Times, serif" font-size="11">FK cargoRequestId</text>
+  <text x="610" y="336" font-family="Times New Roman, Times, serif" font-size="11">pickupOrder, deliveryOrder</text>
+  <text x="610" y="353" font-family="Times New Roman, Times, serif" font-size="11">weightTons, status</text>
+
+  <!-- Payment -->
+  <rect x="320" y="450" width="200" height="115" rx="4" fill="#e0f2f1" stroke="#222"/>
+  <rect x="320" y="450" width="200" height="28" fill="#b2dfdb" stroke="#222"/>
+  <text x="420" y="470" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">Payment</text>
+  <text x="330" y="495" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="330" y="512" font-family="Times New Roman, Times, serif" font-size="11">FK tripId, customerId</text>
+  <text x="330" y="529" font-family="Times New Roman, Times, serif" font-size="11">amount, amountPaid</text>
+  <text x="330" y="546" font-family="Times New Roman, Times, serif" font-size="11">status, referenceId</text>
+
+  <!-- Earning -->
+  <rect x="560" y="450" width="200" height="115" rx="4" fill="#e0f2f1" stroke="#222"/>
+  <rect x="560" y="450" width="200" height="28" fill="#b2dfdb" stroke="#222"/>
+  <text x="660" y="470" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">Earning</text>
+  <text x="570" y="495" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="570" y="512" font-family="Times New Roman, Times, serif" font-size="11">FK driverId / trip</text>
+  <text x="570" y="529" font-family="Times New Roman, Times, serif" font-size="11">amount, status</text>
+  <text x="570" y="546" font-family="Times New Roman, Times, serif" font-size="11">payout fields</text>
+
+  <!-- Support / Feedback / Audit -->
+  <rect x="40" y="450" width="200" height="115" rx="4" fill="#eceff1" stroke="#222"/>
+  <rect x="40" y="450" width="200" height="28" fill="#cfd8dc" stroke="#222"/>
+  <text x="140" y="470" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="12" font-weight="bold">SupportComplaint</text>
+  <text x="50" y="495" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="50" y="512" font-family="Times New Roman, Times, serif" font-size="11">FK reporter User</text>
+  <text x="50" y="529" font-family="Times New Roman, Times, serif" font-size="11">subject, message</text>
+  <text x="50" y="546" font-family="Times New Roman, Times, serif" font-size="11">status</text>
+
+  <rect x="40" y="600" width="200" height="115" rx="4" fill="#eceff1" stroke="#222"/>
+  <rect x="40" y="600" width="200" height="28" fill="#cfd8dc" stroke="#222"/>
+  <text x="140" y="620" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">TripFeedback</text>
+  <text x="50" y="645" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="50" y="662" font-family="Times New Roman, Times, serif" font-size="11">FK tripId, customerId</text>
+  <text x="50" y="679" font-family="Times New Roman, Times, serif" font-size="11">rating, comment</text>
+
+  <rect x="320" y="600" width="200" height="115" rx="4" fill="#eceff1" stroke="#222"/>
+  <rect x="320" y="600" width="200" height="28" fill="#cfd8dc" stroke="#222"/>
+  <text x="420" y="620" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">AuditLog</text>
+  <text x="330" y="645" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="330" y="662" font-family="Times New Roman, Times, serif" font-size="11">actorId, action</text>
+  <text x="330" y="679" font-family="Times New Roman, Times, serif" font-size="11">entityType, metadata</text>
+  <text x="330" y="696" font-family="Times New Roman, Times, serif" font-size="11">createdAt</text>
+
+  <rect x="560" y="600" width="200" height="115" rx="4" fill="#eceff1" stroke="#222"/>
+  <rect x="560" y="600" width="200" height="28" fill="#cfd8dc" stroke="#222"/>
+  <text x="660" y="620" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">Notification</text>
+  <text x="570" y="645" font-family="Times New Roman, Times, serif" font-size="11">PK id</text>
+  <text x="570" y="662" font-family="Times New Roman, Times, serif" font-size="11">FK userId</text>
+  <text x="570" y="679" font-family="Times New Roman, Times, serif" font-size="11">title, body, readAt</text>
+
+  <rect x="800" y="600" width="200" height="115" rx="4" fill="#eceff1" stroke="#222"/>
+  <rect x="800" y="600" width="200" height="28" fill="#cfd8dc" stroke="#222"/>
+  <text x="900" y="620" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="13" font-weight="bold">Setting</text>
+  <text x="810" y="645" font-family="Times New Roman, Times, serif" font-size="11">PK id / key</text>
+  <text x="810" y="662" font-family="Times New Roman, Times, serif" font-size="11">pricing rates JSON</text>
+  <text x="810" y="679" font-family="Times New Roman, Times, serif" font-size="11">admin configuration</text>
+
+  <!-- Relationship lines + labels -->
+  <line x1="240" y1="110" x2="320" y2="110" stroke="#222" stroke-width="1.2"/>
+  <text x="280" y="100" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="10">1:1</text>
+
+  <line x1="140" y1="190" x2="140" y2="240" stroke="#222" stroke-width="1.2"/>
+  <text x="160" y="220" font-family="Times New Roman, Times, serif" font-size="10">1:N</text>
+
+  <line x1="260" y1="320" x2="320" y2="320" stroke="#222" stroke-width="1.2"/>
+  <text x="290" y="310" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="10">1:1</text>
+
+  <line x1="420" y1="190" x2="420" y2="240" stroke="#222" stroke-width="1.2"/>
+  <text x="440" y="220" font-family="Times New Roman, Times, serif" font-size="10">driver</text>
+
+  <line x1="520" y1="125" x2="600" y2="125" stroke="#222" stroke-width="1.2"/>
+  <text x="560" y="115" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="10">uses</text>
+
+  <line x1="710" y1="190" x2="710" y2="240" stroke="#222" stroke-width="1.2"/>
+  <text x="730" y="220" font-family="Times New Roman, Times, serif" font-size="10">1:N</text>
+
+  <line x1="260" y1="350" x2="600" y2="300" stroke="#222" stroke-width="1" stroke-dasharray="4 2"/>
+  <text x="430" y="285" font-family="Times New Roman, Times, serif" font-size="10">SHARED booking</text>
+
+  <line x1="430" y1="400" x2="430" y2="450" stroke="#222" stroke-width="1.2"/>
+  <text x="450" y="430" font-family="Times New Roman, Times, serif" font-size="10">1:N</text>
+
+  <line x1="520" y1="500" x2="560" y2="500" stroke="#222" stroke-width="1.2"/>
+  <text x="540" y="490" text-anchor="middle" font-family="Times New Roman, Times, serif" font-size="10">pays</text>
+
+  <line x1="140" y1="400" x2="140" y2="450" stroke="#222" stroke-width="1.2"/>
+  <line x1="140" y1="565" x2="140" y2="600" stroke="#222" stroke-width="1.2"/>
+  <line x1="240" y1="650" x2="320" y2="650" stroke="#222" stroke-width="1.2"/>
+</svg>

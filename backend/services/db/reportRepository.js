@@ -97,7 +97,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       totalTrucks,
       pendingOrders,
       openSharedTrips,
-      openBidRequests,
     ] = await Promise.all([
     showGlobalUsers ? prisma.user.count({ where: { role: "customer" } }) : 0,
     showGlobalUsers ? prisma.user.count({ where: { role: "driver" } }) : 0,
@@ -120,15 +119,13 @@ async dashboardStats({ role = "admin", userId } = {}) {
       showGlobalUsers
         ? prisma.sharedTrip.count({ where: { status: "Open for booking", availableTons: { gt: 0 } } })
         : 0,
-      showGlobalUsers
-        ? prisma.bid.count({ where: { status: "Pending" } })
-        : 0,
   ]);
 
-  const [completedOrders, liveTrips, inTransit] = await Promise.all([
+  const [totalTrips, completedOrders, liveTrips, inTransit] = await Promise.all([
+    prisma.trip.count({ where: tripWhere }),
     prisma.trip.count({ where: { ...tripWhere, status: "Delivered" } }),
     prisma.trip.count({
-      where: { ...tripWhere, status: { in: ["In_Transit", "Loaded", "Accepted", "Arrived_Pickup"] } },
+      where: { ...tripWhere, status: { in: ["In_Transit", "Picked_Up", "En_Route_to_Pickup", "Arrived_at_Pickup", "Near_Destination"] } },
     }),
     prisma.trip.count({ where: { ...tripWhere, status: "In_Transit" } }),
   ]);
@@ -157,7 +154,7 @@ async dashboardStats({ role = "admin", userId } = {}) {
     totalTrucks,
     pendingOrders,
       openSharedTrips,
-      openBidRequests: Number(openBidRequests) || 0,
+    totalTrips,
     completedOrders,
     liveTrips,
     inTransit,
@@ -376,7 +373,7 @@ async dashboardStats({ role = "admin", userId } = {}) {
         where: { status: { in: ["Pending", "Awaiting_Approval", "Approved"] } },
       }),
       prisma.trip.count({
-        where: { status: { in: ["Assigned", "Accepted", "Arrived_Pickup", "Loaded", "In_Transit"] } },
+        where: { status: { in: ["Assigned", "En_Route_to_Pickup", "Arrived_at_Pickup", "Picked_Up", "In_Transit", "Near_Destination"] } },
       }),
       prisma.trip.count({ where: { status: "Delivered" } }),
       prisma.trip.count({ where: { status: "Cancelled" } }),
@@ -618,10 +615,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       OR: [{ customerId: userId }, { driverId: userId }],
       ...(createdAt ? { createdAt } : {}),
     };
-    const bidWhere = {
-      driverId: userId,
-      ...(createdAt ? { createdAt } : {}),
-    };
     const sharedTripWhere = {
       driverId: userId,
       ...(createdAt ? { createdAt } : {}),
@@ -642,7 +635,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       earningRows,
       auditRows,
       feedbackRows,
-      bidRows,
       sharedTripRows,
       sharedBookingRows,
       truckRows,
@@ -652,7 +644,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       earningCount,
       auditCount,
       feedbackCount,
-      bidCount,
       sharedTripCount,
       sharedBookingCount,
       truckCount,
@@ -717,14 +708,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
             take,
           })
         : [],
-      wants(type, "bids")
-        ? prisma.bid.findMany({
-            where: bidWhere,
-            include: { cargoRequest: true, truck: true },
-            orderBy: { createdAt: "desc" },
-            take,
-          })
-        : [],
       wants(type, "shared")
         ? prisma.sharedTrip.findMany({
             where: sharedTripWhere,
@@ -755,7 +738,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       prisma.earning.count({ where: earningWhere }),
       prisma.auditLog.count({ where: auditWhere }),
       prisma.tripFeedback.count({ where: feedbackWhere }),
-      prisma.bid.count({ where: bidWhere }),
       prisma.sharedTrip.count({ where: sharedTripWhere }),
       prisma.sharedTripBooking.count({ where: sharedBookingWhere }),
       prisma.truck.count({ where: { driverId: userId } }),
@@ -812,19 +794,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       customer: row.customer?.name || null,
       driver: row.driver?.name || null,
       route: row.trip ? `${row.trip.pickup} → ${row.trip.destination}` : null,
-      createdAt: row.createdAt,
-    }));
-    const bids = bidRows.map((row) => ({
-      id: row.id,
-      cargoRequestId: row.cargoRequestId,
-      amount: Number(row.amount || 0),
-      status: row.status,
-      estimatedDays: row.estimatedDays,
-      notes: row.notes,
-      route: row.cargoRequest
-        ? `${row.cargoRequest.pickup} → ${row.cargoRequest.destination}`
-        : null,
-      truck: row.truck?.truckNumber || null,
       createdAt: row.createdAt,
     }));
     const sharedTrips = sharedTripRows.map((row) => ({
@@ -904,16 +873,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
         createdAt: row.createdAt,
         refId: row.id,
       })),
-      ...bids.map((row) => ({
-        id: `bid-${row.id}`,
-        type: "bids",
-        title: `Bid ${row.status}`,
-        detail: row.route || row.cargoRequestId,
-        amount: row.amount,
-        status: row.status,
-        createdAt: row.createdAt,
-        refId: row.id,
-      })),
       ...sharedTrips.map((row) => ({
         id: `shared-trip-${row.id}`,
         type: "shared",
@@ -971,7 +930,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
           trucks: 0,
           earnings: 0,
           audits: 0,
-          bids: 0,
           shared: 0,
           feedback: 0,
         });
@@ -989,7 +947,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       earnings: earningCount,
       audits: auditCount,
       feedback: feedbackCount,
-      bids: bidCount,
       sharedTrips: sharedTripCount,
       sharedBookings: sharedBookingCount,
       trucks: truckCount,
@@ -1011,7 +968,6 @@ async dashboardStats({ role = "admin", userId } = {}) {
       trucks,
       audits,
       feedback,
-      bids,
       sharedTrips,
       sharedBookings,
       generatedAt: new Date().toISOString(),

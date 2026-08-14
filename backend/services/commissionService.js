@@ -1,8 +1,8 @@
 import { prisma } from "../lib/prisma.js";
 
 export const DEFAULT_COMMISSION = {
-  driver: 80,
-  dispatcher: 10,
+  driver: 90,
+  dispatcher: 0,
   platform: 10,
 };
 
@@ -13,9 +13,16 @@ function roundMoney(value) {
 export async function getCommissionSettings() {
   const row = await prisma.setting.findUnique({ where: { key: "commission" } });
   const value = row?.value || DEFAULT_COMMISSION;
-  const driver = Number(value.driver ?? DEFAULT_COMMISSION.driver);
-  const dispatcher = Number(value.dispatcher ?? DEFAULT_COMMISSION.dispatcher);
-  const platform = Number(value.platform ?? DEFAULT_COMMISSION.platform);
+  let driver = Number(value.driver ?? DEFAULT_COMMISSION.driver);
+  let dispatcher = Number(value.dispatcher ?? DEFAULT_COMMISSION.dispatcher);
+  let platform = Number(value.platform ?? DEFAULT_COMMISSION.platform);
+
+  // No separate dispatcher role — that share belongs to the platform (admin).
+  if (dispatcher > 0) {
+    platform += dispatcher;
+    dispatcher = 0;
+  }
+
   const total = driver + dispatcher + platform;
   if (total <= 0) return { ...DEFAULT_COMMISSION };
   return { driver, dispatcher, platform };

@@ -12,6 +12,10 @@ export default defineConfig({
       // deployment becomes available. PwaUpdatePrompt lets the user decide
       // when it is safe to reload.
       registerType: "prompt",
+      // Registration is handled in PwaUpdatePrompt via virtual:pwa-register.
+      injectRegister: false,
+      strategies: "generateSW",
+      filename: "sw.js",
       includeAssets: [
         "favicon.png",
         "favicon.svg",
@@ -24,16 +28,16 @@ export default defineConfig({
       manifestFilename: "manifest.webmanifest",
       manifest: {
         id: "/",
-        name: "GaariHel Marketplace",
+        name: "GaariHel Management System",
         short_name: "GaariHel",
         description:
-          "GaariHel — hel gaari, dir rarkaaga. Truck & cargo marketplace for Somalia.",
+          "GaariHel — hel gaari, dir rarkaaga. Truck dispatch Management system for Somalia.",
         theme_color: "#00224D",
         background_color: "#00224D",
         display: "standalone",
-        orientation: "portrait-primary",
+        orientation: "any",
         scope: "/",
-        start_url: "/",
+        start_url: "/?source=pwa",
         categories: ["business", "transportation"],
         icons: [
           {
@@ -57,9 +61,12 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webmanifest}"],
+        globIgnores: ["**/hero/**"],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api/, /^\/socket\.io/],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -85,10 +92,12 @@ export default defineConfig({
           }
         ]
       },
-      // Keep SW off in `vite`/`npm run dev` — a stale workbox cache often
-      // serves a blank page after the Vite process restarts on Windows.
+      // Localhost install needs a SW. Clear stale caches in main.jsx on boot.
+      // Set VITE_PWA_DEV=false to disable if Windows cache issues return.
       devOptions: {
-        enabled: false
+        enabled: process.env.VITE_PWA_DEV !== "false",
+        type: "module",
+        navigateFallback: "index.html"
       }
     })
   ],

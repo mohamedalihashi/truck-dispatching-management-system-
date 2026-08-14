@@ -4,6 +4,7 @@ import { auditFields } from "../../lib/auditContext.js";
 import { mapUser, userInclude } from "./mappers.js";
 import { normalizeSomaliPhone, phoneDigits } from "../../lib/phone.js";
 import { generateTempPassword } from "../../lib/password.js";
+import { generateTruckId } from "../../lib/truckId.js";
 
 const authUserSelect = {
   id: true,
@@ -58,7 +59,6 @@ const sessionUserSelect = {
       city: true,
     },
   },
-  dispatcherProfile: true,
   customerProfile: true,
 };
 
@@ -311,7 +311,7 @@ async userSummary({ scopedToDispatcherId } = {}) {
   };
 },
 
-async createUser({ name, username, email, password, passwordHash: suppliedPasswordHash, role, phone, customerProfile, nationalIdNumber, driverLicense, driverLicenseUrl, driverLicensePublicId, driverImageUrl, driverImagePublicId, serviceType, dispatcherProfile, truck, mustChangePassword = false, actorId = null, autoVerify = false }) {
+async createUser({ name, username, email, password, passwordHash: suppliedPasswordHash, role, phone, customerProfile, nationalIdNumber, driverLicense, driverLicenseUrl, driverLicensePublicId, driverImageUrl, driverImagePublicId, serviceType, truck, mustChangePassword = false, actorId = null, autoVerify = false }) {
   const passwordHash = suppliedPasswordHash || await bcrypt.hash(password, 10);
   // Admin-created drivers are trusted (docs reviewed at create time). Self-register stays pending.
   const driverActive = role === "driver" && Boolean(autoVerify);
@@ -364,9 +364,7 @@ async createUser({ name, username, email, password, passwordHash: suppliedPasswo
         error.status = 400;
         throw error;
       }
-      const truckNumber =
-        truck.truckNumber?.trim() ||
-        `TR-${Date.now().toString(36).toUpperCase()}`;
+      const truckNumber = truck.truckNumber?.trim() || generateTruckId();
       await tx.truck.create({
         data: {
           truckNumber,
@@ -522,7 +520,38 @@ async updateUser(id, payload, { actorId = id, action = "profile.updated" } = {})
   if (payload.email !== undefined) data.email = payload.email;
   if (payload.phone !== undefined) data.phone = payload.phone;
   if (payload.avatarUrl !== undefined) data.avatarUrl = payload.avatarUrl;
-  if (payload.status !== undefined) data.status = payload.status;
+  if (payload.status !== undefined) {
+    const nextStatus = String(payload.status).trim();
+    if (!["Active", "Inactive"].includes(nextStatus)) {
+      const error = new Error("Status must be Active or Inactive");
+      error.status = 400;
+      throw error;
+    }
+    if (nextStatus === "Inactive") {
+      if (previous.isSuperAdmin) {
+        const error = new Error("Super Admin account cannot be deactivated");
+        error.status = 403;
+        throw error;
+      }
+      if (id === actorId) {
+        const error = new Error("You cannot deactivate your own account");
+        error.status = 403;
+        throw error;
+      }
+      if (previous.role === "admin") {
+        const actor = await prisma.user.findUnique({
+          where: { id: actorId },
+          select: { isSuperAdmin: true },
+        });
+        if (!actor?.isSuperAdmin) {
+          const error = new Error("Only the Super Admin can deactivate admin accounts");
+          error.status = 403;
+          throw error;
+        }
+      }
+    }
+    data.status = nextStatus;
+  }
   if (payload.role !== undefined) data.role = payload.role;
   if (payload.driverLicense !== undefined) data.driverLicense = payload.driverLicense;
   if (payload.nationalIdNumber !== undefined) data.nationalIdNumber = payload.nationalIdNumber;
@@ -617,6 +646,20 @@ async updateUser(id, payload, { actorId = id, action = "profile.updated" } = {})
   await withTransaction(async (tx) => {
     if (Object.keys(data).length > 0) {
       await tx.user.update({ where: { id }, data });
+    }
+
+    if (data.status && previous.role === "driver") {
+      if (data.status === "Inactive") {
+        await tx.truck.updateMany({
+          where: { driverId: id },
+          data: { status: "Unavailable" },
+        });
+      } else if (data.status === "Active") {
+        await tx.truck.updateMany({
+          where: { driverId: id, status: { in: ["Unavailable", "Pending_Verification"] } },
+          data: { status: "Available" },
+        });
+      }
     }
 
     if (Object.keys(truckData).length > 0 && previous.role === "driver") {

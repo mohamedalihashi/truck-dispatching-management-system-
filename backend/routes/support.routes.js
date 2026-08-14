@@ -7,10 +7,18 @@ import { db } from "../services/dbService.js";
 const router = Router();
 
 const createSchema = z.object({
-  againstRole: z.enum(["driver", "dispatcher"]),
-  referenceId: z.string().trim().min(3).max(80),
+  againstRole: z.enum(["driver", "dispatcher", "platform"]).default("driver"),
+  referenceId: z.string().trim().min(3).max(80).optional(),
   subject: z.string().trim().max(120).optional(),
   message: z.string().trim().min(10).max(2000)
+}).superRefine((data, ctx) => {
+  if (data.againstRole !== "platform" && !data.referenceId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["referenceId"],
+      message: "Choose the trip this complaint is about"
+    });
+  }
 });
 
 const statusSchema = z.object({

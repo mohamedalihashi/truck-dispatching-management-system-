@@ -8,8 +8,8 @@ Live Express + Prisma + PostgreSQL API. Base URL (local): `http://127.0.0.1:4000
 |------|---------|
 | `admin` | Users, fleet, payments, earnings, reports, audits, settings |
 | `dispatcher` | Quote cargo, assign drivers/trucks, monitor trips |
-| `customer` | Book cargo, review quotes, track, pay, confirm delivery |
-| `driver` | Accept jobs, GPS, status updates, POD upload |
+| `customer` | Book cargo, review quotes, follow status, pay, confirm delivery |
+| `driver` | Accept jobs, status updates, POD upload |
 
 > One driver account = one truck.
 
@@ -63,8 +63,6 @@ Returns `status` (`ok` | `degraded` | `error`), `integrations` (cloudinary, waaf
 | PATCH | `/trips/:id/status` |
 | POST | `/trips/:id/accept` |
 | POST | `/trips/:id/reject` |
-| PATCH | `/trips/:id/location` |
-| GET | `/trips/:id/locations` |
 | POST | `/trips/:id/proof` |
 | POST | `/trips/:id/feedback` |
 | POST | `/trips/:id/confirm-delivery` |
@@ -104,7 +102,6 @@ Returns `status` (`ok` | `degraded` | `error`), `integrations` (cloudinary, waaf
 Available when the API runs as a long-lived Node server (not Vercel serverless).
 
 - `system.ready`
-- `location.updated`
 - `join` (client → room)
 
 On Vercel, Socket becomes a no-op; clients should poll via React Query.

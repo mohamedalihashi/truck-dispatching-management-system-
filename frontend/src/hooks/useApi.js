@@ -15,7 +15,46 @@ function normalizeParams(params = {}) {
   );
 }
 
-function invalidateForSocketEvent(qc, eventType) {
+function patchTripLocationInCache(qc, payload) {
+  if (!payload?.tripId) return;
+
+  qc.setQueriesData({ queryKey: ["trips"] }, (old) => {
+    if (!old?.data) return old;
+    return {
+      ...old,
+      data: old.data.map((trip) =>
+        trip.id === payload.tripId
+          ? {
+              ...trip,
+              lastLocation: payload.location ?? trip.lastLocation,
+              distanceTraveledKm: payload.distanceTraveledKm ?? trip.distanceTraveledKm,
+              distance: payload.distance ?? trip.distance,
+              status: payload.status ?? trip.status
+            }
+          : trip
+      )
+    };
+  });
+
+  if (payload.location?.lat != null && payload.location?.lng != null) {
+    qc.setQueryData(["trip-route", payload.tripId], (old) => {
+      const points = old?.points || [];
+      const last = points[points.length - 1];
+      if (
+        last &&
+        Number(last.lat) === Number(payload.location.lat) &&
+        Number(last.lng) === Number(payload.location.lng)
+      ) {
+        return old;
+      }
+      return { points: [...points, payload.location] };
+    });
+  } else {
+    qc.invalidateQueries({ queryKey: ["trip-route", payload.tripId] });
+  }
+}
+
+function invalidateForSocketEvent(qc, eventType, payload) {
   const refreshDashboard = () => {
     qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -37,7 +76,13 @@ function invalidateForSocketEvent(qc, eventType) {
     return;
   }
 
-  if (eventType.startsWith("trip.") || eventType === "location.updated") {
+  if (eventType === "location.updated") {
+    patchTripLocationInCache(qc, payload);
+    refreshDashboard();
+    return;
+  }
+
+  if (eventType.startsWith("trip.")) {
     qc.invalidateQueries({ queryKey: ["trips"] });
     qc.invalidateQueries({ queryKey: ["trip-route"] });
     refreshDashboard();
@@ -70,10 +115,12 @@ export function useDashboard() {
 }
 
 export function useDashboardSummary(options = {}) {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ["dashboard-summary"],
+    queryKey: ["dashboard-summary", user?.id],
     queryFn: () => api.dashboardSummary(),
     staleTime: 30_000,
+    enabled: Boolean(user?.id),
     ...options
   });
 }
@@ -88,11 +135,13 @@ export function useReportsSummary(options = {}) {
 }
 
 export function useCargoRequests(params = {}, options = {}) {
+  const { user } = useAuth();
   const normalized = normalizeParams(params);
   return useQuery({
-    queryKey: ["cargo-requests", normalized],
+    queryKey: ["cargo-requests", user?.id, normalized],
     queryFn: () => api.listCargoRequests(normalized),
     staleTime: 15_000,
+    enabled: Boolean(user?.id),
     ...options
   });
 }
@@ -106,11 +155,21 @@ export function useCargoRequestSummary(options = {}) {
 }
 
 export function useTrips(params = {}, options = {}) {
+  const { user } = useAuth();
   const normalized = { ...TRIPS_QUERY_DEFAULT, ...normalizeParams(params) };
   return useQuery({
-    queryKey: ["trips", normalized],
+    queryKey: ["trips", user?.id, normalized],
     queryFn: () => api.listTrips(normalized),
     staleTime: 15_000,
+    enabled: Boolean(user?.id),
+    ...options
+  });
+}
+
+export function useTripSummary(options = {}) {
+  return useQuery({
+    queryKey: ["trips-summary"],
+    queryFn: () => api.tripSummary(),
     ...options
   });
 }
@@ -124,10 +183,28 @@ export function useTripRoute(tripId, options = {}) {
   });
 }
 
-export function useTripSummary(options = {}) {
+export function useLiveFleet(params = {}, options = {}) {
   return useQuery({
-    queryKey: ["trips-summary"],
-    queryFn: () => api.tripSummary(),
+    queryKey: ["live-fleet", params],
+    queryFn: () => api.listLiveFleet(params),
+    ...options
+  });
+}
+
+export function useTripReplay(tripId, options = {}) {
+  return useQuery({
+    queryKey: ["trip-replay", tripId],
+    queryFn: () => api.getTripReplay(tripId),
+    enabled: Boolean(tripId),
+    ...options
+  });
+}
+
+export function useTripEvents(tripId, options = {}) {
+  return useQuery({
+    queryKey: ["trip-events", tripId],
+    queryFn: () => api.getTripEvents(tripId),
+    enabled: Boolean(tripId),
     ...options
   });
 }
@@ -196,9 +273,11 @@ export function useCustomers(params = {}, options = {}) {
 }
 
 export function usePayments(params = {}) {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ["payments", params],
-    queryFn: () => api.listPayments(params)
+    queryKey: ["payments", user?.id, params],
+    queryFn: () => api.listPayments(params),
+    enabled: Boolean(user?.id)
   });
 }
 
@@ -219,7 +298,7 @@ export function useRealtimeInvalidation() {
 
   useEffect(() => {
     if (!events[0]) return;
-    invalidateForSocketEvent(qc, events[0].type);
+    invalidateForSocketEvent(qc, events[0].type, events[0].payload);
   }, [events[0]?.id, qc]);
 
   useEffect(() => {
@@ -232,7 +311,7 @@ export function useRealtimeInvalidation() {
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     };
 
-    const timer = setInterval(invalidateLight, 30_000);
+    const timer = setInterval(invalidateLight, 10_000);
     const onVisibility = () => {
       if (!document.hidden) invalidateLight();
     };
@@ -289,10 +368,6 @@ export function useUserMutations() {
     }),
     update: useMutation({
       mutationFn: ({ id, payload }) => api.updateUser(id, payload),
-      onSuccess: invalidate
-    }),
-    remove: useMutation({
-      mutationFn: (id) => api.deleteUser(id),
       onSuccess: invalidate
     }),
     verifyDriver: useMutation({
@@ -434,13 +509,6 @@ export function usePermissions() {
   });
 }
 
-export function useSmsNotifications(params = {}) {
-  return useQuery({
-    queryKey: ["sms-notifications", params],
-    queryFn: () => api.listSmsNotifications(params)
-  });
-}
-
 export function useSupportComplaints(params = {}, options = {}) {
   return useQuery({
     queryKey: ["support-complaints", params],
@@ -457,7 +525,6 @@ export function useCancelCargo() {
       qc.invalidateQueries({ queryKey: ["cargo-requests"] });
     qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
       qc.invalidateQueries({ queryKey: ["trips"] });
-      qc.invalidateQueries({ queryKey: ["trip-route"] });
       qc.invalidateQueries({ queryKey: ["trucks"] });
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -489,7 +556,6 @@ export function useAssignCargo() {
       qc.invalidateQueries({ queryKey: ["cargo-requests"] });
     qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
       qc.invalidateQueries({ queryKey: ["trips"] });
-      qc.invalidateQueries({ queryKey: ["trip-route"] });
       qc.invalidateQueries({ queryKey: ["trucks"] });
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -498,35 +564,21 @@ export function useAssignCargo() {
   });
 }
 
-export function useQuoteMutations() {
+export function useAssignSharedPool() {
   const qc = useQueryClient();
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["cargo-requests"] });
-    qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
-    qc.invalidateQueries({ queryKey: ["trips"] });
-    qc.invalidateQueries({ queryKey: ["payments"] });
-    qc.invalidateQueries({ queryKey: ["notifications"] });
-    qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
-  };
-  return {
-    submit: useMutation({
-      mutationFn: ({ id, payload }) => api.submitCargoQuote(id, payload),
-      onSuccess: invalidate
-    }),
-    accept: useMutation({
-      mutationFn: (id) => api.acceptCargoQuote(id),
-      onSuccess: invalidate
-    }),
-    reject: useMutation({
-      mutationFn: ({ id, note }) => api.rejectCargoQuote(id, { note }),
-      onSuccess: invalidate
-    }),
-    decline: useMutation({
-      mutationFn: ({ id, note }) => api.declineCargoBooking(id, { note }),
-      onSuccess: invalidate
-    })
-  };
+  return useMutation({
+    mutationFn: (payload) => api.assignSharedPool(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cargo-requests"] });
+      qc.invalidateQueries({ queryKey: ["cargo-requests-summary"] });
+      qc.invalidateQueries({ queryKey: ["shared-trips"] });
+      qc.invalidateQueries({ queryKey: ["trips"] });
+      qc.invalidateQueries({ queryKey: ["trucks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    }
+  });
 }
 
 export function useTripActions() {
@@ -542,7 +594,15 @@ export function useTripActions() {
   };
   return {
     updateStatus: useMutation({
-      mutationFn: ({ id, status }) => api.updateTripStatus(id, status),
+      mutationFn: ({ id, status, weightAmount, weightUnit, measuredQuantity, measurementUnit }) =>
+        api.updateTripStatus(id, {
+          status,
+          ...(measuredQuantity != null
+            ? { measuredQuantity, measurementUnit }
+            : weightAmount != null
+              ? { weightAmount, weightUnit: weightUnit || "tons" }
+              : {})
+        }),
       onMutate: async ({ id, status }) => {
         await qc.cancelQueries({ queryKey: ["trips"] });
         const snapshots = qc.getQueriesData({ queryKey: ["trips"] });
@@ -561,26 +621,16 @@ export function useTripActions() {
       onSettled: invalidate
     }),
     accept: useMutation({
+      // No optimistic status flip — that unmounted Accept UI before errors could show.
       mutationFn: (id) => api.acceptTrip(id),
-      onMutate: async (id) => {
-        await qc.cancelQueries({ queryKey: ["trips"] });
-        const snapshots = qc.getQueriesData({ queryKey: ["trips"] });
-        qc.setQueriesData({ queryKey: ["trips"] }, (current) => {
-          if (!current?.data) return current;
-          return {
-            ...current,
-            data: current.data.map((trip) => trip.id === id ? { ...trip, status: "Accepted" } : trip)
-          };
-        });
-        return { snapshots };
-      },
-      onError: (_error, _id, context) => {
-        context?.snapshots?.forEach(([key, value]) => qc.setQueryData(key, value));
-      },
       onSettled: invalidate
     }),
     reject: useMutation({
       mutationFn: (id) => api.rejectTrip(id),
+      onSettled: invalidate
+    }),
+    adjustAssignment: useMutation({
+      mutationFn: ({ id, ...payload }) => api.adjustAssignment(id, payload),
       onSuccess: invalidate
     }),
     shareLocation: useMutation({

@@ -8,11 +8,12 @@ import {
 describe("driver trip status chain", () => {
   it("defines the forward-only driver path", () => {
     expect(DRIVER_TRIP_NEXT).toEqual({
-      Assigned: "Accepted",
-      Accepted: "Arrived Pickup",
-      "Arrived Pickup": "Loaded",
-      Loaded: "In Transit",
-      "In Transit": "Delivered",
+      Assigned: "En Route to Pickup",
+      "En Route to Pickup": "Arrived at Pickup",
+      "Arrived at Pickup": "Picked Up",
+      "Picked Up": "In Transit",
+      "In Transit": "Near Destination",
+      "Near Destination": "Delivered",
     });
   });
 
@@ -38,12 +39,12 @@ describe("driver trip status chain", () => {
     });
     expect(bad.ok).toBe(false);
     expect(bad.status).toBe(400);
-    expect(bad.message).toMatch(/Assigned to Accepted/);
+    expect(bad.message).toMatch(/Assigned to En Route to Pickup/);
   });
 
   it("requires POD before Delivered", () => {
     const noProof = validateTripStatusChange({
-      currentStatus: "In Transit",
+      currentStatus: "Near Destination",
       nextStatus: "Delivered",
       role: "driver",
       hasDeliveryProof: false,
@@ -53,25 +54,21 @@ describe("driver trip status chain", () => {
 
     expect(
       validateTripStatusChange({
-        currentStatus: "In Transit",
+        currentStatus: "Near Destination",
         nextStatus: "Delivered",
         role: "driver",
         hasDeliveryProof: true,
       })
     ).toEqual({ ok: true });
   });
+
+  it("moves Arrived at Pickup to Picked Up (weight enforced by API)", () => {
+    expect(DRIVER_TRIP_NEXT["Arrived at Pickup"]).toBe("Picked Up");
+  });
 });
 
 describe("admin trip status rules", () => {
-  it("allows Delayed or Cancelled from In Transit", () => {
-    expect(
-      validateTripStatusChange({
-        currentStatus: "In Transit",
-        nextStatus: "Delayed",
-        role: "admin",
-      })
-    ).toEqual({ ok: true });
-
+  it("allows Cancelled from In Transit", () => {
     expect(
       validateTripStatusChange({
         currentStatus: "In Transit",
@@ -83,9 +80,9 @@ describe("admin trip status rules", () => {
 });
 
 describe("cargoStatusFromTripStatus", () => {
-  it("maps Delayed to In Transit and passes other statuses through", () => {
-    expect(cargoStatusFromTripStatus("Delayed")).toBe("In Transit");
+  it("passes trip statuses through for cargo sync", () => {
     expect(cargoStatusFromTripStatus("Cancelled")).toBe("Cancelled");
-    expect(cargoStatusFromTripStatus("Loaded")).toBe("Loaded");
+    expect(cargoStatusFromTripStatus("Picked Up")).toBe("Picked Up");
+    expect(cargoStatusFromTripStatus("Near Destination")).toBe("Near Destination");
   });
 });

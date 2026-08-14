@@ -3,10 +3,16 @@ import { mapNotification } from "./mappers.js";
 
 export const notificationRepository = {
   async listNotifications({ userId, page = 1, limit = 20 } = {}) {
-    const where = {};
-    if (userId) {
-      where.OR = [{ userId }, { userId: null }];
+    if (!userId) {
+      return {
+        data: [],
+        total: 0,
+        unreadCount: 0,
+        pagination: { page: 1, limit: Number(limit) || 20, total: 0, totalPages: 0 },
+      };
     }
+    // Strict inbox: each user sees only their own notifications (no null/broadcast rows).
+    const where = { userId };
     const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
     const offset = (Math.max(Number(page) || 1, 1) - 1) * take;
 
@@ -34,7 +40,14 @@ export const notificationRepository = {
     };
   },
 
-  async markNotificationRead(id) {
+  async markNotificationRead(id, { userId } = {}) {
+    const existing = await prisma.notification.findUnique({ where: { id } });
+    if (!existing) return null;
+    if (!userId || existing.userId !== userId) {
+      const error = new Error("Not allowed to update this notification");
+      error.status = 403;
+      throw error;
+    }
     const notification = await prisma.notification.update({
       where: { id },
       data: { read: true },

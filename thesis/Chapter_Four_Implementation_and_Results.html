@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chapter IV — Implementation and Results</title>
+  <link rel="stylesheet" href="just-thesis-style.css" />
+</head>
+<body>
+
+<p class="chapter-title">CHAPTER IV<br />IMPLEMENTATION AND RESULTS<br />(Mobile and Web Dev FYPs)</p>
+
+<h2>4.1 Introduction</h2>
+<p>
+  This section provides an overview of the GaariHel system’s implementation, testing, and evaluation. It
+  connects the work done in the previous chapters, moving from system design to actual implementation,
+  followed by testing and validation. The purpose of this stage is to ensure that the developed system
+  functions as expected and meets the requirements defined in Chapter III (R1–R15 and NFR1–NFR8).
+</p>
+<p>
+  Implementation was carried out using React for the web client, Node.js and Express for the API,
+  PostgreSQL with Prisma for persistence, and WaafiPay for mobile-money collection. The project repository
+  is organised into <em>frontend/</em> and <em>backend/</em> folders with automated tests in
+  This chapter presents screenshots of the system, functional test cases, backend
+  and API testing, and security measures applied in the prototype. Screenshots are taken from the
+  running application pages (admin dashboard through driver and customer screens) and sized for print.
+</p>
+
+<h2>4.2 Snapshots of the System</h2>
+<p>
+  This section presents each major GaariHel feature with (1) a short list of what the feature does in
+  the system, and (2) a screenshot of the live page. Features follow the user journey: public entry,
+  administrator, driver, and customer.
+</p>
+
+<h3>4.2.1 Public entry pages</h3>
+
+<div class="feature-block">
+<h4>Home Page Features</h4>
+<ul class="feature-list">
+  <li>Brand and product introduction for GaariHel</li>
+  <li>Navigation to Login and Register</li>
+  <li>Overview of FTL and SHARED freight modes</li>
+  <li>Public calls to action for customers and drivers</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-12-landing-home.png" alt="Public home page" />
+<p class="fig-caption">Figure 4.1: Public home page</p>
+</div>
+
+<div class="feature-block">
+<h4>Clients / Testimonials Features</h4>
+<ul class="feature-list">
+  <li>Show public customer reviews after delivered trips</li>
+  <li>Display star ratings and short comments</li>
+  <li>Show reviewer name and location</li>
+  <li>Build trust for new visitors before registration</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-30-clients-testimonials.png" alt="Landing page Clients testimonials section" />
+<p class="fig-caption">Figure 4.2: Landing page — Clients / customer testimonials</p>
+</div>
+
+<div class="feature-block">
+<h4>Login Features</h4>
+<ul class="feature-list">
+  <li>User authentication with email/username and password</li>
+  <li>JWT session creation after successful login</li>
+  <li>Role-based redirect (admin, driver, or customer dashboard)</li>
+  <li>Optional email OTP verification when enabled</li>
+  <li>Link to registration and password recovery</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-11-login.png" alt="Login page" />
+<p class="fig-caption">Figure 4.3: Login page</p>
+</div>
+
+<div class="feature-block">
+<h4>Registration Features</h4>
+<ul class="feature-list">
+  <li>Customer self-registration (driver accounts are created by admin)</li>
+  <li>Input validation (name, email, phone, password rules)</li>
+  <li>Duplicate email / phone detection</li>
+  <li>Password encryption (hashed storage)</li>
+  <li>Optional email verification / confirmation step</li>
+  <li>Redirect to login after successful registration</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-10-register.png" alt="Registration page" />
+<p class="fig-caption">Figure 4.4: Registration page (customer)</p>
+</div>
+
+<h3>4.2.2 Administrator pages</h3>
+
+<div class="feature-block">
+<h4>Admin Dashboard Features</h4>
+<ul class="feature-list">
+  <li>Summary metrics for requests, trips, users, and payments</li>
+  <li>Quick overview of operational status</li>
+  <li>Sidebar navigation to all admin modules</li>
+  <li>Role-protected access for administrators only</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-1-admin-dashboard.png" alt="Admin dashboard" />
+<p class="fig-caption">Figure 4.5: Admin dashboard</p>
+</div>
+
+<div class="feature-block">
+<h4>Cargo Request Management Features</h4>
+<ul class="feature-list">
+  <li>List and filter pending / assigned cargo requests</li>
+  <li>View FTL and SHARED booking details</li>
+  <li>Open Assign action for available trucks</li>
+  <li>Status badges for request lifecycle</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-13-admin-requests.png" alt="Admin cargo requests" />
+<p class="fig-caption">Figure 4.6: Admin — cargo requests list</p>
+</div>
+
+<div class="feature-block">
+<h4>FTL Assignment Features</h4>
+<ul class="feature-list">
+  <li>Assign an available FTL truck and driver to a request</li>
+  <li>Validate truck availability before assignment</li>
+  <li>Create trip in Assigned status for the driver</li>
+  <li>Notify driver and update request status</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-2-ftl-assign-modal.png" alt="FTL assignment" />
+<p class="fig-caption">Figure 4.7: Admin — FTL truck assignment</p>
+</div>
+
+<div class="feature-block">
+<h4>Shared Pool Assignment Features</h4>
+<ul class="feature-list">
+  <li>Select at least two SHARED requests on the same corridor</li>
+  <li>Enforce same gobol + magalo for pickup and delivery</li>
+  <li>Assign one SHARED truck to the pooled loads</li>
+  <li>Create one SharedTrip for a single driver Accept</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-3-shared-pool.png" alt="Shared pool assignment" />
+<p class="fig-caption">Figure 4.8: Admin — shared load pool assignment</p>
+</div>
+
+<div class="feature-block">
+<h4>Customers Management Features</h4>
+<ul class="feature-list">
+  <li>Register customers for cargo requests on their behalf</li>
+  <li>View total, active, and inactive customer counts</li>
+  <li>Search and open customer cards (phone, city, status)</li>
+  <li>Add, view, edit, or deactivate customer accounts</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-24-admin-customers.png" alt="Admin customers page" />
+<p class="fig-caption">Figure 4.9: Admin — customers page</p>
+</div>
+
+<div class="feature-block">
+<h4>Trip Status (Admin) Features</h4>
+<ul class="feature-list">
+  <li>Monitor FTL and SHARED trips separately</li>
+  <li>Summary cards for total, active, pending, cancelled, delivered</li>
+  <li>Filter by status and inspect route, customer, driver, truck</li>
+  <li>Show fare only after Delivered</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-25-admin-trips-ftl.png" alt="Admin trips page" />
+<p class="fig-caption">Figure 4.10: Admin — trips / status overview</p>
+</div>
+
+<div class="feature-block">
+<h4>Audit Log Features</h4>
+<ul class="feature-list">
+  <li>Record administrator and system actions</li>
+  <li>Show actor, action type, entity, and timestamp</li>
+  <li>Support accountability for assign / cancel / settings changes</li>
+  <li>Search and review historical operations</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-15-audit-logs.png" alt="Audit logs" />
+<p class="fig-caption">Figure 4.11: Admin — audit logs</p>
+</div>
+
+<div class="feature-block">
+<h4>Pricing Settings Features</h4>
+<ul class="feature-list">
+  <li>Configure FTL and SHARED rate components (kg, km, livestock, etc.)</li>
+  <li>Enable or disable pricing units used at Delivered</li>
+  <li>Persist rates for GPS-distance and weight-based fare</li>
+  <li>Admin-only update of platform pricing rates</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-4-pricing-settings.png" alt="Pricing settings" />
+<p class="fig-caption">Figure 4.12: Admin — pricing settings</p>
+</div>
+
+<div class="feature-block">
+<h4>Admin Profile Features</h4>
+<ul class="feature-list">
+  <li>View and update administrator profile details</li>
+  <li>Change password when required</li>
+  <li>Upload or change profile photo</li>
+  <li>Keep account identity consistent across sessions</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-16-admin-profile.png" alt="Admin profile" />
+<p class="fig-caption">Figure 4.13: Admin — profile page</p>
+</div>
+
+<div class="feature-block">
+<h4>Live Tracking Features</h4>
+<ul class="feature-list">
+  <li>Display driver GPS position on the map</li>
+  <li>Follow active trips in near real time</li>
+  <li>Support distance recording used for fare at Delivered</li>
+  <li>Role-aware access for admin (and related tracking views)</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-7-tracking-map.png" alt="Live tracking map" />
+<p class="fig-caption">Figure 4.14: Admin — live GPS tracking map</p>
+</div>
+
+<h4>4.2.2.1 Functional Testing</h4>
+<p>
+  Functional testing used a black-box approach. Key checks included login, cargo booking, FTL assign,
+  shared pool assign, driver Accept/Reject, pickup weight, trip status progression, fare at Delivered,
+  payment gating, and audit-log entries.
+</p>
+<table>
+  <caption>Table 4.1: Sample functional test cases — admin panel</caption>
+  <thead>
+    <tr><th>Test ID</th><th>Function</th><th>Input</th><th>Expected result</th><th>Actual result</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>FT-01</td><td>Admin login</td><td>Valid admin credentials</td><td>Redirect to admin dashboard</td><td>As expected</td><td>Pass</td></tr>
+    <tr><td>FT-02</td><td>Assign FTL truck</td><td>Pending FTL request + available truck</td><td>Request status Assigned; driver notified</td><td>As expected</td><td>Pass</td></tr>
+    <tr><td>FT-03</td><td>Shared pool assign</td><td>Two same-corridor SHARED requests + SHARED truck</td><td>One SharedTrip status Assigned created</td><td>As expected</td><td>Pass</td></tr>
+    <tr><td>FT-04</td><td>Corridor block</td><td>Two requests with different magalo</td><td>Assignment rejected</td><td>As expected</td><td>Pass</td></tr>
+    <tr><td>FT-05</td><td>Update pricing rates</td><td>Valid kg and km rates for FTL/SHARED</td><td>Settings saved; used at Delivered</td><td>As expected</td><td>Pass</td></tr>
+    <tr><td>FT-06</td><td>View audit log</td><td>After pool assign action</td><td>Audit entry recorded</td><td>As expected</td><td>Pass</td></tr>
+  </tbody>
+</table>
+
+<h4>4.2.2.2 UI/UX Evaluation</h4>
+<p>
+  Design principles include consistent sidebar layouts, status badges, clear Assign / Accept / Reject
+  actions, Somali phrase support, and fare display only after Delivered. Shared jobs use one Accept for
+  the whole pool so drivers understand the assignment as a single job.
+</p>
+
+<h3>4.2.3 Driver pages</h3>
+
+<div class="feature-block">
+<h4>Driver Dashboard Features</h4>
+<ul class="feature-list">
+  <li>Summary of assigned, active, and completed jobs</li>
+  <li>Entry point to Accept / Reject and trip actions</li>
+  <li>Service-type routing (FTL jobs or SHARED trips)</li>
+  <li>GPS readiness indicator for active trips</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-21-driver-dashboard.png" alt="Driver dashboard" />
+<p class="fig-caption">Figure 4.15: Driver dashboard</p>
+</div>
+
+<div class="feature-block">
+<h4>Assigned Job Features</h4>
+<ul class="feature-list">
+  <li>Show jobs waiting for driver decision</li>
+  <li>Accept assignment to start the trip workflow</li>
+  <li>Reject assignment so admin can reassign</li>
+  <li>Prevent fare/ETA edits by the driver (admin-set route)</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-6-shared-driver-accept.png" alt="Driver assigned job Accept Reject" />
+<p class="fig-caption">Figure 4.16: Driver — assigned job (Accept / Reject)</p>
+</div>
+
+<div class="feature-block">
+<h4>Driver Trip Status Features</h4>
+<ul class="feature-list">
+  <li>View trip / shared-job detail after Accept</li>
+  <li>Advance status one step at a time (pickup â†’ transit â†’ delivered)</li>
+  <li>Enter pickup weight / measurement when required</li>
+  <li>Upload proof of delivery before Delivered</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-6b-shared-trip-detail.png" alt="Driver trip status detail" />
+<p class="fig-caption">Figure 4.17: Driver — trip status / detail</p>
+</div>
+
+<div class="feature-block">
+<h4>Truck Profile Features</h4>
+<ul class="feature-list">
+  <li>View truck number, plate, type, and capacity</li>
+  <li>Show linked driver and licence number</li>
+  <li>Display truck photo and current status badge</li>
+  <li>Set truck status: Available, Busy, or Maintenance</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-26-driver-truck-profile.png" alt="Driver truck profile" />
+<p class="fig-caption">Figure 4.18: Driver — truck profile</p>
+</div>
+
+<div class="feature-block">
+<h4>Driver Profile Features</h4>
+<ul class="feature-list">
+  <li>View driver identity and contact details</li>
+  <li>Update profile photo and basic information</li>
+  <li>Link to truck profile for fleet information</li>
+  <li>Secure password change</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-23-driver-profile.png" alt="Driver profile" />
+<p class="fig-caption">Figure 4.19: Driver — profile page</p>
+</div>
+
+<h3>4.2.4 Customer pages</h3>
+
+<div class="feature-block">
+<h4>Customer Home Features</h4>
+<ul class="feature-list">
+  <li>Customer dashboard after login</li>
+  <li>Shortcuts to book FTL or SHARED cargo</li>
+  <li>Overview of trips and notifications</li>
+  <li>Role-specific navigation for customers only</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-17-customer-home.png" alt="Customer home dashboard" />
+<p class="fig-caption">Figure 4.20: Customer home / dashboard</p>
+</div>
+
+<div class="feature-block">
+<h4>Booking Features</h4>
+<ul class="feature-list">
+  <li>Create FTL cargo request (Book Truck)</li>
+  <li>Somalia location fields (gobol, magalo, neighbourhood)</li>
+  <li>Cargo type, description, and optional photo</li>
+  <li>Sender / receiver contacts and preferred pickup date</li>
+  <li>Server-side validation before request is saved</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-5-customer-booking.png" alt="Customer FTL booking" />
+<p class="fig-caption">Figure 4.21: Customer — FTL booking page</p>
+</div>
+
+<div class="feature-block">
+<h4>Shared Booking Features</h4>
+<ul class="feature-list">
+  <li>Post a SHARED capacity request on a corridor</li>
+  <li>Enter route and cargo details for pooling</li>
+  <li>Wait for admin to pool compatible loads</li>
+  <li>Track the shared booking after assignment</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-27-shared-booking.png" alt="Customer shared booking" />
+<p class="fig-caption">Figure 4.22: Customer — shared booking page</p>
+</div>
+
+<div class="feature-block">
+<h4>View Booked Trip Features</h4>
+<ul class="feature-list">
+  <li>List customer’s booked trips and requests</li>
+  <li>Show current status for each booking</li>
+  <li>Open trip details for tracking and payment</li>
+  <li>Separate history of delivered / cancelled trips</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-18-customer-trips.png" alt="Customer booked trips" />
+<p class="fig-caption">Figure 4.23: Customer — view booked trips</p>
+</div>
+
+<div class="feature-block">
+<h4>Customer Trip Status Features</h4>
+<ul class="feature-list">
+  <li>Track shipment progress after assignment</li>
+  <li>See driver movement on the tracking map when available</li>
+  <li>Follow status messages through to Delivered</li>
+  <li>Know when payment becomes available</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-19-customer-tracking.png" alt="Customer trip status tracking" />
+<p class="fig-caption">Figure 4.24: Customer — trip status / tracking</p>
+</div>
+
+<div class="feature-block">
+<h4>Payment Features</h4>
+<ul class="feature-list">
+  <li>Show invoices only when trip is Delivered</li>
+  <li>Collect 100% fare via WaafiPay mobile money</li>
+  <li>Block payment before delivery is confirmed</li>
+  <li>Update payment status after successful purchase</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-8-payments.png" alt="Customer payment" />
+<p class="fig-caption">Figure 4.25: Customer — payment (WaafiPay)</p>
+</div>
+
+<div class="feature-block">
+<h4>Customer Profile Features</h4>
+<ul class="feature-list">
+  <li>View and edit customer profile details</li>
+  <li>Update phone, city, and profile photo</li>
+  <li>Change account password</li>
+  <li>Keep booking contact data up to date</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-20-customer-profile.png" alt="Customer profile" />
+<p class="fig-caption">Figure 4.26: Customer — profile page</p>
+</div>
+
+<div class="feature-block">
+<h4>Support Features</h4>
+<ul class="feature-list">
+  <li>Submit support complaints about trips or service issues</li>
+  <li>Track complaint status for customers and drivers</li>
+  <li>Admin review and respond to open support tickets</li>
+  <li>Link complaints to users and related shipments when available</li>
+</ul>
+<img class="thesis-figure" src="screenshots/fig-4-29-customer-support.png" alt="Customer support page" />
+<p class="fig-caption">Figure 4.27: Customer — support page</p>
+<img class="thesis-figure" src="screenshots/fig-4-28-admin-support.png" alt="Admin support page" />
+<p class="fig-caption">Figure 4.28: Admin — support / complaints page</p>
+</div>
+
+<h4>4.2.4.1 Application Features Summary</h4>
+<p>
+  Together, the screens above cover registration, booking, assignment, driver Accept/Reject, trip status,
+  payment after Delivered, profiles for all roles, and admin audit logs.
+</p>
+
+<h4>4.2.4.2 Unit and Integration Testing</h4>
+<p>
+  Backend unit and integration tests validate trip status chain, payment schedule (canPay only after
+  Delivered), booking validation, shared pickup weight, and registration schema under
+  <em>backend/tests/</em>.
+</p>
+<table>
+  <caption>Table 4.2: Automated backend tests</caption>
+  <thead>
+    <tr><th>Test file</th><th>Focus</th><th>Requirement traced</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>trip-status.test.js</td><td>Driver status chain; POD required for Delivered</td><td>R11, NFR4</td></tr>
+    <tr><td>payment-workflow.test.js</td><td>Payment blocked before Delivered; 100% after</td><td>R10</td></tr>
+    <tr><td>cargo-booking-validation.test.js</td><td>Booking payload validation</td><td>R2, R3</td></tr>
+    <tr><td>shared-trips.test.js</td><td>Shared pickup weight; pool behaviour</td><td>R5, R7, R15</td></tr>
+    <tr><td>registration-schema.test.js</td><td>Driver/truck registration rules</td><td>R1</td></tr>
+  </tbody>
+</table>
+
+<h4>4.2.4.3 Device Compatibility Testing</h4>
+<p>
+  Compatibility was checked on Windows (Chrome/Edge) for admin and customer flows, and on Android Chrome
+  for driver PWA and GPS. Layout remained usable on common phone widths.
+</p>
+<table>
+  <caption>Table 4.3: Device compatibility test matrix</caption>
+  <thead>
+    <tr><th>Platform</th><th>Browser</th><th>Role tested</th><th>Result</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Windows 11</td><td>Chrome / Edge</td><td>Admin, Customer</td><td>Pass</td></tr>
+    <tr><td>Android</td><td>Chrome</td><td>Driver PWA + GPS</td><td>Pass</td></tr>
+    <tr><td>Android</td><td>Chrome</td><td>Customer booking</td><td>Pass</td></tr>
+    <tr><td>iOS</td><td>Safari</td><td>Customer / Driver browse</td><td>Pass (limited PWA)</td></tr>
+  </tbody>
+</table>
+
+<h2>4.3 Backend and API Development &amp; Testing</h2>
+
+<h3>4.3.1 Backend</h3>
+<p>
+  The backend is implemented in Node.js with Express. Entry point <em>backend/index.js</em> creates the HTTP
+  server and Socket.io. Routes are grouped by resource: auth, cargo-requests, trips, trucks, users, payments,
+  shared-trips, notifications, support, and admin reports. Business logic resides in repository modules under
+  <em>backend/services/db/</em> (for example tripRepository, cargoRepository, sharedTripRepository,
+  paymentRepository). Shared helpers cover trip status validation, payment workflow, pricing rates, and
+  Somalia geography.
+</p>
+<img class="thesis-figure" src="screenshots/fig-4-9-backend-architecture.svg" alt="Backend layered architecture" />
+<p class="fig-caption">Figure 4.29: Backend layered architecture</p>
+
+<h3>4.3.2 API Development</h3>
+<p>
+  The API follows RESTful conventions. JSON is used for request and response bodies. Authentication uses
+  Bearer JWT in the Authorization header. Representative endpoints include:
+</p>
+<table>
+  <caption>Table 4.4: Sample REST API endpoints</caption>
+  <thead>
+    <tr><th>Method</th><th>Endpoint</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>POST</td><td>/api/auth/login</td><td>User authentication</td></tr>
+    <tr><td>POST</td><td>/api/cargo-requests</td><td>Create booking</td></tr>
+    <tr><td>PATCH</td><td>/api/cargo-requests/:id/assign</td><td>Admin assign FTL</td></tr>
+    <tr><td>POST</td><td>/api/shared-trips/assign-pool</td><td>Admin pool shared loads</td></tr>
+    <tr><td>POST</td><td>/api/shared-trips/:id/accept</td><td>Driver accept whole shared job</td></tr>
+    <tr><td>POST</td><td>/api/trips/:id/accept</td><td>Driver accept FTL trip</td></tr>
+    <tr><td>PATCH</td><td>/api/trips/:id/status</td><td>Advance trip status / GPS</td></tr>
+    <tr><td>POST</td><td>/api/payments/waafi/purchase</td><td>WaafiPay payment</td></tr>
+  </tbody>
+</table>
+<p>
+  API documentation is maintained in <em>docs/API.md</em>. Zod schemas validate payloads at route level before
+  repository execution.
+</p>
+
+<h3>4.3.3 Testing</h3>
+<p>
+  API testing goals include verifying correct HTTP status codes, enforcing role checks, validating error
+  messages for illegal status transitions, and confirming payment endpoints reject early payment. Manual testing
+  used browser dev tools and API clients to send authenticated requests. Automated tests run with Node’s test
+  runner against repository functions. Error handling was validated with invalid IDs, wrong roles, and missing
+  required fields (for example pickup weight on shared pickup start).
+</p>
+<table>
+  <caption>Table 4.5: API test examples</caption>
+  <thead>
+    <tr><th>Endpoint</th><th>Test condition</th><th>Expected HTTP</th><th>Result</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>POST /trips/:id/accept</td><td>Non-driver token</td><td>403 Forbidden</td><td>Pass</td></tr>
+    <tr><td>PATCH /trips/:id/status</td><td>Skip status step</td><td>400 Bad Request</td><td>Pass</td></tr>
+    <tr><td>POST /shared-trips/assign-pool</td><td>Only one request selected</td><td>400 Bad Request</td><td>Pass</td></tr>
+    <tr><td>POST /shared-trips/:id/pickup</td><td>Missing weight for a booking</td><td>400 Bad Request</td><td>Pass</td></tr>
+    <tr><td>GET /api/health</td><td>No auth</td><td>200 OK with integration status</td><td>Pass</td></tr>
+  </tbody>
+</table>
+
+<h2>4.4 Security Implementation and Testing</h2>
+
+<h3>4.4.1 Authentication and Authorization</h3>
+<p>
+  Users authenticate with email and password; passwords are stored hashed. Successful login returns a JWT
+  used on subsequent requests. Middleware <em>requireAuth</em> and <em>requireRole</em> protect routes.
+  Administrators alone may assign trucks and pool shared loads. Drivers cannot change fare or ETA on assigned
+  jobs. Customers may pay only their own invoices. Shared drivers cannot create or publish shared routes;
+  assignment is admin-only. JWT expiration and password-change policies reduce session hijack risk.
+</p>
+
+<h3>4.4.2 Input Validation</h3>
+<p>
+  Server-side validation uses Zod schemas on registration, booking, assignment, and status update payloads.
+  Client-side form validation (React Hook Form) improves usability but is not trusted for security. File
+  uploads (cargo photos, proof of delivery, driver documents) are restricted to authenticated endpoints with
+  size and type checks via Multer. SQL injection is mitigated by Prisma parameterised queries. Secrets
+  (DATABASE_URL, JWT secret, Waafi credentials) are loaded from environment variables, not source code.
+</p>
+
+<h3>4.4.3 Security Testing Methods</h3>
+<p>
+  Security verification included manual tests: accessing admin routes without admin role (expect 403),
+  attempting payment before Delivered (expect blocked), and submitting malformed JSON (expect 400). Role
+  separation between FTL and SHARED driver routes was tested with DriverServiceGuard on the frontend and
+  matching backend checks. Automated dependency audit (<em>npm audit</em>) was run periodically during
+  development. Formal penetration testing with OWASP ZAP was not fully automated in the prototype phase;
+  known OWASP concerns (broken access control, injection) were addressed through middleware, ORM, and role
+  checks as described above.
+</p>
+<table>
+  <caption>Table 4.6: Security test summary</caption>
+  <thead>
+    <tr><th>Control</th><th>Test method</th><th>Outcome</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>JWT required on protected routes</td><td>Request without token</td><td>401 Unauthorized</td></tr>
+    <tr><td>Admin-only assign</td><td>Customer token on assign endpoint</td><td>403 Forbidden</td></tr>
+    <tr><td>Payment after Delivered</td><td>Pay API before Delivered</td><td>Blocked with message</td></tr>
+    <tr><td>Driver cannot set fare</td><td>PATCH assignment with fare</td><td>403 Forbidden</td></tr>
+    <tr><td>Password storage</td><td>Inspect database</td><td>Hashed, not plain text</td></tr>
+  </tbody>
+</table>
+
+<h2>4.5 Summary of Implementation Results</h2>
+<p>
+  GaariHel was successfully implemented as a working prototype covering FTL and SHARED workflows, admin
+  assignment, driver Accept/Reject (including one Accept for shared pools), GPS tracking, fare calculation at
+  Delivered, and WaafiPay payment gating. Functional and automated tests support requirements R1–R15. The
+  screenshots and architecture diagram in this chapter were captured from the running GaariHel prototype.
+  Performance under heavy concurrent load was not formally benchmarked; this is noted as a limitation for
+  Chapter V.
+</p>
+
+</body>
+</html>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Eye, MapPin, Pencil, Phone, Plus, Trash2, Truck, UserCheck, Users } from "lucide-react";
+import { Eye, MapPin, Pencil, Phone, Plus, Truck, UserCheck, UserX, Users } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/Button";
@@ -13,6 +13,7 @@ import { useUserMutations, useUserSummary, useUsers } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
 import { somaliaLocations, somaliaRegions } from "../../data/somaliaLocations";
+import { FULL_NAME_PATTERN } from "../../utils/helpers";
 
 /** mode="fleet" → Fleet / Drivers. mode="customers" → Customers. */
 export function UsersPage({ mode } = {}) {
@@ -132,7 +133,6 @@ export function UsersPage({ mode } = {}) {
           }
           payload.driverLicense = values.driverLicense?.trim() || undefined;
           payload.truck = {
-            truckNumber: values.truckNumber?.trim(),
             plateNumber: values.plateNumber?.trim(),
             capacity: values.capacity?.trim(),
             truckType: values.truckType?.trim(),
@@ -140,6 +140,7 @@ export function UsersPage({ mode } = {}) {
             city: values.city.trim(),
             ...(values.truckStatus ? { status: values.truckStatus } : {})
           };
+          if (editing.truckNumber) payload.truck.truckNumber = editing.truckNumber;
         }
         if (editRole === "customer" || isCustomersMode) {
           payload.customerProfile = {
@@ -168,7 +169,6 @@ export function UsersPage({ mode } = {}) {
           formData.append("role", createRole);
           if (values.phone) formData.append("phone", values.phone);
           formData.append("driverLicense", values.driverLicense);
-          formData.append("truckNumber", values.truckNumber);
           formData.append("plateNumber", values.plateNumber);
           formData.append("capacity", values.capacity);
           formData.append("truckType", values.truckType);
@@ -208,8 +208,14 @@ export function UsersPage({ mode } = {}) {
           };
           result = await mutations.create.mutateAsync(payload);
         }
-        const parts = [result.message || "User created. Credentials sent by email."];
-        if (result.devPassword) parts.push(`Temp password: ${result.devPassword}`);
+        const parts = [result.message || "User created."];
+        if (result.devPassword) {
+          parts.push(`Temporary password: ${result.devPassword}`);
+        } else if (result.credentialsEmailed) {
+          parts.push(`Password emailed to ${values.email}.`);
+        }
+        const truckId = result.user?.truckNumber || result.truckNumber;
+        if (truckId) parts.push(`Truck ID: ${truckId}`);
         setCreateInfo(parts.join(" "));
       }
       setOpen(false);
@@ -225,17 +231,58 @@ export function UsersPage({ mode } = {}) {
     }
   }
 
-  async function onDelete(user) {
-    if (user.role === "admin") {
-      alert("Admin users cannot be deleted.");
-      return;
+  async function onToggleStatus(user) {
+    if (user.isSuperAdmin && !authUser.isSuperAdmin) {
+      alert("Only the Super Admin can change this account.");
+      return false;
     }
-    if (!confirm("Delete this user?")) return;
+    if (user.id === authUser.id) {
+      alert("You cannot deactivate your own account.");
+      return false;
+    }
+    if (user.role === "admin" && !authUser.isSuperAdmin) {
+      alert("Only the Super Admin can change admin account status.");
+      return false;
+    }
+
+    const isPendingDriver =
+      user.role === "driver" && String(user.status || "").toLowerCase().includes("pending");
+
+    if (isPendingDriver) {
+      if (!confirm(`Activate ${user.name}?`)) return false;
+      try {
+        await mutations.verifyDriver.mutateAsync(user.id);
+        return true;
+      } catch (err) {
+        alert(err.message);
+        return false;
+      }
+    }
+
+    const nextStatus = user.status === "Active" ? "Inactive" : "Active";
+    const action = nextStatus === "Inactive" ? "deactivate" : "activate";
+    if (!confirm(`${action.charAt(0).toUpperCase()}${action.slice(1)} ${user.name}?`)) return false;
+
     try {
-      await mutations.remove.mutateAsync(user.id);
+      await mutations.update.mutateAsync({ id: user.id, payload: { status: nextStatus } });
+      return true;
     } catch (err) {
       alert(err.message);
+      return false;
     }
+  }
+
+  function canToggleStatus(user) {
+    if (user.isSuperAdmin) return authUser.isSuperAdmin && user.id !== authUser.id;
+    if (user.role === "admin") return authUser.isSuperAdmin && user.id !== authUser.id;
+    return user.id !== authUser.id;
+  }
+
+  function statusActionLabel(user) {
+    if (user.role === "driver" && String(user.status || "").toLowerCase().includes("pending")) {
+      return "Activate";
+    }
+    return user.status === "Active" ? "Deactivate" : "Activate";
   }
 
   return (
@@ -365,13 +412,21 @@ export function UsersPage({ mode } = {}) {
                     >
                       <Pencil size={14} /> Edit
                     </button>
-                    <button
-                      type="button"
-                      className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-error transition hover:bg-error/10"
-                      onClick={() => onDelete(row)}
-                    >
-                      <Trash2 size={14} /> Delete
-                    </button>
+                    {canToggleStatus(row) ? (
+                      <button
+                        type="button"
+                        className={`ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition ${
+                          row.status === "Active"
+                            ? "text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                            : "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                        }`}
+                        onClick={() => onToggleStatus(row)}
+                        title={statusActionLabel(row)}
+                      >
+                        {row.status === "Active" ? <UserX size={14} /> : <UserCheck size={14} />}
+                        {statusActionLabel(row)}
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -400,7 +455,7 @@ export function UsersPage({ mode } = {}) {
                   label: "Role",
                   render: (row) => row.isSuperAdmin ? "Super Admin" : row.role
                 }] : [
-                  { key: "truckNumber", label: "Truck", render: (row) => row.truckNumber || "—" },
+                  { key: "truckNumber", label: "Truck ID", render: (row) => row.truckNumber || "—" },
                   { key: "plateNumber", label: "Plate", render: (row) => row.plateNumber || "—" },
                   { key: "city", label: "City", render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—" },
                   { key: "truckType", label: "Type", render: (row) => row.truckType || "—" },
@@ -416,6 +471,11 @@ export function UsersPage({ mode } = {}) {
                   render: (row) => row.phone || "—"
                 },
                 {
+                  key: "status",
+                  label: "Status",
+                  render: (row) => <StatusBadge status={row.status || "Active"} />
+                },
+                {
                   key: "actions",
                   label: "",
                   render: (row) => (
@@ -423,21 +483,21 @@ export function UsersPage({ mode } = {}) {
                       <button type="button" className="text-on-surface-variant" onClick={() => setViewing(row)} title="View">
                         <Eye size={16} />
                       </button>
-                      {isFleet && row.status !== "Active" ? (
-                        <Button className="px-2 py-1 text-xs" onClick={() => mutations.verifyDriver.mutate(row.id)}>
-                          Verify
-                        </Button>
-                      ) : null}
                       {(!row.isSuperAdmin || authUser.isSuperAdmin) && (
                         <button type="button" className="text-secondary-container" onClick={() => openEdit(row)} title="Edit">
                           <Pencil size={16} />
                         </button>
                       )}
-                      {row.role !== "admin" && (
-                        <button type="button" className="text-error" onClick={() => onDelete(row)} title="Delete">
-                          <Trash2 size={16} />
+                      {canToggleStatus(row) ? (
+                        <button
+                          type="button"
+                          className={row.status === "Active" ? "text-amber-700" : "text-emerald-700"}
+                          onClick={() => onToggleStatus(row)}
+                          title={statusActionLabel(row)}
+                        >
+                          {row.status === "Active" ? <UserX size={16} /> : <UserCheck size={16} />}
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   )
                 }
@@ -453,9 +513,11 @@ export function UsersPage({ mode } = {}) {
             <Detail label="Email" value={viewing.email} />
             <Detail label="Phone" value={viewing.phone || "—"} />
             <Detail label="Role" value={viewing.isSuperAdmin ? "Super Admin" : viewing.role} />
+            <Detail label="Status" value={<StatusBadge status={viewing.status || "Active"} />} />
+
             {viewing.role === "driver" ? (
               <>
-                <Detail label="Truck number" value={viewing.truckNumber || "—"} />
+                <Detail label="Truck ID" value={viewing.truckNumber || "—"} />
                 <Detail label="Plate" value={viewing.plateNumber || "—"} />
                 <Detail label="Region" value={viewing.region || "—"} />
                 <Detail label="City" value={viewing.city || "—"} />
@@ -466,22 +528,14 @@ export function UsersPage({ mode } = {}) {
                 <Detail label="National ID" value={viewing.nationalIdNumber || "—"} />
               </>
             ) : null}
-            {viewing.role === "dispatcher" && viewing.dispatcherProfile ? (
+
+            {viewing.role === "customer" ? (
               <>
-                <Detail label="Dispatcher code" value={viewing.dispatcherProfile.dispatcherCode || "—"} />
-                <Detail label="National ID" value={viewing.dispatcherProfile.nationalIdNumber || "—"} />
-                <Detail label="City" value={viewing.dispatcherProfile.city || "—"} />
-                <Detail label="Address" value={viewing.dispatcherProfile.address || "—"} />
-                <Detail label="Experience" value={viewing.dispatcherProfile.yearsOfExperience ?? "—"} />
-                <Detail label="Verification" value={viewing.dispatcherProfile.verificationStatus || "—"} />
+                <Detail label="City" value={viewing.customerProfile?.city || "—"} />
+                <Detail label="Address" value={viewing.customerProfile?.address || "—"} className="sm:col-span-2" />
               </>
             ) : null}
-            {viewing.role === "customer" && viewing.customerProfile ? (
-              <>
-                <Detail label="City" value={viewing.customerProfile.city || "—"} />
-                <Detail label="Address" value={viewing.customerProfile.address || "—"} className="sm:col-span-2" />
-              </>
-            ) : null}
+
             <Detail
               label="Joined"
               value={viewing.createdAt ? new Date(viewing.createdAt).toLocaleString() : "—"}
@@ -506,30 +560,17 @@ export function UsersPage({ mode } = {}) {
             </DocumentsGrid>
           )}
 
-          {viewing.role === "dispatcher" && (
-            <DocumentsGrid title="Dispatcher documents">
-              <DocumentCard
-                label="National ID front"
-                url={viewing.dispatcherProfile?.nationalIdFrontUrl}
-                meta={viewing.dispatcherProfile?.nationalIdNumber ? `ID ${viewing.dispatcherProfile.nationalIdNumber}` : undefined}
-              />
-              <DocumentCard label="National ID back" url={viewing.dispatcherProfile?.nationalIdBackUrl} />
-              <DocumentCard label="Profile photo" url={viewing.dispatcherProfile?.profilePhotoUrl || viewing.avatarUrl} />
-              <DocumentCard label="CV" url={viewing.dispatcherProfile?.cvUrl} />
-            </DocumentsGrid>
-          )}
-
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setViewing(null)}>Close</Button>
-            {viewing.role === "driver" && viewing.status !== "Active" ? (
+            {canToggleStatus(viewing) ? (
               <Button
-                onClick={() => {
-                  mutations.verifyDriver.mutate(viewing.id, {
-                    onSuccess: () => setViewing(null)
-                  });
+                variant={viewing.status === "Active" ? "secondary" : "primary"}
+                onClick={async () => {
+                  const ok = await onToggleStatus(viewing);
+                  if (ok) setViewing(null);
                 }}
               >
-                Verify documents
+                {statusActionLabel(viewing)}
               </Button>
             ) : null}
             {(!viewing.isSuperAdmin || authUser.isSuperAdmin) ? (
@@ -546,7 +587,18 @@ export function UsersPage({ mode } = {}) {
           wide
         >
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-            <input className="stitch-input" placeholder={selectedRole === "customer" ? "Full name" : "Name"} {...register("name", { required: true })} />
+            <input
+              className="stitch-input"
+              placeholder={selectedRole === "customer" ? "Full name (e.g. Cabdi Axmed Xaashi)" : "Full name"}
+              maxLength={150}
+              autoComplete="name"
+              {...register("name", {
+                required: true,
+                minLength: 2,
+                maxLength: 150,
+                pattern: FULL_NAME_PATTERN
+              })}
+            />
             <input className="stitch-input" placeholder="Phone" {...register("phone", { required: selectedRole === "customer" })} />
             {!editing ? <input className="stitch-input sm:col-span-2" placeholder="Username" {...register("username", { required: true, minLength: 3 })} /> : null}
             <input className="stitch-input sm:col-span-2" type="email" placeholder={selectedRole === "customer" ? "Email (Gmail)" : "Email"} {...register("email", { required: true })} />
@@ -613,11 +665,18 @@ export function UsersPage({ mode } = {}) {
                     </label>
                   </>
                 ) : null}
-                <input className="stitch-input" placeholder="Truck number" {...register("truckNumber", { required: true })} />
+                <p className="sm:col-span-2 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant">
+                  Truck ID is generated by the system automatically (e.g. TRK-…). You only enter plate number and truck details.
+                </p>
+                {editing?.truckNumber ? (
+                  <div className="sm:col-span-2 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 text-sm">
+                    <span className="text-xs font-semibold text-on-surface-variant">Truck ID</span>
+                    <p className="font-semibold text-on-surface">{editing.truckNumber}</p>
+                  </div>
+                ) : null}
                 <input className="stitch-input" placeholder="Plate number" {...register("plateNumber", { required: true })} />
                 <input className="stitch-input" placeholder="Capacity" {...register("capacity", { required: true })} />
-                <input className="stitch-input" placeholder="Write truck type" {...register("truckType", { required: true })} />
-                <label className="block text-sm">
+                <input className="stitch-input" placeholder="Write truck type" {...register("truckType", { required: true })} />                <label className="block text-sm">
                   <span className="mb-1.5 block font-medium text-on-surface-variant">Region *</span>
                   <select
                     className="stitch-input"
@@ -653,7 +712,6 @@ export function UsersPage({ mode } = {}) {
                       <option value="Busy">Busy</option>
                       <option value="Maintenance">Maintenance</option>
                       <option value="Unavailable">Unavailable</option>
-                      <option value="Pending Verification">Pending Verification</option>
                     </select>
                   </label>
                 ) : (

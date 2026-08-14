@@ -1,5 +1,11 @@
 import { prisma } from "../lib/prisma.js";
 import { queueSms } from "./smsService.js";
+import {
+  TRIP_NOTIFY,
+  customerMessageForTripStatus,
+  deliveryConfirmCode,
+  formatCustomerNotifyLine,
+} from "../lib/tripCustomerMessages.js";
 
 const publicUrl = () =>
   (process.env.APP_PUBLIC_URL || process.env.CLIENT_ORIGIN?.split(",")[0] || "http://localhost:5173").replace(
@@ -16,27 +22,88 @@ const safeLocation = (cargo, prefix) => {
     || (prefix === "from" ? "Pickup area" : "Destination area");
 };
 
-/** External parties who may not have a GaariHel account. */
-export function cargoSmsRecipients(cargo, { prefer } = {}) {
-  const rows = [
-    { name: cargo?.senderName || cargo?.sender, phone: cargo?.senderPhone, type: "Sender" },
-    { name: cargo?.receiverName || cargo?.receiver, phone: cargo?.receiverPhone, type: "Receiver" },
-  ].filter((party, index, list) =>
+function uniqueByPhone(parties) {
+  return parties.filter((party, index, list) =>
     party.phone && list.findIndex((row) => row.phone === party.phone) === index
   );
+}
+
+/** External parties who may not have a GaariHel account. */
+export function cargoSmsRecipients(cargo, { prefer } = {}) {
+  const rows = uniqueByPhone([
+    { name: cargo?.senderName || cargo?.sender, phone: cargo?.senderPhone, type: "Sender" },
+    { name: cargo?.receiverName || cargo?.receiver, phone: cargo?.receiverPhone, type: "Receiver" },
+  ]);
 
   if (prefer === "Receiver") return rows.filter((row) => row.type === "Receiver");
   if (prefer === "Sender") return rows.filter((row) => row.type === "Sender");
   if (prefer === "external") {
-    // Customer booked as sender → notify receiver; booked as receiver → notify sender.
     if (cargo?.customerRole === "SENDER") return rows.filter((row) => row.type === "Receiver");
     if (cargo?.customerRole === "RECEIVER") return rows.filter((row) => row.type === "Sender");
   }
   return rows;
 }
 
+/** Booking parties + registered customer phone. */
+export async function resolveCargoSmsRecipients(cargo) {
+  const parties = [...cargoSmsRecipients(cargo)];
+  const customerId = cargo?.customerId;
+  if (!customerId) return parties;
+
+  const customer = await prisma.user.findUnique({
+    where: { id: customerId },
+    select: { name: true, phone: true },
+  });
+  if (customer?.phone) {
+    parties.push({ name: customer.name || "Macmiil", phone: customer.phone, type: "Customer" });
+  }
+  return uniqueByPhone(parties);
+}
+
+export function formatAssignedTruckLine({ driverName, truckType, truckNumber, plateNumber } = {}) {
+  const type = truckType || "Gaari";
+  const number = truckNumber || plateNumber || "N/A";
+  const plate = plateNumber && plateNumber !== truckNumber ? ` (taarikada ${plateNumber})` : "";
+  const driver = driverName ? ` Darawalka: ${driverName}.` : "";
+  return ` Nooca gaadhiga: ${type}. Lambarka gaadhiga: ${number}${plate}.${driver}`;
+}
+
+async function loadAssignedTruckDetails(request) {
+  const truckId = request.truckId;
+  const driverId = request.driverId;
+  if (!truckId && !driverId) return null;
+
+  const [truck, driver] = await Promise.all([
+    truckId
+      ? prisma.truck.findUnique({
+          where: { id: truckId },
+          select: { truckType: true, truckNumber: true, plateNumber: true },
+        })
+      : null,
+    driverId
+      ? prisma.user.findUnique({
+          where: { id: driverId },
+          select: {
+            name: true,
+            truck: { select: { truckType: true, truckNumber: true, plateNumber: true } },
+          },
+        })
+      : null,
+  ]);
+
+  const source = truck || driver?.truck;
+  if (!source && !driver) return null;
+
+  return {
+    driverName: driver?.name || null,
+    truckType: source?.truckType || request.truckType || null,
+    truckNumber: source?.truckNumber || null,
+    plateNumber: source?.plateNumber || null,
+  };
+}
+
 async function sendMany(cargo, entityType, entityId, event, messageFor, recipients) {
-  const list = recipients || cargoSmsRecipients(cargo);
+  const list = recipients || (await resolveCargoSmsRecipients(cargo));
   return Promise.all(
     list.map((party) =>
       queueSms({
@@ -51,44 +118,39 @@ async function sendMany(cargo, entityType, entityId, event, messageFor, recipien
   );
 }
 
+function greet(party) {
+  return `Salaan ${party.name || party.type || "Macmiil"},`;
+}
+
 export async function sendBookingCreatedSms(request) {
-  // Sender and receiver both get updates, so the booking customer is always included.
-  const recipients = cargoSmsRecipients(request);
-  const sender = request.senderName || "Diraha";
-  const receiver = request.receiverName || "qaataha";
+  const recipients = await resolveCargoSmsRecipients(request);
+  const msg = TRIP_NOTIFY.bookingCreated;
   return sendMany(
     request,
     "cargo_request",
     request.id,
     "booking.created",
     (party) =>
-      party.type === "Receiver"
-        ? `Salaan ${party.name || "Qaataha"}, ${sender} ayaa kuu ballansaday xamuul. Booking ${request.id}. Ka: ${safeLocation(request, "from")}. Ku: ${safeLocation(request, "to")}. Waxaad heli doontaa SMS markasta oo xaaladda isbeddesho.`
-        : `Salaan ${party.name || "Diraha"}, ${receiver} ayaa codsaday in xamuul laga soo qaado. Booking ${request.id}. Ka: ${safeLocation(request, "from")}. Ku: ${safeLocation(request, "to")}. Waxaad heli doontaa SMS xaaladda.`,
+      `${greet(party)} ${msg.title}. ${msg.body} Booking ${request.id}. Ka: ${safeLocation(request, "from")} → ${safeLocation(request, "to")}.`,
     recipients
   );
 }
 
 export async function sendCargoRequestEventSms(request, event) {
-  const fallback = cargoSmsRecipients(request);
+  const recipients = await resolveCargoSmsRecipients(request);
+  const truckDetails =
+    event === "booking.assigned" || event === "booking.accepted"
+      ? await loadAssignedTruckDetails(request)
+      : null;
+  const truckLine = truckDetails ? formatAssignedTruckLine(truckDetails) : "";
 
+  const assigned = TRIP_NOTIFY.assigned;
   const labels = {
-    "booking.accepted": "buukinka waa la aqbalay fadlan bixi lacagta 30%.",
-    "booking.assigned": `Darawalkan ayaa loo qoondeeyay xamuulka ${request.id}. Fadlan bixi 30% deposit ka hor inta safarka uusan bilaaban.`,
-    "booking.cancelled": `qaadista xamuulka   ${request.id} waa la joojiyay.`,
-    "booking.restored": `qaadista  xamuulka ${request.id} dib ayaa loosoo cusbooneysiiyay .`,
+    "booking.accepted": `${assigned.title}. ${assigned.body} Lacagta (100%) waxaa la bixinayaa Delivered ka dib.`,
+    "booking.assigned": `${assigned.title}. ${assigned.body} Lacagta (100%) waxaa la bixinayaa Delivered ka dib.${truckLine}`,
+    "booking.cancelled": `qaadista xamuulka ${request.id} waa la joojiyay.`,
+    "booking.restored": `qaadista xamuulka ${request.id} dib ayaa loo soo cusbooneysiiyay.`,
   };
-
-  let driverLine = "";
-  if (event === "booking.assigned" && request.driverId) {
-    const driver = await prisma.user.findUnique({
-      where: { id: request.driverId },
-      select: { name: true, phone: true, truck: { select: { plateNumber: true } } },
-    });
-    if (driver?.phone) {
-      driverLine = ` Darawalka: ${driver.name || "Darawal"}, tel: ${driver.phone}, taarikada: ${driver.truck?.plateNumber || "N/A"}.`;
-    }
-  }
 
   return sendMany(
     request,
@@ -96,8 +158,8 @@ export async function sendCargoRequestEventSms(request, event) {
     request.id,
     event,
     (party) =>
-      `Salaan ${party.name || party.type}, ${labels[event] || "Xaaladda xamuulkaaga waa la cusboonaysiiyay."}${driverLine} Booking ${request.id}.`,
-    fallback
+      `${greet(party)} ${labels[event] || "Xaaladda xamuulkaaga waa la cusboonaysiiyay."} Booking ${request.id}. Ka: ${safeLocation(request, "from")} → ${safeLocation(request, "to")}.`,
+    recipients
   );
 }
 
@@ -107,39 +169,65 @@ export async function sendTripEventSms(tripId, event, { feedbackToken } = {}) {
     include: {
       cargoRequest: true,
       driver: { select: { name: true, phone: true } },
+      truck: { select: { truckType: true, truckNumber: true, plateNumber: true } },
     },
   });
   if (!trip?.cargoRequest) return [];
 
   const cargo = trip.cargoRequest;
-  const list = cargoSmsRecipients(cargo);
+  const list = await resolveCargoSmsRecipients(cargo);
   const driverName = trip.driver?.name?.split(/\s+/)[0] || "Darawal";
-  const driverPhone = trip.driver?.phone || "";
-  const driverContact = driverPhone ? ` Darawalka ${driverName}: ${driverPhone}.` : "";
+  const truckLine = formatAssignedTruckLine({
+    driverName,
+    truckType: trip.truck?.truckType || cargo.truckType,
+    truckNumber: trip.truck?.truckNumber,
+    plateNumber: trip.truck?.plateNumber,
+  });
+  const code = deliveryConfirmCode(trip.id);
 
   if (event === "cargo.delivered") {
     const feedbackLink = feedbackToken
       ? `${publicUrl()}/f/${feedbackToken}`
       : `${publicUrl()}/feedback`;
-    // Receiver (and external party) get the short feedback link.
+    const delivered = TRIP_NOTIFY.delivered;
     return sendMany(
       cargo,
       "trip",
       trip.id,
       event,
       (party) =>
-        party.type === "Receiver"
-          ? `Salaan ${party.name || "Qaataha"}, xamuulka ${trip.id} waa la geeyay. Xaqiiji oo qiimee halkan: ${feedbackLink}`
-          : `Salaan ${party.name || party.type}, xamuulka ${trip.id} waa la geeyay. Feedback: ${feedbackLink}`,
+        `${greet(party)} ${delivered.title}. ${delivered.body} Trip ${trip.id}. Feedback: ${feedbackLink}`,
       list
     );
   }
 
-  const text = {
-    "cargo.arrived_pickup": `Darawalku wuxuu yimid goobta qaadista xamuulka ${trip.id}.${driverContact}`,
-    "cargo.picked_up": `Xamuulka ${trip.id} waa la soo qaaday oo wuxuu ku socdaa ${safeLocation(cargo, "to")}.${driverContact}`,
-    "cargo.in_transit": `Xamuulka ${trip.id} waa ku jiraa safarka oo ku socda ${safeLocation(cargo, "to")}.${driverContact}`,
-    "cargo.near_destination": `Darawalku wuu usoo dhow yahay wax yar kadib wuu kusoo garaa  ${trip.id}.${driverContact}`,
+  if (event === "cargo.picked_up") {
+    const weight = cargo.weight && !/^(tbd|pending|n\/a)$/i.test(String(cargo.weight).trim())
+      ? ` Culeyska: ${cargo.weight}.`
+      : "";
+    const entry = customerMessageForTripStatus("Picked Up", { tripId: trip.id });
+    return sendMany(
+      cargo,
+      "trip",
+      trip.id,
+      event,
+      (party) => `${greet(party)} ${entry.title}. ${entry.body}${weight}${truckLine} Trip ${trip.id}.`,
+      list
+    );
+  }
+
+  const statusByEvent = {
+    "cargo.en_route_pickup": "En Route to Pickup",
+    "cargo.arrived_pickup": "Arrived at Pickup",
+    "cargo.picked_up": "Picked Up",
+    "cargo.in_transit": "In Transit",
+    "cargo.near_destination": "Near Destination",
+  };
+
+  const status = statusByEvent[event];
+  const entry = status ? customerMessageForTripStatus(status, { tripId: trip.id }) : null;
+
+  const fallback = {
     "cargo.cancelled": `qaadista xamuulka ${trip.id} waa la joojiyay.`,
     "cargo.restored": `qaadista xamuulka ${trip.id} waa dib loo soo celiyay.`,
   };
@@ -149,7 +237,18 @@ export async function sendTripEventSms(tripId, event, { feedbackToken } = {}) {
     "trip",
     trip.id,
     event,
-    (party) => `Salaan ${party.name || party.type}, ${text[event] || "Xaaladda xamuulkaaga waa la cusboonaysiiyay."}`,
+    (party) => {
+      if (entry) {
+        const extra =
+          event === "cargo.near_destination"
+            ? ` Koodhka xaqiijinta: ${code}. Sii darawalka ${driverName}.${truckLine}`
+            : truckLine;
+        return `${greet(party)} ${entry.title}. ${entry.body}${extra} Trip ${trip.id}.`;
+      }
+      return `${greet(party)} ${fallback[event] || "Xaaladda xamuulkaaga waa la cusboonaysiiyay."}`;
+    },
     list
   );
 }
+
+export { formatCustomerNotifyLine, TRIP_NOTIFY, customerMessageForTripStatus, deliveryConfirmCode };

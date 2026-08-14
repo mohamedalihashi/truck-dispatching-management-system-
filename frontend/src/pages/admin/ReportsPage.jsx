@@ -67,7 +67,6 @@ const ACTIVITY_TYPES = [
   { value: "payments", label: "Payments" },
   { value: "trucks", label: "Trucks" },
   { value: "earnings", label: "Earnings" },
-  { value: "bids", label: "Bids" },
   { value: "shared", label: "Shared loads" },
   { value: "feedback", label: "Feedback" },
   { value: "audits", label: "Audit log" }
@@ -804,7 +803,6 @@ function UserActivityTab() {
     { id: "payments", label: "Payments", rows: data?.payments || [] },
     { id: "trucks", label: "Trucks", rows: data?.trucks || [] },
     { id: "earnings", label: "Earnings", rows: data?.earnings || [] },
-    { id: "bids", label: "Bids", rows: data?.bids || [] },
     { id: "shared", label: "Shared", rows: [...(data?.sharedTrips || []), ...(data?.sharedBookings || [])] },
     { id: "feedback", label: "Feedback", rows: data?.feedback || [] },
     { id: "audits", label: "Audits", rows: data?.audits || [] }
@@ -905,7 +903,7 @@ function UserActivityTab() {
 
       {!userId ? (
         <p className="rounded-xl border border-dashed border-outline-variant px-6 py-16 text-center text-sm text-on-surface-variant">
-          Select a user to see cargo, trips, payments, trucks, earnings, bids, shared loads, feedback, and audit history.
+          Select a user to see cargo, trips, payments, trucks, earnings, shared loads, feedback, and audit history.
         </p>
       ) : null}
 
@@ -950,7 +948,6 @@ function UserActivityTab() {
             <MiniStat label="Trucks" value={summary.trucks ?? 0} />
             <MiniStat label="Earnings" value={money(summary.earnedAmount)} />
             <MiniStat label="Paid amount" value={money(summary.paidAmount)} />
-            <MiniStat label="Bids" value={summary.bids ?? 0} />
             <MiniStat label="Shared trips" value={summary.sharedTrips ?? 0} />
             <MiniStat label="Feedback" value={summary.feedback ?? 0} />
             <MiniStat label="Audits" value={summary.audits ?? 0} />
@@ -1142,31 +1139,6 @@ function ActivityDetailTable({ sectionId, rows }) {
           },
           { key: "percent", label: "%" },
           { key: "recipientRole", label: "Role" },
-          { key: "status", label: "Status", type: "status" },
-          {
-            key: "createdAt",
-            label: "Created",
-            render: (row) => (row.createdAt ? new Date(row.createdAt).toLocaleString() : "—")
-          }
-        ]}
-      />
-    );
-  }
-
-  if (sectionId === "bids") {
-    return (
-      <DataTable
-        rows={rows}
-        empty="No bids."
-        columns={[
-          { key: "route", label: "Route" },
-          {
-            key: "amount",
-            label: "Bid",
-            render: (row) => money(row.amount)
-          },
-          { key: "estimatedDays", label: "Days" },
-          { key: "truck", label: "Truck" },
           { key: "status", label: "Status", type: "status" },
           {
             key: "createdAt",

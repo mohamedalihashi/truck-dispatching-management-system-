@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   LogIn,
   Menu,
-  Truck,
   UserPlus,
   X
 } from "lucide-react";
@@ -22,9 +21,7 @@ const LANDING_LINKS = [
   { href: "#testimonials", labelKey: "public.clients" }
 ];
 
-const PUBLIC_ROUTES = [
-  { to: "/trucks", labelKey: "public.browseTrucks" }
-];
+const PUBLIC_ROUTES = [];
 
 export function PublicSiteHeader({ variant = "landing", className = "" }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -99,7 +96,7 @@ export function PublicSiteHeader({ variant = "landing", className = "" }) {
       >
         <nav className="mx-auto flex h-full max-w-7xl items-center justify-between">
           <Link to="/" className="flex min-w-0 items-center" onClick={closeMenu}>
-            <BrandLogo size="sm" linkToHome={false} className="max-h-10 sm:max-h-12" />
+            <BrandLogo size="sm" layout="row" linkToHome={false} />
           </Link>
 
           <div className="hidden items-center gap-8 lg:flex">
@@ -213,7 +210,6 @@ export function PublicSiteHeader({ variant = "landing", className = "" }) {
                   : "text-on-surface hover:bg-surface-container"
               }`}
             >
-              <Truck size={18} />
               {t(link.labelKey)}
             </Link>
           ))}

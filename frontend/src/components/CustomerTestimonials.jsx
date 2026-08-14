@@ -67,7 +67,7 @@ export function CustomerTestimonials() {
           <div className="max-w-xl">
             <h2 className="text-[32px] font-bold text-primary">What Our Customers Say</h2>
             <p className="mt-4 text-on-surface-variant">
-              Real reviews from customers after their shipments are delivered on GaariHel.
+              Real reviews from customers after their trips are delivered on GaariHel.
             </p>
           </div>
           {items.length > pageSize ? (

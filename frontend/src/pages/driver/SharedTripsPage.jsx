@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { MapPin, Plus, Weight, Package, Truck, CheckCircle2, Navigation, Flag } from "lucide-react";
+import { MapPin, Weight, Package, Truck, CheckCircle2, Navigation, Flag } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
@@ -8,6 +8,7 @@ import { MetricCard } from "../../components/ui/MetricCard";
 import { api } from "../../services/api";
 import { money } from "../../utils/helpers";
 import { SharedTripJourney } from "../../components/SharedTripJourney";
+import { SharedTripDecision } from "../../components/SharedTripDecision";
 
 export function SharedTripsPage() {
   const qc = useQueryClient();
@@ -36,22 +37,17 @@ export function SharedTripsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Shared Trips"
-        subtitle="From creating a trip to finishing the journey — follow every step."
-        actions={
-          <Link to="/driver/shared-trips/new">
-            <Button><Plus size={16} /> New shared trip</Button>
-          </Link>
-        }
+        subtitle="Admin assigns shared loads as one job. Accept once → gather → pickup weight → In Transit → Delivered."
       />
 
       <SharedTripJourney />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <MetricCard icon={Package} label="Total trips" value={summary?.total ?? 0} tone="navy" />
+        <MetricCard icon={Truck} label="Awaiting accept" value={summary?.assigned ?? 0} tone="orange" />
         <MetricCard icon={Truck} label="Open" value={summary?.open ?? 0} tone="blue" />
         <MetricCard icon={CheckCircle2} label="Full" value={summary?.full ?? 0} tone="green" />
         <MetricCard icon={Navigation} label="Pickup" value={summary?.pickup ?? summary?.departed ?? 0} tone="orange" />
-        <MetricCard icon={Navigation} label="In Transit" value={summary?.inTransit ?? 0} tone="blue" />
         <MetricCard icon={Flag} label="Delivered" value={summary?.delivered ?? summary?.completed ?? 0} tone="green" />
       </div>
 
@@ -61,11 +57,8 @@ export function SharedTripsPage() {
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-10 text-center">
           <p className="font-semibold text-on-surface">No shared trips yet</p>
           <p className="mt-2 text-sm text-on-surface-variant">
-            Start with step 1 — create a trip with open capacity for customers to book.
+            Waiting for admin to assign SHARED loads to your truck from Shared Loads.
           </p>
-          <Link to="/driver/shared-trips/new" className="mt-4 inline-block">
-            <Button><Plus size={16} /> Create shared trip</Button>
-          </Link>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -85,17 +78,20 @@ export function SharedTripsPage() {
               </p>
               {trip.pricePerTon != null ? <p className="text-sm text-on-surface-variant">{money(trip.pricePerTon)}/ton</p> : null}
               <SharedTripJourney status={trip.status} compact className="mt-4" />
+              {trip.status === "Assigned" ? (
+                <div className="mt-4 rounded-lg border border-secondary-container/40 bg-secondary-fixed/20 p-3">
+                  <p className="mb-2 text-xs font-semibold text-on-surface">
+                    Hal shaqo · {trip.bookingsCount} load(s) · isku mel
+                  </p>
+                  <SharedTripDecision trip={trip} />
+                </div>
+              ) : null}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link to={`/driver/shared-trips/${trip.id}`}>
                   <Button variant="secondary" className="px-3 py-1 text-xs">View</Button>
                 </Link>
-                {trip.status === "Open for booking" ? (
-                  <>
-                    <Link to={`/driver/shared-trips/${trip.id}/edit`}>
-                      <Button variant="secondary" className="px-3 py-1 text-xs">Edit</Button>
-                    </Link>
-                    <Button className="px-3 py-1 text-xs" onClick={() => cancel.mutate(trip.id)}>Cancel</Button>
-                  </>
+                {["Open for booking", "Full"].includes(trip.status) ? (
+                  <Button className="px-3 py-1 text-xs" onClick={() => cancel.mutate(trip.id)}>Cancel</Button>
                 ) : null}
               </div>
             </article>

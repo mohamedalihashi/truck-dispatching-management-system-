@@ -2,12 +2,10 @@ import { lazy, Suspense } from "react";
 import {
   CheckCircle2,
   ClipboardList,
-  Gavel,
   MapPin,
   Package,
   Star,
   Truck,
-  UserCheck,
   Users,
   Wallet
 } from "lucide-react";
@@ -53,7 +51,6 @@ export function AdminDashboard() {
   const trips = summary?.recentTrips;
   const feedback = summary?.recentFeedback;
   const drivers = summary?.recentDrivers;
-  const pendingDrivers = summary?.pendingDrivers;
   const recentActivity = summary?.recentAudit?.data || [];
 
   const months = reports?.trends?.months || [];
@@ -78,12 +75,12 @@ export function AdminDashboard() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Marketplace Control Center"
-        subtitle="Customers book drivers directly — FTL trucks, shared loads, verification, and payouts in one place."
+        title="Management System Control Center"
+        subtitle="Customers submit cargo requests — assign FTL drivers, oversee shared loads, and manage payouts."
         actions={
           <>
             <Link to="/admin/trucks">
-              <Button variant="secondary">Verify drivers</Button>
+              <Button variant="secondary">Fleet & drivers</Button>
             </Link>
             <Link to="/admin/reports">
               <Button variant="secondary">View reports</Button>
@@ -96,66 +93,20 @@ export function AdminDashboard() {
       />
 
       <div className="rounded-xl border border-secondary-container/30 bg-secondary-container/10 px-4 py-3 text-sm text-on-surface">
-        Marketplace mode is active: no dispatcher role. Track FTL, shared loads, and driver verification below.
+        Management system mode is active: customers submit requests; admin assigns FTL drivers below.
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
         <MetricCard icon={Users} label="Customers" value={stats?.totalCustomers ?? "—"} tone="blue" />
         <MetricCard icon={Truck} label="Drivers" value={stats?.totalDrivers ?? "—"} tone="navy" />
-        <MetricCard
-          icon={UserCheck}
-          label="Pending verification"
-          value={stats?.pendingDrivers ?? "—"}
-          tone="orange"
-        />
         <MetricCard icon={Wallet} label="Revenue" value={money(stats?.revenue)} tone="green" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
         <MetricCard icon={Truck} label="Available trucks" value={stats?.availableTrucks ?? "—"} tone="soft" />
         <MetricCard icon={Package} label="Open shared loads" value={stats?.openSharedTrips ?? "—"} tone="blue" />
-        <MetricCard icon={Gavel} label="Open driver offers" value={stats?.openBidRequests ?? "—"} tone="amber" />
         <MetricCard icon={ClipboardList} label="Pending requests" value={stats?.pendingOrders ?? "—"} tone="soft" />
       </div>
-
-      {(stats?.pendingDrivers > 0 || (pendingDrivers?.data || []).length > 0) && (
-        <section className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] dark:border-amber-900 dark:bg-amber-950/30">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 px-6 py-4 dark:border-amber-900">
-            <div>
-              <h2 className="text-lg font-semibold text-amber-950 dark:text-amber-100">Drivers awaiting verification</h2>
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                New registrations appear here until you approve their documents.
-              </p>
-            </div>
-            <Link to="/admin/trucks">
-              <Button>Open fleet</Button>
-            </Link>
-          </div>
-          <DataTable
-            rows={pendingDrivers?.data || []}
-            empty="No drivers waiting for verification."
-            columns={[
-              { key: "name", label: "Driver" },
-              {
-                key: "serviceType",
-                label: "Service",
-                render: (row) => row.serviceType || "FTL"
-              },
-              { key: "truckNumber", label: "Truck" },
-              {
-                key: "city",
-                label: "Location",
-                render: (row) => [row.city, row.region].filter(Boolean).join(", ") || "—"
-              },
-              {
-                key: "status",
-                label: "Status",
-                render: (row) => <StatusBadge status={row.status || "Pending Verification"} />
-              }
-            ]}
-          />
-        </section>
-      )}
 
       <Suspense fallback={<ChartsSkeleton />}>
         <AdminDashboardCharts
@@ -177,9 +128,9 @@ export function AdminDashboard() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <QuickLink to="/admin/requests" title="Cargo requests" text="Direct bookings & open bid loads" />
+        <QuickLink to="/admin/requests" title="Customer requests" text="View all requests and assign drivers" />
         <QuickLink to="/admin/trucks" title="Fleet / Drivers" text="Verify FTL & shared drivers" />
-        <QuickLink to="/admin/tracking" title="Live tracking" text="Follow active marketplace trips" />
+        <QuickLink to="/admin/trips" title="Trips" text="Monitor trip status" />
         <QuickLink to="/admin/earnings" title="Payouts" text="Pay drivers after customer payment" />
       </div>
 
@@ -200,7 +151,7 @@ export function AdminDashboard() {
                 label: "Service",
                 render: (row) => row.serviceType || "FTL"
               },
-              { key: "truckNumber", label: "Truck" },
+              { key: "truckNumber", label: "Truck ID" },
               {
                 key: "truckStatus",
                 label: "Truck status",
@@ -217,7 +168,7 @@ export function AdminDashboard() {
 
         <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)] xl:col-span-12">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant px-6 py-5">
-            <h2 className="text-xl font-semibold text-primary-container">Recent marketplace trips</h2>
+            <h2 className="text-xl font-semibold text-primary-container">Recent trips</h2>
             <Link to="/admin/trips" className="text-sm font-semibold text-secondary-container hover:underline">
               All trips
             </Link>

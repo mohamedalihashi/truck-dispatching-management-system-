@@ -4,10 +4,18 @@
  * Vercel: same origin — /api hits the serverless Express handler.
  */
 
+function isPrivateLanHost(host) {
+  return (
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host)
+  );
+}
+
 function isLocalDevHost() {
   if (typeof window === "undefined") return false;
   const host = window.location.hostname;
-  return host === "localhost" || host === "127.0.0.1";
+  return host === "localhost" || host === "127.0.0.1" || isPrivateLanHost(host);
 }
 
 function isLocalBackendUrl(url) {
@@ -33,8 +41,10 @@ export function getSocketUrl() {
   return configured || "";
 }
 
-/** Socket.io only works with the local Node server — not on Vercel serverless. */
+/** Realtime when Vite proxies locally or when a dedicated socket URL is configured (e.g. Render). */
 export function isRealtimeSocketEnabled() {
+  const configured = import.meta.env.VITE_SOCKET_URL?.trim();
+  if (configured && !isLocalBackendUrl(configured)) return true;
   return isLocalDevHost();
 }
 

@@ -11,7 +11,7 @@ export function DriverServiceGuard({ allow, children }) {
     return <Navigate to="/driver/shared-trips" replace />;
   }
   if (allow === "SHARED" && !shared) {
-    return <Navigate to="/driver/marketplace" replace />;
+    return <Navigate to="/driver/jobs" replace />;
   }
 
   return children;

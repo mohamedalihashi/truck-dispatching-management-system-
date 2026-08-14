@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, clearSession, loadSession, saveSession } from "../services/api";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const queryClient = useQueryClient();
   const existing = loadSession();
   const [user, setUser] = useState(existing?.user || null);
   const [token, setToken] = useState(existing?.token || null);
@@ -21,11 +23,14 @@ export function AuthProvider({ children }) {
         clearSession();
         setUser(null);
         setToken(null);
+        queryClient.clear();
       })
       .finally(() => setBooting(false));
-  }, [token]);
+  }, [token, queryClient]);
 
   function completeAuth(result) {
+    // Drop previous account's cached trips/payments so customers never see others' data.
+    queryClient.clear();
     saveSession(result);
     setUser(result.user);
     setToken(result.token);
@@ -71,6 +76,7 @@ export function AuthProvider({ children }) {
         clearSession();
         setUser(null);
         setToken(null);
+        queryClient.clear();
       },
       async refreshUser() {
         const result = await api.me();
@@ -82,7 +88,7 @@ export function AuthProvider({ children }) {
         return result.user;
       }
     }),
-    [user, token, booting]
+    [user, token, booting, queryClient]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

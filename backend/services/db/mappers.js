@@ -1,4 +1,4 @@
-import { estimateEta } from "../../lib/somaliaGeo.js";
+import { deliveryConfirmCode } from "../../lib/tripCustomerMessages.js";
 
 // Prisma enum values use underscores; the API uses spaces.
 export const tripStatusToDb = (s) => (s ? s.replace(/ /g, "_") : s);
@@ -40,9 +40,6 @@ export function mapUser(row) {
     truckDocumentUrls: row.truck?.documentUrls || [],
     region: row.truck?.region || null,
     city: row.truck?.city || null,
-    dispatcherProfile: row.dispatcherProfile
-      ? { ...row.dispatcherProfile, commissionPercentage: Number(row.dispatcherProfile.commissionPercentage || 0) }
-      : null,
     customerProfile: row.customerProfile || null,
   };
 }
@@ -60,6 +57,7 @@ export function mapTruck(row) {
     driverId: row.driverId,
     driver: row.driver?.name || null,
     driverPhone: row.driver?.phone || null,
+    driverServiceType: row.driver?.serviceType || null,
     status: row.status,
     photoUrl1: row.photoUrl1 || null,
     photoUrl2: row.photoUrl2 || null,
@@ -67,6 +65,17 @@ export function mapTruck(row) {
     registrationDocumentUrl: row.registrationDocumentUrl || null,
     region: row.region || null,
     city: row.city || null,
+    lastLocation:
+      row.lastLat != null && row.lastLng != null
+        ? {
+            lat: row.lastLat,
+            lng: row.lastLng,
+            updatedAt: row.lastLocationAt,
+            speedKmh: row.lastSpeedKmh != null ? Number(row.lastSpeedKmh) : null,
+            heading: row.lastHeading != null ? Number(row.lastHeading) : null,
+          }
+        : null,
+    gpsStatus: row.gpsStatus || "OFFLINE",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -86,6 +95,9 @@ export function mapCargoRequest(row) {
     from: row.pickup,
     to: row.destination,
     truckType: row.truckType,
+    cargoType: row.cargoType || null,
+    measuredQuantity: row.measuredQuantity != null ? Number(row.measuredQuantity) : null,
+    measurementUnit: row.measurementUnit || null,
     weight: row.weight,
     description: row.description,
     cargo: row.description,
@@ -187,12 +199,32 @@ export function mapTrip(row) {
     destination: row.destination,
     route: `${row.pickup} -> ${row.destination}`,
     distance: row.distance,
+    distanceTraveledKm:
+      row.distanceTraveledKm != null ? Number(row.distanceTraveledKm) : null,
+    lastLocation:
+      row.lastLat != null && row.lastLng != null
+        ? {
+            lat: row.lastLat,
+            lng: row.lastLng,
+            updatedAt: row.lastLocationAt,
+            speedKmh: row.lastSpeedKmh != null ? Number(row.lastSpeedKmh) : null,
+            heading: row.lastHeading != null ? Number(row.lastHeading) : null,
+            accuracyM: row.lastAccuracyM != null ? Number(row.lastAccuracyM) : null,
+          }
+        : null,
     estimatedTime: row.estimatedTime,
     eta: row.estimatedTime,
     status: tripStatusToApi(row.status),
     fare: Number(row.fare || 0),
+    deliveryConfirmCode: ["Near Destination", "Delivered"].includes(tripStatusToApi(row.status))
+      ? deliveryConfirmCode(row.id)
+      : null,
     cargo: row.cargoRequest?.description || "Cargo",
+    cargoType: row.cargoRequest?.cargoType || null,
     cargoWeight: row.cargoRequest?.weight || null,
+    measuredQuantity:
+      row.cargoRequest?.measuredQuantity != null ? Number(row.cargoRequest.measuredQuantity) : null,
+    measurementUnit: row.cargoRequest?.measurementUnit || null,
     cargoImageUrl: row.cargoRequest?.cargoImageUrl || null,
     loadType: row.cargoRequest?.loadType || "FTL",
     bookingChannel: row.cargoRequest?.bookingChannel || "ONLINE",
@@ -210,16 +242,6 @@ export function mapTrip(row) {
     deliveryProofUrl: row.deliveryProofUrl,
     signatureUrl: row.signatureUrl,
     deliveryConfirmedAt: row.deliveryConfirmedAt,
-    lastLocation:
-      row.lastLat != null
-        ? { lat: row.lastLat, lng: row.lastLng, updatedAt: row.lastLocationAt }
-        : null,
-    eta:
-      row.lastLat != null &&
-      row.destination &&
-      !["Delivered", "Cancelled"].includes(tripStatusToApi(row.status))
-        ? estimateEta(row.lastLat, row.lastLng, row.destination)
-        : null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     feedback: row.feedback ? mapFeedback(row.feedback) : null,
@@ -254,7 +276,7 @@ export function mapNotification(row) {
   };
 }
 
-export const userInclude = { truck: true, dispatcherProfile: true, customerProfile: true };
+export const userInclude = { truck: true, customerProfile: true };
 
 export const cargoRequestInclude = {
   customer: true,

@@ -9,10 +9,10 @@ function mapQuoteStatus(request) {
   const status = request.status;
   if (status === "Awaiting Approval") return "Waiting for Approval";
   if (status === "Quote Rejected") return "Rejected";
-  if (status === "Approved" || status === "Assigned" || status === "Accepted") {
+  if (status === "Approved" || status === "Assigned" || status === "En Route to Pickup") {
     return request.paymentStatus === "Paid" || request.paymentStatus === "Partial" ? "Paid" : "Accepted";
   }
-  if (["In Transit", "Loaded", "Arrived Pickup", "Delivered"].includes(status)) {
+  if (["In Transit", "Picked Up", "Arrived at Pickup", "Near Destination", "Delivered"].includes(status)) {
     return request.paymentStatus === "Paid" ? "Paid" : "Accepted";
   }
   return status;
@@ -100,7 +100,7 @@ router.post("/:id/pay", requireRole("customer"), async (req, res, next) => {
     const request = list.data.find((row) => row.id === req.params.id);
     if (!request) return res.status(404).json({ message: "Quote not found" });
 
-    if (!["Approved", "Assigned", "Accepted", "Arrived Pickup", "Loaded", "In Transit", "Delivered"].includes(request.status)) {
+    if (!["Approved", "Assigned", "En Route to Pickup", "Arrived at Pickup", "Picked Up", "In Transit", "Near Destination", "Delivered"].includes(request.status)) {
       return res.status(400).json({ message: "A driver must be assigned before payment" });
     }
 
@@ -117,7 +117,7 @@ router.post("/:id/pay", requireRole("customer"), async (req, res, next) => {
         amount: request.finalPrice ?? request.quotedPrice ?? trip.fare,
         status: "Pending",
         method: "waafipay",
-        description: `Shipment ${trip.id} — 30% deposit then balance after delivery`,
+        description: `Shipment ${trip.id} — pay 100% after delivery`,
       });
     }
 

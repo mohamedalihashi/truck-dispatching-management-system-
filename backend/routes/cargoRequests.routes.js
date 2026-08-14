@@ -4,33 +4,39 @@ import { requireAuth, requireRole, requirePasswordChanged, requirePermission } f
 import { validate } from "../middleware/validate.js";
 import { db } from "../services/dbService.js";
 import {
-  formatSomaliaLocation,
-  isValidSomaliaDistrict,
-  isValidSomaliaRegion
+  formatSomaliaLocation
 } from "../lib/somaliaLocations.js";
-import { normalizeSomaliPhone, isValidBookingPhone } from "../lib/phone.js";
+import { isValidBookingPhone } from "../lib/phone.js";
 import { sendBookingCreatedSms, sendCargoRequestEventSms } from "../services/cargoSmsService.js";
 import { upload } from "../lib/uploads.js";
 import { persistUploadedFile } from "../lib/persistUpload.js";
+import { fullNameSchema } from "../lib/validation.js";
+import { validateStructuredBooking } from "../lib/structuredBookingValidation.js";
+import { emitUserNotification } from "../lib/notifyRealtime.js";
 
 const router = Router();
 
-const requiredName = z.string().trim().min(1, "Name cannot be empty").max(100);
+const requiredName = fullNameSchema;
 const bookingPhone = z.string().trim().max(20).refine(isValidBookingPhone, "Enter a valid phone number (at least 7 digits)");
 const emptyToUndefined = (value) => (typeof value === "string" && value.trim() === "" ? undefined : value);
 const optionalName = z.preprocess(emptyToUndefined, requiredName.optional());
 const optionalPhone = z.preprocess(emptyToUndefined, bookingPhone.optional());
-const optionalText = z.preprocess(emptyToUndefined, z.string().trim().min(1).optional());
+const optionalText = z.preprocess(emptyToUndefined, z.string().trim().min(1).max(100).optional());
 
 const cargoRequestFields = z.object({
   pickup: z.string().trim().min(1).max(255).optional(),
   destination: z.string().trim().min(1).max(255).optional(),
-  truckType: z.string().trim().min(1).max(100),
+  truckType: z.string().trim().min(1).max(100).optional(),
+  cargoType: z.string().trim().min(1).max(100).optional(),
   weight: z.string().trim().refine(
-    (value) => Number.parseFloat(value) > 0,
+    (value) => {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (!normalized || normalized === "tbd" || normalized === "pending" || normalized === "n/a") return true;
+      return Number.parseFloat(normalized) > 0;
+    },
     "Cargo weight must be a positive number"
-  ),
-  description: z.string().trim().min(1).max(1000),
+  ).optional().default("TBD"),
+  description: z.string().trim().min(1).max(1000).optional(),
   receiver: z.string().optional(),
   sender: z.string().optional(),
   customerRole: z.enum(["SENDER", "RECEIVER"]).optional(),
@@ -64,50 +70,8 @@ const cargoRequestFields = z.object({
   submissionKey: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
   preferredTruckId: z.string().uuid().optional(),
-  loadType: z.enum(["FTL", "SHARED"]).optional(),
-  openForBids: z.coerce.boolean().optional()
+  loadType: z.enum(["FTL", "SHARED"]).optional()
 });
-
-function validateStructuredBooking(data, ctx, { allowLegacy = true } = {}) {
-  const usesStructuredLocations = Boolean(
-    data.customerRole || data.fromRegion || data.fromDistrict || data.fromNeighborhood ||
-    data.toRegion || data.toDistrict || data.toNeighborhood
-  );
-
-  if (!usesStructuredLocations && allowLegacy) {
-    if (!data.pickup) ctx.addIssue({ code: "custom", path: ["pickup"], message: "Pickup is required" });
-    if (!data.destination) ctx.addIssue({ code: "custom", path: ["destination"], message: "Destination is required" });
-    return;
-  }
-
-  if (!data.customerRole) {
-    ctx.addIssue({ code: "custom", path: ["customerRole"], message: "Customer role is required" });
-  }
-  if (!isValidSomaliaRegion(data.fromRegion)) {
-    ctx.addIssue({ code: "custom", path: ["fromRegion"], message: "Select a valid Somalia region" });
-  } else if (!isValidSomaliaDistrict(data.fromRegion, data.fromDistrict)) {
-    ctx.addIssue({ code: "custom", path: ["fromDistrict"], message: "District does not belong to the selected region" });
-  }
-  if (!isValidSomaliaRegion(data.toRegion)) {
-    ctx.addIssue({ code: "custom", path: ["toRegion"], message: "Select a valid Somalia region" });
-  } else if (!isValidSomaliaDistrict(data.toRegion, data.toDistrict)) {
-    ctx.addIssue({ code: "custom", path: ["toDistrict"], message: "District does not belong to the selected region" });
-  }
-  if (!data.fromNeighborhood) {
-    ctx.addIssue({ code: "custom", path: ["fromNeighborhood"], message: "From neighborhood is required" });
-  }
-  if (!data.toNeighborhood) {
-    ctx.addIssue({ code: "custom", path: ["toNeighborhood"], message: "To neighborhood is required" });
-  }
-  if (data.customerRole === "SENDER") {
-    if (!data.receiverName) ctx.addIssue({ code: "custom", path: ["receiverName"], message: "Receiver name is required" });
-    if (!data.receiverPhone) ctx.addIssue({ code: "custom", path: ["receiverPhone"], message: "Receiver phone is required" });
-  }
-  if (data.customerRole === "RECEIVER") {
-    if (!data.senderName) ctx.addIssue({ code: "custom", path: ["senderName"], message: "Sender name is required" });
-    if (!data.senderPhone) ctx.addIssue({ code: "custom", path: ["senderPhone"], message: "Sender phone is required" });
-  }
-}
 
 export const cargoRequestSchema = cargoRequestFields.superRefine((data, ctx) => {
   validateStructuredBooking(data, ctx);
@@ -115,7 +79,7 @@ export const cargoRequestSchema = cargoRequestFields.superRefine((data, ctx) => 
 
 const updateCargoRequestSchema = cargoRequestFields.partial().superRefine((data, ctx) => {
   const updatesStructuredBooking = Boolean(
-    data.customerRole || data.fromRegion || data.fromDistrict || data.fromNeighborhood ||
+    data.fromRegion || data.fromDistrict || data.fromNeighborhood ||
     data.toRegion || data.toDistrict || data.toNeighborhood
   );
   if (updatesStructuredBooking) validateStructuredBooking(data, ctx, { allowLegacy: false });
@@ -124,7 +88,9 @@ const updateCargoRequestSchema = cargoRequestFields.partial().superRefine((data,
 const assignSchema = z.object({
   driverId: z.string().uuid(),
   truckId: z.string().uuid(),
-  dispatcherId: z.string().uuid().optional()
+  dispatcherId: z.string().uuid().optional(),
+  fare: z.coerce.number().positive().optional(),
+  estimatedTime: z.string().trim().max(100).optional(),
 });
 
 const quoteSchema = z.object({
@@ -142,90 +108,26 @@ const declineBookingSchema = z.object({
   note: z.string().trim().min(1).max(500)
 });
 
-const phoneBookingSchema = z.object({
-  customerId: z.string().uuid(),
-  loadType: z.enum(["FTL", "SHARED"]),
-  pickupContactName: z.string().trim().min(2).max(100),
-  pickupContactPhone: bookingPhone,
-  pickup: z.string().trim().min(2).max(255),
-  destinationContactName: z.string().trim().min(2).max(100),
-  destinationContactPhone: bookingPhone,
-  destination: z.string().trim().min(2).max(255),
-  truckType: z.string().trim().max(100).optional(),
-  weight: z.string().trim().refine((value) => Number.parseFloat(value) > 0, "Weight must be positive"),
-  description: z.string().trim().min(2).max(1000),
-});
-
-const phoneAssignmentSchema = z.object({
-  truckId: z.string().uuid().optional(),
-  sharedTripId: z.string().min(1).optional(),
-});
-
 router.use(requireAuth);
 router.use(requirePasswordChanged);
 router.use(requirePermission("requests"));
-
-router.post("/phone-assisted", requireRole("admin"), validate(phoneBookingSchema), async (req, res, next) => {
-  try {
-    const booking = await db.createPhoneBooking(req.body, req.user.sub);
-    req.app.get("io").emit("order.created", booking);
-    void sendBookingCreatedSms(booking).catch((error) => console.error("Phone booking SMS failed:", error.message));
-    res.status(201).json(booking);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get("/phone-assisted", requireRole("admin"), async (req, res, next) => {
-  try {
-    res.json(await db.listPhoneBookings(req.query));
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get("/phone-assisted-options", requireRole("admin"), async (_req, res, next) => {
-  try {
-    res.json(await db.availablePhoneOptions());
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get("/phone-assisted/:id/assignment-options", requireRole("admin"), async (req, res, next) => {
-  try {
-    const result = await db.phoneAssignmentOptions(req.params.id);
-    if (!result) return res.status(404).json({ message: "Unassigned phone booking not found" });
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/phone-assisted/:id/assign", requireRole("admin"), validate(phoneAssignmentSchema), async (req, res, next) => {
-  try {
-    const booking = await db.assignPhoneBooking(req.params.id, req.body, req.user.sub);
-    if (!booking) return res.status(404).json({ message: "Unassigned phone booking not found" });
-    req.app.get("io").emit("driver.assigned", booking);
-    req.app.get("io").emit("notification.created", { userId: booking.driverId, type: "phone_booking.assigned" });
-    void sendCargoRequestEventSms(booking, "booking.assigned")
-      .catch((error) => console.error("Phone assignment SMS failed:", error.message));
-    res.json(booking);
-  } catch (error) {
-    next(error);
-  }
-});
 
 router.get("/", async (req, res, next) => {
   try {
     const filters = {
       status: req.query.status,
+      loadType: req.query.loadType,
       search: req.query.search,
       page: req.query.page,
       limit: req.query.limit
     };
-    if (req.user.role === "customer") filters.customerId = req.user.sub;
-    if (req.user.role === "driver") filters.driverId = req.user.sub;
+    if (req.user.role === "customer") {
+      filters.customerId = req.user.sub;
+    } else if (req.user.role === "driver") {
+      filters.driverId = req.user.sub;
+    } else if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not allowed to list cargo requests" });
+    }
     const result = await db.listCargoRequests(filters);
     res.json(result);
   } catch (error) {
@@ -236,8 +138,13 @@ router.get("/", async (req, res, next) => {
 router.get("/summary", async (req, res, next) => {
   try {
     const filters = {};
-    if (req.user.role === "customer") filters.customerId = req.user.sub;
-    if (req.user.role === "driver") filters.driverId = req.user.sub;
+    if (req.user.role === "customer") {
+      filters.customerId = req.user.sub;
+    } else if (req.user.role === "driver") {
+      filters.driverId = req.user.sub;
+    } else if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     res.json(await db.cargoRequestSummary(filters));
   } catch (error) {
     next(error);
@@ -261,35 +168,49 @@ router.post("/", requireRole("customer", "admin"), validate(cargoRequestSchema),
       req.user.role === "customer" &&
       req.body.loadType !== "SHARED" &&
       !req.body.preferredTruckId &&
-      !req.body.openForBids
+      !req.body.cargoType &&
+      !req.body.truckType
     ) {
       return res.status(400).json({
-        message: "Select a truck to book, post an open FTL request for bids, or book a shared load."
+        message: "Cargo type and route details are required to submit a cargo request."
       });
     }
-    if (req.body.customerRole && (!customer.name?.trim() || !bookingPhone.safeParse(customer.phone).success)) {
-      return res.status(400).json({ message: "Your profile name and phone number are required before booking" });
+    const hasStructuredLocations = Boolean(
+      req.body.fromRegion || req.body.fromDistrict || req.body.fromNeighborhood ||
+      req.body.toRegion || req.body.toDistrict || req.body.toNeighborhood
+    );
+    let bookingDetails = { ...req.body };
+    if (hasStructuredLocations) {
+      bookingDetails = {
+        ...bookingDetails,
+        pickup:
+          req.body.pickup ||
+          formatSomaliaLocation(req.body.fromNeighborhood, req.body.fromDistrict, req.body.fromRegion),
+        destination:
+          req.body.destination ||
+          formatSomaliaLocation(req.body.toNeighborhood, req.body.toDistrict, req.body.toRegion),
+      };
     }
-    const bookingDetails = req.body.customerRole
-      ? {
-          ...req.body,
-          pickup: formatSomaliaLocation(req.body.fromNeighborhood, req.body.fromDistrict, req.body.fromRegion),
-          destination: formatSomaliaLocation(req.body.toNeighborhood, req.body.toDistrict, req.body.toRegion),
-          senderName: req.body.customerRole === "SENDER" ? customer.name.trim() : req.body.senderName.trim(),
-          senderPhone: normalizeSomaliPhone(req.body.customerRole === "SENDER" ? customer.phone : req.body.senderPhone),
-          receiverName: req.body.customerRole === "RECEIVER" ? customer.name.trim() : req.body.receiverName.trim(),
-          receiverPhone: normalizeSomaliPhone(req.body.customerRole === "RECEIVER" ? customer.phone : req.body.receiverPhone)
-        }
-      : req.body;
+    // Customers book against their account; admin may attach optional sender/receiver contacts.
+    if (req.user.role === "customer") {
+      delete bookingDetails.customerRole;
+      delete bookingDetails.senderName;
+      delete bookingDetails.senderPhone;
+      delete bookingDetails.receiverName;
+      delete bookingDetails.receiverPhone;
+      delete bookingDetails.sender;
+      delete bookingDetails.receiver;
+    }
+
     const { request, notification } = await db.createCargoRequest({
       ...bookingDetails,
       customerId,
       customerName: customer.name,
       preferredTruckId: req.body.preferredTruckId,
-      loadType: req.body.loadType || (req.body.openForBids || req.body.preferredTruckId ? "FTL" : undefined)
+      loadType: req.body.loadType || (req.body.preferredTruckId ? "FTL" : undefined)
     });
     req.app.get("io").emit("order.created", request);
-    if (notification) req.app.get("io").emit("notification.created", notification);
+    emitUserNotification(req.app.get("io"), notification);
     void sendBookingCreatedSms(request).catch((error) => console.error("Booking SMS failed:", error.message));
     res.status(201).json(request);
   } catch (error) {
@@ -301,20 +222,29 @@ router.patch("/:id", requireRole("customer", "admin"), validate(updateCargoReque
   try {
     const filters = {};
     if (req.user.role === "customer") filters.customerId = req.user.sub;
-    let payload = req.body;
-    if (req.user.role === "customer" && req.body.customerRole) {
-      const customer = await db.findBookingCustomerById(req.user.sub);
-      if (!customer?.name?.trim() || !bookingPhone.safeParse(customer?.phone).success) {
-        return res.status(400).json({ message: "Your profile name and phone number are required before booking" });
-      }
+    let payload = { ...req.body };
+    if (req.user.role === "customer") {
+      delete payload.customerRole;
+      delete payload.senderName;
+      delete payload.senderPhone;
+      delete payload.receiverName;
+      delete payload.receiverPhone;
+      delete payload.sender;
+      delete payload.receiver;
+    }
+    const hasStructuredLocations = Boolean(
+      payload.fromRegion || payload.fromDistrict || payload.fromNeighborhood ||
+      payload.toRegion || payload.toDistrict || payload.toNeighborhood
+    );
+    if (hasStructuredLocations) {
       payload = {
-        ...req.body,
-        pickup: formatSomaliaLocation(req.body.fromNeighborhood, req.body.fromDistrict, req.body.fromRegion),
-        destination: formatSomaliaLocation(req.body.toNeighborhood, req.body.toDistrict, req.body.toRegion),
-        senderName: req.body.customerRole === "SENDER" ? customer.name.trim() : req.body.senderName?.trim(),
-        senderPhone: normalizeSomaliPhone(req.body.customerRole === "SENDER" ? customer.phone : req.body.senderPhone),
-        receiverName: req.body.customerRole === "RECEIVER" ? customer.name.trim() : req.body.receiverName?.trim(),
-        receiverPhone: normalizeSomaliPhone(req.body.customerRole === "RECEIVER" ? customer.phone : req.body.receiverPhone)
+        ...payload,
+        pickup:
+          payload.pickup ||
+          formatSomaliaLocation(payload.fromNeighborhood, payload.fromDistrict, payload.fromRegion),
+        destination:
+          payload.destination ||
+          formatSomaliaLocation(payload.toNeighborhood, payload.toDistrict, payload.toRegion),
       };
     }
     const request = await db.updateCargoRequest(req.params.id, payload, filters);
@@ -328,7 +258,7 @@ router.patch("/:id", requireRole("customer", "admin"), validate(updateCargoReque
 
 router.patch(
   "/:id/quote",
-  requireRole("driver", "admin"),
+  requireRole("admin"),
   validate(quoteSchema),
   async (req, res, next) => {
     try {
@@ -340,7 +270,7 @@ router.patch(
       });
       if (!result) return res.status(404).json({ message: "Cargo request not found" });
       req.app.get("io").emit("quote.sent", result.request);
-      if (result.notification) req.app.get("io").emit("notification.created", result.notification);
+      emitUserNotification(req.app.get("io"), result.notification);
       res.json(result.request);
     } catch (error) {
       next(error);
@@ -350,12 +280,10 @@ router.patch(
 
 router.post(
   "/:id/quote/accept",
+  requireRole("admin"),
   async (req, res, next) => {
     try {
-      if (req.user.role !== "customer") {
-        return res.status(403).json({ message: "Only the booking customer can accept a quotation" });
-      }
-      const request = await db.acceptCargoQuote(req.params.id, { customerId: req.user.sub });
+      const request = await db.acceptCargoQuote(req.params.id, { allowAdmin: true });
       if (!request) return res.status(404).json({ message: "Cargo request not found" });
       req.app.get("io").emit("quote.accepted", request);
       void sendCargoRequestEventSms(request, "booking.accepted").catch((error) => console.error("Accepted SMS failed:", error.message));
@@ -415,11 +343,13 @@ router.patch(
       const result = await db.assignCargoRequest(req.params.id, {
         driverId: req.body.driverId,
         truckId: req.body.truckId,
-        dispatcherId: req.body.dispatcherId
+        dispatcherId: req.body.dispatcherId || req.user.sub,
+        fare: req.body.fare,
+        estimatedTime: req.body.estimatedTime,
       });
       if (!result) return res.status(404).json({ message: "Cargo request not found" });
       req.app.get("io").emit("driver.assigned", result.request);
-      if (result.notification) req.app.get("io").emit("notification.created", result.notification);
+      emitUserNotification(req.app.get("io"), result.notification);
       void sendCargoRequestEventSms(result.request, "booking.assigned").catch((error) => console.error("Assigned SMS failed:", error.message));
       res.json(result.request);
     } catch (error) {
@@ -449,7 +379,7 @@ router.post("/:id/restore", requireRole("customer", "admin"), async (req, res, n
     const result = await db.restoreCargoRequest(req.params.id, req.user.sub, options);
     if (!result) return res.status(404).json({ message: "Cargo request not found" });
     req.app.get("io").emit("order.restored", result.request);
-    if (result.notification) req.app.get("io").emit("notification.created", result.notification);
+    emitUserNotification(req.app.get("io"), result.notification);
     void sendCargoRequestEventSms(result.request, "booking.restored").catch((error) => console.error("Restored SMS failed:", error.message));
     res.json(result.request);
   } catch (error) {

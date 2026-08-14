@@ -6,43 +6,23 @@ import { generateTempPassword } from "../lib/password.js";
 import { sendWelcomeEmail } from "../services/emailService.js";
 import { documentUpload } from "../lib/uploads.js";
 import { persistUploadedFile } from "../lib/persistUpload.js";
-import { strongPasswordSchema } from "../lib/validation.js";
+import { strongPasswordSchema, fullNameSchema } from "../lib/validation.js";
 
 const router = Router();
 const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const createSchema = z.object({
-  name: z.string().min(2),
+  name: fullNameSchema,
   username: z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9._-]+$/),
-  email: z.string().email(),
+  email: z.string().email().max(254),
   password: strongPasswordSchema.optional(),
   role: z.enum(["admin", "customer", "driver"]),
-  phone: z.string().optional(),
+  phone: z.string().trim().max(20).optional(),
   nationalIdNumber: z.string().trim().min(1).optional(),
   driverLicense: z.string().trim().min(1).optional(),
   driverLicenseUrl: z.string().min(1).optional(),
   driverImageUrl: z.string().min(1).optional(),
   serviceType: z.enum(["FTL", "SHARED"]).optional(),
-  dispatcherProfile: z.object({
-    dispatcherCode: z.string().trim().min(1),
-    nationalIdNumber: z.string().trim().min(1),
-    nationalIdFrontUrl: z.string().min(1).optional(),
-    nationalIdBackUrl: z.string().min(1),
-    profilePhotoUrl: z.string().min(1),
-    dateOfBirth: z.coerce.date(),
-    gender: z.enum(["Male", "Female", "Other"]),
-    city: z.string().trim().min(1),
-    address: z.string().trim().min(1),
-    cvUrl: z.string().min(1),
-    yearsOfExperience: z.coerce.number().int().min(0),
-    assignedRegion: z.string().trim().min(1).optional().default("N/A"),
-    workShift: z.string().trim().min(1).optional().default("N/A"),
-    emergencyContactName: z.string().trim().min(1),
-    emergencyContactPhone: z.string().trim().min(1),
-    commissionPercentage: z.coerce.number().min(0).max(100).optional().default(0),
-    verificationStatus: z.enum(["Pending", "Verified", "Rejected"]).optional().default("Pending"),
-    accountStatus: z.enum(["Active", "Inactive", "Suspended"]).optional().default("Active")
-  }).optional(),
   customerProfile: z.object({
     customerType: z.enum(["Individual", "Business"]).optional().default("Business"),
     city: z.string().trim().min(1),
@@ -63,7 +43,7 @@ const createSchema = z.object({
   }).optional(),
   truck: z
     .object({
-      truckNumber: z.string().min(1),
+      truckNumber: z.string().min(1).optional(),
       plateNumber: z.string().min(1),
       capacity: z.string().min(1),
       truckType: z.string().trim().min(1),
@@ -145,7 +125,7 @@ router.post(
       const truckPayload =
         role === "driver"
           ? {
-              truckNumber: req.body.truckNumber,
+              truckNumber: req.body.truckNumber || undefined,
               plateNumber: req.body.plateNumber,
               capacity: req.body.capacity,
               truckType: req.body.truckType,
@@ -252,12 +232,20 @@ router.post(
         autoVerify: parsed.data.role === "driver"
       });
 
-      const emailResult = await sendWelcomeEmail(parsed.data.email, tempPassword);
+      const emailResult = await sendWelcomeEmail(parsed.data.email, tempPassword, {
+        name: parsed.data.name,
+        role: parsed.data.role
+      });
 
       res.status(201).json({
         user,
-        message: `Account created. Temporary password sent to ${parsed.data.email}.`,
-        devPassword: emailResult.devPassword
+        message:
+          emailResult.userMessage ||
+          (emailResult.sent
+            ? `Account created. Login password sent to ${parsed.data.email}.`
+            : `Account created. Share the temporary password below with the user.`),
+        devPassword: emailResult.devPassword,
+        credentialsEmailed: Boolean(emailResult.sent)
       });
     } catch (error) {
       next(error);
@@ -288,6 +276,13 @@ router.patch("/:id", requireRole("admin"), async (req, res, next) => {
     if (req.body.role === "admin" && target.role !== "admin" && !actor?.isSuperAdmin) {
       return res.status(403).json({ message: "Only the Super Admin can promote users to admin" });
     }
+    if (req.body.name !== undefined) {
+      const parsedName = fullNameSchema.safeParse(req.body.name);
+      if (!parsedName.success) {
+        return res.status(400).json({ message: parsedName.error.issues[0]?.message || "Invalid full name" });
+      }
+      req.body.name = parsedName.data;
+    }
     const user = await db.updateUser(req.params.id, req.body, { actorId: req.user.sub, action: "user.updated" });
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json(user);
@@ -296,14 +291,10 @@ router.patch("/:id", requireRole("admin"), async (req, res, next) => {
   }
 });
 
-router.delete("/:id", requireRole("admin"), async (req, res, next) => {
-  try {
-    const ok = await db.deleteUser(req.params.id);
-    if (!ok) return res.status(404).json({ message: "User not found" });
-    res.json({ message: "User deleted" });
-  } catch (error) {
-    next(error);
-  }
+router.delete("/:id", requireRole("admin"), async (_req, res) => {
+  return res.status(403).json({
+    message: "Users cannot be deleted. Set the account to Inactive instead.",
+  });
 });
 
 export default router;

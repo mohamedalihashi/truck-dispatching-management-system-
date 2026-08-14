@@ -31,11 +31,9 @@ export function WaafiPayModal({ payment, open, onClose, onPay, loading, error, c
   }
 
   const tipText =
-    payment.fullPaymentOnce || payment.loadType === "SHARED" || payment.paymentStage === "Payment Due"
+    payment.fullPaymentOnce
       ? t("waafi.sharedOnce")
-      : payment.paymentStage === "Deposit Due"
-        ? t("waafi.ftlDeposit")
-        : t("waafi.ftlBalance");
+      : t("waafi.ftlBalance");
 
   return (
     <Modal title={t("waafi.title")} onClose={onClose}>

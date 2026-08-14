@@ -1,30 +1,6 @@
 import { prisma, withTransaction } from "../../lib/prisma.js";
+import { generateTruckId } from "../../lib/truckId.js";
 import { mapTruck } from "./mappers.js";
-
-function mapPublicTruck(row) {
-  const driverActive = row.driver?.status === "Active";
-  const truckAvailable = row.status === "Available";
-  return {
-    id: row.id,
-    truckNumber: row.truckNumber,
-    plateNumber: row.plateNumber,
-    capacity: row.capacity,
-    capacityTons: row.capacityTons != null ? Number(row.capacityTons) : null,
-    truckType: row.truckType,
-    type: row.truckType,
-    status: row.status,
-    region: row.region || null,
-    city: row.city || null,
-    photoUrl1: row.photoUrl1 || null,
-    photoUrl2: row.photoUrl2 || null,
-    serviceType: "FTL",
-    driver: row.driver?.name ? row.driver.name.split(" ")[0] : null,
-    driverName: row.driver?.name || null,
-    driverStatus: row.driver?.status || null,
-    bookable: driverActive && truckAvailable,
-    verificationPending: !driverActive || !truckAvailable,
-  };
-}
 
 export const truckRepository = {
 async listTrucks({ status, search, page = 1, limit = 50 } = {}) {
@@ -67,9 +43,10 @@ async truckSummary() {
 },
 
 async createTruck(payload) {
+  const truckNumber = payload.truckNumber?.trim() || generateTruckId();
   const truck = await prisma.truck.create({
     data: {
-      truckNumber: payload.truckNumber,
+      truckNumber,
       plateNumber: payload.plateNumber,
       capacity: payload.capacity,
       truckType: payload.truckType || payload.type,
@@ -123,7 +100,10 @@ async updateTruck(id, payload, { driverId } = {}) {
   }
 
   const data = {};
-  if (payload.truckNumber !== undefined) data.truckNumber = payload.truckNumber;
+  if (payload.truckNumber !== undefined) {
+    // Truck ID is system-generated; do not allow clients to blank it out.
+    if (String(payload.truckNumber).trim()) data.truckNumber = String(payload.truckNumber).trim();
+  }
   if (payload.plateNumber !== undefined) data.plateNumber = payload.plateNumber;
   if (payload.capacity !== undefined) data.capacity = payload.capacity;
   if (payload.truckType !== undefined) data.truckType = payload.truckType;
@@ -141,69 +121,6 @@ async updateTruck(id, payload, { driverId } = {}) {
     include: { driver: true },
   });
   return mapTruck(truck);
-},
-
-
-async listTruckTypes() {
-  return prisma.truckType.findMany({ orderBy: { name: "asc" } });
-},
-
-async listPublicTrucks({ region, city, truckType, search, page = 1, limit = 48 } = {}) {
-  const where = {
-    status: { in: ["Available", "Pending_Verification"] },
-    driver: {
-      role: "driver",
-      status: { in: ["Active", "Pending Verification"] },
-      OR: [{ serviceType: "FTL" }, { serviceType: null }],
-    },
-  };
-  if (region) where.region = { equals: region, mode: "insensitive" };
-  if (city) where.city = { equals: city, mode: "insensitive" };
-  if (truckType) where.truckType = { contains: truckType, mode: "insensitive" };
-  if (search) {
-    where.AND = [
-      {
-        OR: [
-          { truckNumber: { contains: search, mode: "insensitive" } },
-          { plateNumber: { contains: search, mode: "insensitive" } },
-          { truckType: { contains: search, mode: "insensitive" } },
-          { region: { contains: search, mode: "insensitive" } },
-          { city: { contains: search, mode: "insensitive" } },
-          { driver: { name: { contains: search, mode: "insensitive" } } },
-        ],
-      },
-    ];
-  }
-
-  const take = Number(limit);
-  const skip = (Number(page) - 1) * take;
-  const rows = await prisma.truck.findMany({
-    where,
-    include: { driver: { select: { id: true, name: true, phone: true, serviceType: true, status: true } } },
-    orderBy: { createdAt: "desc" },
-    take,
-    skip,
-  });
-
-  const data = rows.map((row) => mapPublicTruck(row));
-  const total = await prisma.truck.count({ where });
-  return { data, total, page: Number(page) };
-},
-
-async getPublicTruck(id) {
-  const row = await prisma.truck.findFirst({
-    where: {
-      id,
-      status: { in: ["Available", "Pending_Verification"] },
-      driver: {
-        role: "driver",
-        status: { in: ["Active", "Pending Verification"] },
-        OR: [{ serviceType: "FTL" }, { serviceType: null }],
-      },
-    },
-    include: { driver: { select: { id: true, name: true, phone: true, serviceType: true, status: true } } },
-  });
-  return row ? mapPublicTruck(row) : null;
 },
 
 

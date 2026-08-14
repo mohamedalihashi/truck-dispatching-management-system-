@@ -67,7 +67,6 @@ export function PublicFeedbackPage() {
         </header>
         <section className="mb-5 rounded-xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
           <div className="grid gap-3 text-sm sm:grid-cols-2">
-            <Info label="Sender" value={booking.senderName} /><Info label="Receiver" value={booking.receiverName} />
             <Info label="From" value={booking.from} /><Info label="To" value={booking.to} />
             <Info label="Delivery date" value={new Date(booking.deliveryDate).toLocaleDateString()} />
             <Info label="Driver" value={booking.driverFirstName} />

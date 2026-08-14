@@ -39,10 +39,11 @@ enum RequestStatus {
   Quote_Rejected    @map("Quote Rejected")
   Approved
   Assigned
-  Accepted
-  Arrived_Pickup @map("Arrived Pickup")
-  Loaded
-  In_Transit     @map("In Transit")
+  En_Route_to_Pickup @map("En Route to Pickup")
+  Arrived_at_Pickup  @map("Arrived at Pickup")
+  Picked_Up          @map("Picked Up")
+  In_Transit         @map("In Transit")
+  Near_Destination   @map("Near Destination")
   Delivered
   Cancelled
 
@@ -60,13 +61,13 @@ enum PriceAdjustmentType {
 enum TripStatus {
   Pending
   Assigned
-  Accepted
-  Arrived_Pickup @map("Arrived Pickup")
-  Loaded
-  In_Transit     @map("In Transit")
+  En_Route_to_Pickup @map("En Route to Pickup")
+  Arrived_at_Pickup  @map("Arrived at Pickup")
+  Picked_Up          @map("Picked Up")
+  In_Transit         @map("In Transit")
+  Near_Destination   @map("Near Destination")
   Delivered
   Cancelled
-  Delayed
 
   @@map("trip_status")
 }
@@ -110,35 +111,26 @@ enum DriverServiceType {
   @@map("driver_service_type")
 }
 
-enum BidStatus {
-  Pending
-  Accepted
-  Rejected
-  Withdrawn
-
-  @@map("bid_status")
-}
-
 // ─── Models ──────────────────────────────────────────────────────────
 
 model User {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name         String
-  username     String   @unique
-  email        String   @unique
+  name         String   @db.VarChar(150)
+  username     String   @unique @db.VarChar(30)
+  email        String   @unique @db.VarChar(254)
   passwordHash String   @map("password_hash")
   role         UserRole
-  phone        String?  @unique
+  phone        String?  @unique @db.VarChar(20)
   avatarUrl    String?  @map("avatar_url")
   avatarPublicId String? @map("avatar_public_id")
-  nationalIdNumber String? @unique @map("national_id_number")
-  driverLicense String? @map("driver_license")
+  nationalIdNumber String? @unique @map("national_id_number") @db.VarChar(50)
+  driverLicense String? @map("driver_license") @db.VarChar(50)
   driverLicenseUrl String? @map("driver_license_url")
   driverLicensePublicId String? @map("driver_license_public_id")
   driverImageUrl String? @map("driver_image_url")
   driverImagePublicId String? @map("driver_image_public_id")
   serviceType    DriverServiceType?  @map("service_type")
-  status       String   @default("Active")
+  status       String   @default("Active") @db.VarChar(40)
   isSuperAdmin Boolean  @default(false) @map("is_super_admin")
   mustChangePassword Boolean @default(false) @map("must_change_password")
   failedLoginAttempts Int @default(0) @map("failed_login_attempts")
@@ -164,17 +156,15 @@ model User {
   auditLogs             AuditLog[]
   feedbackAsCustomer    TripFeedback[] @relation("FeedbackCustomer")
   feedbackAsDriver      TripFeedback[] @relation("FeedbackDriver")
-  dispatcherProfile     DispatcherProfile? @relation("DispatcherProfileOwner")
-  verifiedDispatcherProfiles DispatcherProfile[] @relation("DispatcherProfileVerifier")
   customerProfile       CustomerProfile?
   smsNotificationsSent  SmsNotification[] @relation("SmsSentBy")
   supportComplaintsFiled SupportComplaint[] @relation("SupportComplaintCustomer")
   supportComplaintsAgainst SupportComplaint[] @relation("SupportComplaintAgainst")
-  bids                 Bid[]
   sharedTrips          SharedTrip[]
   sharedTripBookings   SharedTripBooking[]
   phoneBookingsAssigned CargoRequest[] @relation("PhoneBookingAssignedBy")
 
+  @@index([name], map: "idx_users_name")
   @@index([role], map: "idx_users_role")
   @@index([role, status], map: "idx_users_role_status")
   @@index([createdById], map: "idx_users_created_by")
@@ -184,15 +174,15 @@ model User {
 model CustomerProfile {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String   @unique @map("user_id") @db.Uuid
-  customerType String   @map("customer_type")
-  city         String
-  address      String?
+  customerType String   @map("customer_type") @db.VarChar(40)
+  city         String   @db.VarChar(100)
+  address      String?  @db.VarChar(255)
   profilePhotoUrl String? @map("profile_photo_url")
   profilePhotoPublicId String? @map("profile_photo_public_id")
-  companyName  String?  @map("company_name")
-  companyPhone String?  @map("company_phone")
-  companyAddress String? @map("company_address")
-  businessRegistrationNumber String? @map("business_registration_number")
+  companyName  String?  @map("company_name") @db.VarChar(100)
+  companyPhone String?  @map("company_phone") @db.VarChar(20)
+  companyAddress String? @map("company_address") @db.VarChar(255)
+  businessRegistrationNumber String? @map("business_registration_number") @db.VarChar(100)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -202,56 +192,13 @@ model CustomerProfile {
   @@map("customer_profiles")
 }
 
-model DispatcherProfile {
-  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId                String   @unique @map("user_id") @db.Uuid
-  dispatcherCode        String   @unique @map("dispatcher_code")
-  nationalIdNumber      String   @unique @map("national_id_number")
-  nationalIdFrontUrl    String   @map("national_id_front_url")
-  nationalIdBackUrl     String   @map("national_id_back_url")
-  profilePhotoUrl       String   @map("profile_photo_url")
-  dateOfBirth           DateTime @map("date_of_birth") @db.Date
-  gender                String
-  city                  String
-  address               String
-  cvUrl                 String   @map("cv_url")
-  yearsOfExperience     Int      @map("years_of_experience")
-  assignedRegion        String   @map("assigned_region")
-  workShift             String   @map("work_shift")
-  emergencyContactName  String   @map("emergency_contact_name")
-  emergencyContactPhone String   @map("emergency_contact_phone")
-  commissionPercentage  Decimal  @default(0) @map("commission_percentage") @db.Decimal(5, 2)
-  verificationStatus    String   @default("Pending") @map("verification_status")
-  verifiedBy            String?  @map("verified_by") @db.Uuid
-  verifiedAt            DateTime? @map("verified_at") @db.Timestamptz()
-  accountStatus         String   @default("Active") @map("account_status")
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
-
-  user     User  @relation("DispatcherProfileOwner", fields: [userId], references: [id], onDelete: Cascade)
-  verifier User? @relation("DispatcherProfileVerifier", fields: [verifiedBy], references: [id], onDelete: SetNull)
-
-  @@index([assignedRegion, accountStatus])
-  @@index([verificationStatus])
-  @@map("dispatcher_profiles")
-}
-
-model TruckType {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String   @unique
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
-
-  @@map("truck_types")
-}
-
 model Truck {
   id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  truckNumber String      @map("truck_number")
-  plateNumber String      @unique @map("plate_number")
-  capacity    String
+  truckNumber String      @map("truck_number") @db.VarChar(50)
+  plateNumber String      @unique @map("plate_number") @db.VarChar(30)
+  capacity    String      @db.VarChar(30)
   capacityTons Decimal?   @map("capacity_tons") @db.Decimal(12, 2)
-  truckType   String      @map("truck_type")
+  truckType   String      @map("truck_type") @db.VarChar(100)
   photoUrl1   String?     @map("photo_url_1")
   photoUrl2   String?     @map("photo_url_2")
   photoPublicId1 String?   @map("photo_public_id_1")
@@ -259,10 +206,16 @@ model Truck {
   registrationDocumentUrl String? @map("registration_document_url")
   registrationDocumentPublicId String? @map("registration_document_public_id")
   documentUrls String[]   @default([]) @map("document_urls")
-  region      String      @default("")
-  city        String      @default("")
+  region      String      @default("") @db.VarChar(100)
+  city        String      @default("") @db.VarChar(100)
   driverId    String      @unique @map("driver_id") @db.Uuid
   status      TruckStatus @default(Available)
+  lastLat     Float?      @map("last_lat")
+  lastLng     Float?      @map("last_lng")
+  lastLocationAt DateTime? @map("last_location_at") @db.Timestamptz()
+  lastSpeedKmh Float?     @map("last_speed_kmh")
+  lastHeading Float?      @map("last_heading")
+  gpsStatus   String      @default("OFFLINE") @map("gps_status") @db.VarChar(20)
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -270,34 +223,39 @@ model Truck {
   driver        User           @relation(fields: [driverId], references: [id], onDelete: Cascade)
   cargoRequests CargoRequest[]
   trips         Trip[]
-  bids          Bid[]
   sharedTrips   SharedTrip[]
+  tripEvents    TripEvent[]
 
   @@index([status], map: "idx_trucks_status")
+  @@index([gpsStatus], map: "idx_trucks_gps_status")
+  @@index([lastLocationAt], map: "idx_trucks_last_location")
   @@map("trucks")
 }
 
 model CargoRequest {
   id                    String        @id
   customerId            String        @map("customer_id") @db.Uuid
-  pickup                String
-  destination           String
-  truckType             String        @map("truck_type")
-  weight                String
+  pickup                String        @db.VarChar(255)
+  destination           String        @db.VarChar(255)
+  truckType             String        @map("truck_type") @db.VarChar(100)
+  cargoType             String?       @map("cargo_type") @db.VarChar(100)
+  measuredQuantity      Decimal?      @map("measured_quantity") @db.Decimal(14, 3)
+  measurementUnit       String?       @map("measurement_unit") @db.VarChar(20)
+  weight                String        @db.VarChar(30)
   description           String
-  receiver              String?
-  sender                String?
-  customerRole          String?       @map("customer_role")
-  senderName            String?       @map("sender_name")
-  senderPhone           String?       @map("sender_phone")
-  receiverName          String?       @map("receiver_name")
-  receiverPhone         String?       @map("receiver_phone")
-  fromRegion            String?       @map("from_region")
-  fromDistrict          String?       @map("from_district")
-  fromNeighborhood      String?       @map("from_neighborhood")
-  toRegion              String?       @map("to_region")
-  toDistrict            String?       @map("to_district")
-  toNeighborhood        String?       @map("to_neighborhood")
+  receiver              String?       @db.VarChar(150)
+  sender                String?       @db.VarChar(150)
+  customerRole          String?       @map("customer_role") @db.VarChar(20)
+  senderName            String?       @map("sender_name") @db.VarChar(150)
+  senderPhone           String?       @map("sender_phone") @db.VarChar(20)
+  receiverName          String?       @map("receiver_name") @db.VarChar(150)
+  receiverPhone         String?       @map("receiver_phone") @db.VarChar(20)
+  fromRegion            String?       @map("from_region") @db.VarChar(100)
+  fromDistrict          String?       @map("from_district") @db.VarChar(100)
+  fromNeighborhood      String?       @map("from_neighborhood") @db.VarChar(100)
+  toRegion              String?       @map("to_region") @db.VarChar(100)
+  toDistrict            String?       @map("to_district") @db.VarChar(100)
+  toNeighborhood        String?       @map("to_neighborhood") @db.VarChar(100)
   submissionKey         String?       @unique @map("submission_key") @db.Uuid
   specialInstructions   String?       @map("special_instructions")
   preferredPickupDate   DateTime?     @map("preferred_pickup_date") @db.Date
@@ -305,12 +263,12 @@ model CargoRequest {
   calculatedPrice       Decimal?      @map("calculated_price") @db.Decimal(12, 2)
   adjustmentType        PriceAdjustmentType? @map("adjustment_type")
   adjustmentAmount      Decimal?      @map("adjustment_amount") @db.Decimal(12, 2)
-  adjustmentReason      String?       @map("adjustment_reason")
+  adjustmentReason      String?       @map("adjustment_reason") @db.VarChar(255)
   finalPrice            Decimal?      @map("final_price") @db.Decimal(12, 2)
   approvedByDispatcher  String?       @map("approved_by_dispatcher") @db.Uuid
   approvedAt            DateTime?     @map("approved_at") @db.Timestamptz()
   quotedPrice           Decimal?      @map("quoted_price") @db.Decimal(12, 2)
-  quotedEstimatedTime   String?       @map("quoted_estimated_time")
+  quotedEstimatedTime   String?       @map("quoted_estimated_time") @db.VarChar(50)
   quoteNotes            String?       @map("quote_notes")
   quotedAt              DateTime?     @map("quoted_at") @db.Timestamptz()
   quoteVersion          Int           @default(0) @map("quote_version")
@@ -323,7 +281,7 @@ model CargoRequest {
   driverId              String?       @map("driver_id") @db.Uuid
   truckId               String?       @map("truck_id") @db.Uuid
   dispatcherId          String?       @map("dispatcher_id") @db.Uuid
-  bookingChannel        String        @default("ONLINE") @map("booking_channel")
+  bookingChannel        String        @default("ONLINE") @map("booking_channel") @db.VarChar(40)
   assignedByAdminId     String?       @map("assigned_by_admin_id") @db.Uuid
   assignedAt            DateTime?     @map("assigned_at") @db.Timestamptz()
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz()
@@ -336,7 +294,6 @@ model CargoRequest {
   assignedByAdmin User? @relation("PhoneBookingAssignedBy", fields: [assignedByAdminId], references: [id], onDelete: SetNull)
   truck      Truck? @relation(fields: [truckId], references: [id])
   trips      Trip[]
-  bids       Bid[]
   sharedBooking SharedTripBooking?
 
   @@index([status], map: "idx_cargo_requests_status")
@@ -368,6 +325,10 @@ model Trip {
   lastLat          Float?     @map("last_lat")
   lastLng          Float?     @map("last_lng")
   lastLocationAt   DateTime?  @map("last_location_at") @db.Timestamptz()
+  lastSpeedKmh     Float?     @map("last_speed_kmh")
+  lastHeading      Float?     @map("last_heading")
+  lastAccuracyM    Float?     @map("last_accuracy_m")
+  distanceTraveledKm Decimal? @map("distance_traveled_km") @db.Decimal(12, 2)
   createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt        DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -382,6 +343,7 @@ model Trip {
   feedback     TripFeedback?
   feedbackToken DeliveryFeedbackToken?
   locationPoints TripLocationPoint[]
+  events         TripEvent[]
 
   @@index([status], map: "idx_trips_status")
   @@index([customerId], map: "idx_trips_customer")
@@ -397,12 +359,51 @@ model TripLocationPoint {
   tripId     String   @map("trip_id")
   lat        Float
   lng        Float
+  speedKmh   Float?   @map("speed_kmh")
+  heading    Float?
+  accuracyM  Float?   @map("accuracy_m")
   recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz()
 
   trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   @@index([tripId, recordedAt], map: "idx_trip_location_points_trip")
   @@map("trip_location_points")
+}
+
+model TripEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId    String?  @map("trip_id")
+  truckId   String?  @map("truck_id") @db.Uuid
+  type      String   @db.VarChar(60)
+  message   String
+  lat       Float?
+  lng       Float?
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  trip  Trip?  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  truck Truck? @relation(fields: [truckId], references: [id], onDelete: SetNull)
+
+  @@index([tripId, createdAt], map: "idx_trip_events_trip")
+  @@index([truckId, createdAt], map: "idx_trip_events_truck")
+  @@index([type, createdAt], map: "idx_trip_events_type")
+  @@map("trip_events")
+}
+
+model Geofence {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @db.VarChar(150)
+  zoneType    String   @map("zone_type") @db.VarChar(40)
+  centerLat   Float    @map("center_lat")
+  centerLng   Float    @map("center_lng")
+  radiusM     Float    @map("radius_m")
+  active      Boolean  @default(true)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([active], map: "idx_geofences_active")
+  @@map("geofences")
 }
 
 model Notification {
@@ -610,28 +611,6 @@ model SupportComplaint {
   @@map("support_complaints")
 }
 
-model Bid {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  cargoRequestId String   @map("cargo_request_id")
-  driverId       String   @map("driver_id") @db.Uuid
-  truckId        String?  @map("truck_id") @db.Uuid
-  amount         Decimal  @db.Decimal(12, 2)
-  estimatedDays  Int?     @map("estimated_days")
-  notes          String?
-  status         BidStatus @default(Pending)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
-
-  cargoRequest CargoRequest @relation(fields: [cargoRequestId], references: [id], onDelete: Cascade)
-  driver       User         @relation(fields: [driverId], references: [id])
-  truck        Truck?       @relation(fields: [truckId], references: [id])
-
-  @@unique([cargoRequestId, driverId], map: "uq_bid_request_driver")
-  @@index([driverId, status], map: "idx_bids_driver")
-  @@index([cargoRequestId, status], map: "idx_bids_request_status")
-  @@map("bids")
-}
-
 model SharedTrip {
   id              String    @id
   driverId        String    @map("driver_id") @db.Uuid
@@ -669,6 +648,8 @@ model SharedTripBooking {
   cargoRequestId String?  @unique @map("cargo_request_id")
   weightTons     Decimal  @map("weight_tons") @db.Decimal(12, 2)
   status         String   @default("Pending")
+  pickupOrder    Int?     @map("pickup_order")
+  deliveryOrder  Int?     @map("delivery_order")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 

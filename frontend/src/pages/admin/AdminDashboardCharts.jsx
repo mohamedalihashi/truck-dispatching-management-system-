@@ -41,7 +41,7 @@ export function AdminDashboardCharts({
         <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] xl:col-span-8">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold text-primary-container">Marketplace growth</h2>
+              <h2 className="text-xl font-semibold text-primary-container">Management system growth</h2>
               <p className="mt-1 text-sm text-on-surface-variant">
                 Bookings, trips, and deliveries over the last six months.
               </p>
@@ -68,7 +68,7 @@ export function AdminDashboardCharts({
 
         <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] xl:col-span-4">
           <div>
-            <h2 className="text-xl font-semibold text-primary-container">Marketplace roles</h2>
+            <h2 className="text-xl font-semibold text-primary-container">Management system roles</h2>
             <p className="mt-1 text-sm text-on-surface-variant">Customers and drivers on the platform (no dispatcher).</p>
           </div>
           <div className="relative mt-3 h-56">
@@ -83,7 +83,7 @@ export function AdminDashboardCharts({
                   paddingAngle={3}
                   stroke="none"
                 >
-                  {userRoleData.map((entry, index) => (
+                  {(userRoleData.length ? userRoleData : [{ name: "None", value: 1 }]).map((entry, index) => (
                     <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -198,7 +198,7 @@ export function AdminDashboardCharts({
         </div>
 
         <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.05)] xl:col-span-5">
-          <h2 className="mb-4 text-xl font-semibold text-primary-container">Shipments Distribution</h2>
+          <h2 className="mb-4 text-xl font-semibold text-primary-container">Trips Distribution</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shipmentData.length ? shipmentData : [{ name: "None", value: 0 }]}>

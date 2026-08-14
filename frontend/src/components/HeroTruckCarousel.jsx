@@ -85,7 +85,7 @@ export function HeroTruckCarousel({ className = "" }) {
               <MapPin />
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-on-surface-variant">{t("Live Tracking")}</p>
+              <p className="text-xs text-on-surface-variant">{t("On Route")}</p>
               <p
                 key={active.route}
                 className="animate-[fadeSlide_0.45s_ease-out] truncate text-sm font-semibold text-primary"

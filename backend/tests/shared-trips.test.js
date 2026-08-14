@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
     sharedTripBooking: { create: vi.fn(), update: vi.fn() },
     notification: { create: vi.fn() },
     trip: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    payment: { findFirst: vi.fn(), create: vi.fn() },
+    payment: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     truck: { update: vi.fn() },
   };
   return { prisma };
@@ -28,6 +28,18 @@ vi.mock("../lib/prisma.js", () => ({
 vi.mock("../services/pricingService.js", () => ({
   estimateDistanceKm: vi.fn().mockReturnValue(100),
   estimateEtaLabel: vi.fn().mockReturnValue("About 3 hours"),
+}));
+
+vi.mock("../services/pricingRates.js", () => ({
+  estimateFare: vi.fn().mockResolvedValue(100),
+  parseWeightKg: vi.fn((w) => Number.parseFloat(String(w)) || 0),
+  getPricingSettings: vi.fn().mockResolvedValue({
+    enabled: true,
+    ftlPricePerKg: 1,
+    sharedPricePerKg: 1,
+    ftlPricePerKm: 0,
+    sharedPricePerKm: 0,
+  }),
 }));
 
 vi.mock("../services/waafiPayService.js", () => ({
@@ -192,8 +204,9 @@ describe("shared trips", () => {
 
     expect(request.id).toBe("REQ-9001");
     expect(request.tripId).toBe("SHP-1");
-    expect(request.depositPercent).toBe(100);
-    expect(request.fullPaymentOnce).toBe(true);
+    expect(request.depositPercent).toBe(0);
+    expect(request.fullPaymentOnce).toBe(false);
+    expect(request.payAfterDelivery).toBe(true);
     expect(mocks.prisma.payment.create).toHaveBeenCalledOnce();
     expect(mocks.prisma.cargoRequest.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -202,7 +215,7 @@ describe("shared trips", () => {
     );
   });
 
-  it("blocks pickup until full fare is paid", async () => {
+  it("allows pickup before payment (pay after Delivered)", async () => {
     const unpaidBooking = {
       id: "b1",
       cargoRequestId: "REQ-1",
@@ -234,16 +247,46 @@ describe("shared trips", () => {
       pickup: "Mogadishu",
       destination: "Baidoa",
       status: "Full",
+      totalCapacityTons: 10,
       bookings: [unpaidBooking],
     });
-    mocks.prisma.trip.findFirst.mockResolvedValue(unpaidBooking.cargoRequest.trips[0]);
-    mocks.prisma.payment.findFirst.mockResolvedValue(unpaidBooking.cargoRequest.trips[0].payments[0]);
-    mocks.prisma.sharedTripBooking.update.mockResolvedValue({});
-
-    await expect(sharedTripRepository.startSharedTripPickup("ST-ABC", "driver-1")).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringContaining("Lacagta oo dhan"),
+    mocks.prisma.cargoRequest.update.mockResolvedValue({
+      ...unpaidBooking.cargoRequest,
+      weight: "250 kg",
+      finalPrice: 100,
     });
+    mocks.prisma.trip.findFirst.mockResolvedValue(unpaidBooking.cargoRequest.trips[0]);
+    mocks.prisma.payment.findFirst.mockResolvedValue({
+      ...unpaidBooking.cargoRequest.trips[0].payments[0],
+      id: "pay-1",
+      amountPaid: 0,
+    });
+    mocks.prisma.payment.update.mockResolvedValue({});
+    mocks.prisma.trip.update.mockResolvedValue({});
+    mocks.prisma.sharedTripBooking.update.mockResolvedValue({});
+    mocks.prisma.truck.update.mockResolvedValue({});
+    mocks.prisma.notification.create.mockResolvedValue({});
+    mocks.prisma.sharedTrip.update.mockResolvedValue({
+      id: "ST-ABC",
+      driverId: "driver-1",
+      status: "Pickup",
+      pickup: "Mogadishu",
+      destination: "Baidoa",
+      totalCapacityTons: 10,
+      availableTons: 0,
+      pricePerTon: 20,
+      durationAmount: 6,
+      durationUnit: "hours",
+      departureDate: new Date("2026-08-01"),
+      driver: { name: "Hassan" },
+      truck: { truckNumber: "TR-2" },
+      _count: { bookings: 1 },
+    });
+
+    const trip = await sharedTripRepository.startSharedTripPickup("ST-ABC", "driver-1", {
+      weightsByBookingId: { b1: 250 },
+    });
+    expect(trip.status).toBe("Pickup");
   });
 
   it("starts pickup after full fare is paid", async () => {
@@ -278,10 +321,20 @@ describe("shared trips", () => {
       pickup: "Mogadishu",
       destination: "Baidoa",
       status: "Full",
+      totalCapacityTons: 10,
       bookings: [paidBooking],
     });
+    mocks.prisma.cargoRequest.update.mockResolvedValue({
+      ...paidBooking.cargoRequest,
+      weight: "250 kg",
+      finalPrice: 100,
+    });
     mocks.prisma.trip.findFirst.mockResolvedValue(paidBooking.cargoRequest.trips[0]);
-    mocks.prisma.payment.findFirst.mockResolvedValue(paidBooking.cargoRequest.trips[0].payments[0]);
+    mocks.prisma.payment.findFirst.mockResolvedValue({
+      ...paidBooking.cargoRequest.trips[0].payments[0],
+      id: "pay-1",
+      amountPaid: 100,
+    });
     mocks.prisma.trip.update.mockResolvedValue({});
     mocks.prisma.sharedTripBooking.update.mockResolvedValue({});
     mocks.prisma.truck.update.mockResolvedValue({});
@@ -303,7 +356,9 @@ describe("shared trips", () => {
       _count: { bookings: 1 },
     });
 
-    const trip = await sharedTripRepository.startSharedTripPickup("ST-ABC", "driver-1");
+    const trip = await sharedTripRepository.startSharedTripPickup("ST-ABC", "driver-1", {
+      weightsByBookingId: { b1: 250 },
+    });
     expect(trip.status).toBe("Pickup");
   });
 });

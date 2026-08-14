@@ -68,7 +68,7 @@ export function TripFeedbackForm({ trip, onSubmitted, compact = false }) {
       <div className={`rounded-xl border border-outline-variant/40 bg-surface-container-low ${compact ? "p-4" : "p-5"}`}>
         <p className="text-sm font-semibold text-on-surface">Waiting for customer rating</p>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Only the customer who booked this shipment can rate the delivery (Shipments page or the SMS feedback link).
+          Only the customer who booked this trip can rate the delivery (Trips page or the SMS feedback link).
         </p>
       </div>
     );

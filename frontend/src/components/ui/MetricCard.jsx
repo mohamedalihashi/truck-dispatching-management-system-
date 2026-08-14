@@ -13,20 +13,20 @@ export function MetricCard({ icon: Icon, label, value, hint, tone = "orange" }) 
   };
 
   return (
-    <article className="flex items-center gap-3 rounded-lg border border-outline-variant/60 bg-surface-container-lowest px-3.5 py-3 shadow-sm transition hover:shadow-md">
+    <article className="group flex items-center gap-3.5 rounded-xl border border-outline-variant/60 bg-surface-container-lowest px-4 py-4 shadow-[0px_4px_16px_rgba(0,0,0,0.04)] transition hover:border-secondary/30 hover:shadow-[0px_8px_24px_rgba(0,0,0,0.08)]">
       {Icon ? (
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tones[tone] || tones.orange}`}>
-          <Icon size={18} />
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition group-hover:scale-105 ${tones[tone] || tones.orange}`}>
+          <Icon size={20} />
         </div>
       ) : null}
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-[11px] font-medium uppercase tracking-wide text-on-surface-variant">
           {typeof label === "string" ? t(label) : label}
         </h3>
-        <p className="text-xl font-bold leading-tight text-on-surface">{value}</p>
+        <p className="mt-0.5 text-2xl font-bold leading-tight text-on-surface">{value}</p>
       </div>
       {hint ? (
-        <span className="hidden shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 sm:inline dark:bg-emerald-950/50 dark:text-emerald-300">
+        <span className="hidden shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700 sm:inline dark:bg-emerald-950/50 dark:text-emerald-300">
           {typeof hint === "string" ? t(hint) : hint}
         </span>
       ) : null}

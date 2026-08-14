@@ -18,7 +18,6 @@ const CITY_ALIASES = [
 ];
 
 const DEFAULT_CENTER = { lat: 2.0469, lng: 45.3182 };
-const TRUCK_SPEED_KMH = 42;
 /** Roads are longer than straight-line distance. */
 export const ROAD_DISTANCE_FACTOR = 1.3;
 
@@ -133,28 +132,8 @@ export function roadDistanceKm(from, to, { roadFactor = ROAD_DISTANCE_FACTOR } =
   return Math.round(road * 10) / 10;
 }
 
-function formatDuration(totalMinutes) {
-  const minutes = Math.max(1, Math.round(totalMinutes));
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours <= 0) return `${mins}m`;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}m`;
-}
-
-export function estimateEta(fromLat, fromLng, destinationText) {
-  const dest = coordsFromPlaceName(destinationText);
-  const distanceKm = roadDistanceKm({ lat: fromLat, lng: fromLng }, dest);
-  const minutes = (distanceKm / TRUCK_SPEED_KMH) * 60;
-  return {
-    distanceKm: Math.round(distanceKm * 10) / 10,
-    minutes: Math.round(minutes),
-    label: formatDuration(minutes),
-    destination: dest
-  };
-}
-
-export function shouldRecordPoint(lastLat, lastLng, lat, lng, minKm = 0.015) {
+/** Skip GPS points closer than minKm (default ~50 m) to reduce phone GPS jitter. */
+export function shouldRecordPoint(lastLat, lastLng, lat, lng, minKm = 0.05) {
   if (lastLat == null || lastLng == null) return true;
   return haversineKm(lastLat, lastLng, lat, lng) >= minKm;
 }

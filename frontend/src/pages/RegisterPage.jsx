@@ -7,8 +7,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { Button } from "../components/ui/Button";
 import { OtpCodeBanner } from "../components/ui/OtpCodeBanner";
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
-import { roleHome } from "../utils/helpers";
-import { somaliaLocations, somaliaRegions } from "../data/somaliaLocations";
+import { FULL_NAME_PATTERN, roleHome } from "../utils/helpers";
 import {
   clearRegisterVerification,
   loadRegisterVerification,
@@ -19,36 +18,20 @@ export function RegisterPage() {
   const { register: registerUser, verifyRegister, resendCode, isAuthenticated, user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const [accountType, setAccountType] = useState("customer");
   const [error, setError] = useState("");
   const [step, setStep] = useState("form");
   const [pendingEmail, setPendingEmail] = useState("");
   const [devCode, setDevCode] = useState("");
   const [info, setInfo] = useState("");
-  const [success, setSuccess] = useState("");
   const [resending, setResending] = useState(false);
-  const [driverImage, setDriverImage] = useState(null);
-  const [licenseDoc, setLicenseDoc] = useState(null);
-  const [truckPhoto1, setTruckPhoto1] = useState(null);
-  const [truckDocuments, setTruckDocuments] = useState([]);
   const {
     register,
     handleSubmit,
     setValue,
-    watch,
-    reset,
     formState: { isSubmitting }
   } = useForm({
-    defaultValues: {
-      code: "",
-      serviceType: "FTL",
-      region: "",
-      city: ""
-    }
+    defaultValues: { code: "" }
   });
-
-  const selectedRegion = watch("region");
-  const districts = somaliaLocations[selectedRegion] || [];
 
   useEffect(() => {
     const stored = loadRegisterVerification();
@@ -66,36 +49,6 @@ export function RegisterPage() {
     return payload;
   }
 
-  function buildDriverPayload(values) {
-    if (!driverImage || !licenseDoc || !truckPhoto1 || !truckDocuments.length) {
-      throw new Error("Upload driver photo, license document, truck photo, and at least one truck document");
-    }
-    const payload = new FormData();
-    [
-      "name",
-      "username",
-      "email",
-      "phone",
-      "password",
-      "serviceType",
-      "driverLicense",
-      "plateNumber",
-      "capacity",
-      "truckType",
-      "city",
-      "region"
-    ].forEach((key) => {
-      if (values[key]) payload.append(key, values[key]);
-    });
-    if (values.nationalIdNumber) payload.append("nationalIdNumber", values.nationalIdNumber);
-    payload.append("role", "driver");
-    payload.append("driverImage", driverImage);
-    payload.append("driverLicenseDocument", licenseDoc);
-    payload.append("truckPhoto1", truckPhoto1);
-    truckDocuments.forEach((file) => payload.append("truckDocuments", file));
-    return payload;
-  }
-
   function extractError(err) {
     const details = err.details;
     const issueMessage = details?.issues?.[0]?.message;
@@ -109,10 +62,8 @@ export function RegisterPage() {
   async function onSubmitForm(values) {
     setError("");
     setInfo("");
-    setSuccess("");
     try {
-      const payload = accountType === "driver" ? buildDriverPayload(values) : buildCustomerPayload(values);
-      const result = await registerUser(payload);
+      const result = await registerUser(buildCustomerPayload(values));
       if (result.verificationRequired) {
         setPendingEmail(values.email);
         saveRegisterVerification(values.email, null);
@@ -120,14 +71,6 @@ export function RegisterPage() {
         setStep("verify");
         setInfo(result.message);
         setValue("code", "");
-        return;
-      }
-      if (result.verificationPending) {
-        setSuccess(
-          result.message ||
-            "Account created. An admin will verify your documents before you can sign in."
-        );
-        setStep("pending");
         return;
       }
       navigate(roleHome(result.user.role));
@@ -141,14 +84,6 @@ export function RegisterPage() {
     try {
       const result = await verifyRegister({ email: pendingEmail, code: values.code });
       clearRegisterVerification();
-      if (result.verificationPending) {
-        setSuccess(
-          result.message ||
-            "Email verified. An admin will check your documents before you can sign in."
-        );
-        setStep("pending");
-        return;
-      }
       navigate(roleHome(result.user.role));
     } catch (err) {
       setError(err.message);
@@ -183,19 +118,6 @@ export function RegisterPage() {
     }
   }
 
-  function switchAccountType(type) {
-    setAccountType(type);
-    setError("");
-    setInfo("");
-    setSuccess("");
-    setDriverImage(null);
-    setLicenseDoc(null);
-    setTruckPhoto1(null);
-    setTruckPhoto2(null);
-    setTruckDocuments([]);
-    reset({ code: "", serviceType: "FTL", region: "", city: "" });
-  }
-
   return (
     <div className="relative min-h-screen overflow-hidden">
       <PublicSiteHeader variant="auth" className="border-transparent bg-transparent" />
@@ -208,51 +130,41 @@ export function RegisterPage() {
           <Link to="/" className="mb-8 inline-flex items-center rounded-2xl bg-white/95 px-3 py-2 shadow-xl">
             <BrandLogo size="lg" linkToHome={false} />
           </Link>
-          <h1 className="text-4xl font-bold leading-tight md:text-5xl">{t("Join the cargo marketplace")}</h1>
+          <h1 className="text-4xl font-bold leading-tight md:text-5xl">{t("Join the cargo Management system")}</h1>
           <p className="mt-4 max-w-md text-on-primary-container">
-            {t("Customers can book immediately. Drivers upload documents and wait for admin verification.")}
+            {t("Create a customer account and start booking trucks. Drivers are registered by an admin only.")}
           </p>
         </div>
 
         <div className="auth-card p-6 md:p-8">
           {step === "form" ? (
             <>
-              <h2 className="text-2xl font-bold text-primary">
-                {accountType === "customer" ? t("Create customer account") : t("Create driver account")}
-              </h2>
+              <h2 className="text-2xl font-bold text-primary">{t("Create customer account")}</h2>
               <p className="mt-1 text-sm text-on-surface-variant">
-                {accountType === "customer"
-                  ? t("Register and start booking trucks right away. Your account role is Customer.")
-                  : t("Upload your license and truck documents. An admin will verify before activation.")}
+                {t("Register and start booking trucks right away. Your account role is Customer.")}
               </p>
-
-              {accountType === "customer" ? (
-                <p className="mt-4 text-sm text-on-surface-variant">
-                  {t("Are you a driver?")}{" "}
-                  <button
-                    type="button"
-                    onClick={() => switchAccountType("driver")}
-                    className="font-semibold text-secondary-container hover:underline"
-                  >
-                    {t("Register as a driver")}
-                  </button>
-                </p>
-              ) : (
-                <p className="mt-4 text-sm text-on-surface-variant">
-                  {t("Need to ship cargo?")}{" "}
-                  <button
-                    type="button"
-                    onClick={() => switchAccountType("customer")}
-                    className="font-semibold text-secondary-container hover:underline"
-                  >
-                    {t("Register as a customer")}
-                  </button>
-                </p>
-              )}
+              <p className="mt-4 rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface-variant">
+                {t("Are you a driver?")}{" "}
+                <Link to="/contact" className="font-semibold text-secondary-container hover:underline">
+                  {t("Contact us to be added by an admin")}
+                </Link>
+              </p>
 
               <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(onSubmitForm)}>
                 <Field label="Full name">
-                  <input className="stitch-input" type="text" maxLength={100} {...register("name", { required: true, maxLength: 100 })} />
+                  <input
+                    className="stitch-input"
+                    type="text"
+                    placeholder="e.g. Cabdi Axmed Xaashi"
+                    maxLength={150}
+                    autoComplete="name"
+                    {...register("name", {
+                      required: true,
+                      minLength: 2,
+                      maxLength: 150,
+                      pattern: FULL_NAME_PATTERN
+                    })}
+                  />
                 </Field>
                 <Field label="Phone">
                   <input className="stitch-input" type="tel" inputMode="tel" maxLength={20} {...register("phone", { required: true, minLength: 7, maxLength: 20 })} />
@@ -260,123 +172,12 @@ export function RegisterPage() {
                 <Field label="Email">
                   <input className="stitch-input" type="email" maxLength={254} {...register("email", { required: true, maxLength: 254 })} />
                 </Field>
-
-                {accountType === "customer" ? (
-                  <>
-                    <Field label="City">
-                      <input className="stitch-input" type="text" maxLength={100} {...register("city", { required: true, maxLength: 100 })} />
-                    </Field>
-                    <Field label="Address" className="sm:col-span-2">
-                      <input className="stitch-input" type="text" maxLength={255} {...register("address", { required: true, maxLength: 255 })} />
-                    </Field>
-                  </>
-                ) : (
-                  <>
-                    <Field label="Region">
-                      <select
-                        className="stitch-input"
-                        {...register("region", {
-                          required: true,
-                          onChange: () => setValue("city", "")
-                        })}
-                      >
-                        <option value="">Select region</option>
-                        {somaliaRegions.map((region) => (
-                          <option key={region} value={region}>
-                            {region}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="District / City">
-                      <select
-                        className="stitch-input disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={!selectedRegion}
-                        {...register("city", { required: true })}
-                      >
-                        <option value="">{selectedRegion ? "Select district" : "Select region first"}</option>
-                        {districts.map((district) => (
-                          <option key={district} value={district}>
-                            {district}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Service type">
-                      <select className="stitch-input" {...register("serviceType", { required: true })}>
-                        <option value="FTL">FTL (full truck)</option>
-                        <option value="SHARED">SHARED (capacity loads)</option>
-                      </select>
-                    </Field>
-                    <Field label="National ID (optional)">
-                      <input className="stitch-input" type="text" maxLength={50} {...register("nationalIdNumber", { maxLength: 50 })} />
-                    </Field>
-                    <Field label="Driver license number">
-                      <input className="stitch-input" type="text" maxLength={50} {...register("driverLicense", { required: true, maxLength: 50 })} />
-                    </Field>
-                    <Field label="Plate number">
-                      <input className="stitch-input" type="text" maxLength={30} {...register("plateNumber", { required: true, maxLength: 30 })} />
-                    </Field>
-                    <Field label="Truck type">
-                      <input
-                        className="stitch-input"
-                        type="text"
-                        maxLength={100}
-                        placeholder="e.g. Flatbed, Box"
-                        {...register("truckType", { required: true, maxLength: 100 })}
-                      />
-                    </Field>
-                    <Field label="Capacity (tons)">
-                      <input
-                        className="stitch-input"
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        placeholder="e.g. 10"
-                        {...register("capacity", { required: true })}
-                      />
-                    </Field>
-                    <p className="sm:col-span-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
-                      Truck number is assigned automatically after you submit.
-                    </p>
-                    <FileField
-                      label="Driver photo"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={setDriverImage}
-                      file={driverImage}
-                    />
-                    <FileField
-                      label="License document"
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
-                      onChange={setLicenseDoc}
-                      file={licenseDoc}
-                    />
-                    <FileField
-                      label="Truck photo"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={setTruckPhoto1}
-                      file={truckPhoto1}
-                    />
-                    <label className="block text-sm sm:col-span-2">
-                      <span className="mb-1.5 block font-medium text-on-surface-variant">
-                        Truck documents (registration, insurance…)
-                      </span>
-                      <input
-                        className="stitch-input"
-                        type="file"
-                        multiple
-                        accept="image/jpeg,image/png,image/webp,application/pdf"
-                        onChange={(e) => setTruckDocuments(Array.from(e.target.files || []))}
-                      />
-                      {truckDocuments.length ? (
-                        <span className="mt-1 block text-xs text-on-surface-variant">
-                          {truckDocuments.length} file(s) selected
-                        </span>
-                      ) : null}
-                    </label>
-                  </>
-                )}
-
+                <Field label="City">
+                  <input className="stitch-input" type="text" maxLength={100} {...register("city", { required: true, maxLength: 100 })} />
+                </Field>
+                <Field label="Address" className="sm:col-span-2">
+                  <input className="stitch-input" type="text" maxLength={255} {...register("address", { required: true, maxLength: 255 })} />
+                </Field>
                 <Field label="Username" className="sm:col-span-2">
                   <input
                     className="stitch-input"
@@ -391,9 +192,7 @@ export function RegisterPage() {
                     type="password"
                     {...register("password", { required: true, minLength: 6 })}
                   />
-                  <span className="mt-1 block text-xs text-on-surface-variant">
-                    At least 6 characters.
-                  </span>
+                  <span className="mt-1 block text-xs text-on-surface-variant">At least 6 characters.</span>
                 </Field>
 
                 {error && (
@@ -403,11 +202,7 @@ export function RegisterPage() {
                 )}
                 <div className="sm:col-span-2">
                   <Button className="w-full" disabled={isSubmitting}>
-                    {isSubmitting
-                      ? "Creating account…"
-                      : accountType === "driver"
-                        ? "Submit for verification"
-                        : "Create account"}
+                    {isSubmitting ? "Creating account…" : "Create account"}
                   </Button>
                 </div>
               </form>
@@ -474,19 +269,6 @@ export function RegisterPage() {
             </form>
           ) : null}
 
-          {step === "pending" ? (
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-primary">Documents submitted</h2>
-              <p className="rounded-lg bg-secondary-container/10 px-4 py-3 text-sm text-on-surface">
-                {success ||
-                  "Your driver account is pending verification. An admin will review your documents, then you can sign in and take jobs."}
-              </p>
-              <Button className="w-full" onClick={() => navigate("/login", { state: { email: pendingEmail || watch("email") } })}>
-                Go to sign in
-              </Button>
-            </div>
-          ) : null}
-
           <p className="mt-6 text-center text-sm text-on-surface-variant">
             Already registered?{" "}
             <Link className="font-semibold text-secondary-container" to="/login">
@@ -505,22 +287,6 @@ function Field({ label, children, className = "" }) {
     <label className={`block text-sm ${className}`}>
       <span className="mb-1.5 block font-medium text-on-surface-variant">{t(label)}</span>
       {children}
-    </label>
-  );
-}
-
-function FileField({ label, accept, onChange, file }) {
-  const { t } = useLanguage();
-  return (
-    <label className="block text-sm">
-      <span className="mb-1.5 block font-medium text-on-surface-variant">{t(label)}</span>
-      <input
-        className="stitch-input"
-        type="file"
-        accept={accept}
-        onChange={(e) => onChange(e.target.files?.[0] || null)}
-      />
-      {file ? <span className="mt-1 block truncate text-xs text-on-surface-variant">{file.name}</span> : null}
     </label>
   );
 }

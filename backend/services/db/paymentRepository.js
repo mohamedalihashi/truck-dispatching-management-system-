@@ -8,12 +8,23 @@ import {
   waafiPurchase,
 } from "../waafiPayService.js";
 import { getCommissionSettings, syncEarningsForPayment } from "../commissionService.js";
+import { formatNotifyLines } from "../../lib/tripCustomerMessages.js";
 
 const paymentInclude = {
   customer: true,
   trip: {
     include: {
-      cargoRequest: { select: { id: true, loadType: true } },
+      cargoRequest: {
+        select: {
+          id: true,
+          loadType: true,
+          pickup: true,
+          destination: true,
+          senderName: true,
+          receiverName: true,
+        },
+      },
+      driver: { select: { id: true, name: true } },
     },
   },
 };
@@ -27,11 +38,13 @@ mapPayment(row, customerName) {
   if (!row) return null;
   const amount = Number(row.amount);
   const amountPaid = Number(row.amountPaid || 0);
-  const fullPaymentOnce = isSharedPayment(row);
+  // SHARED and FTL both pay 100% after Delivered (admin-dispatch model).
+  const fullPaymentOnce = false;
   const schedule = paymentSchedule({
     amount,
     amountPaid,
     deliveryConfirmedAt: row.trip?.deliveryConfirmedAt,
+    tripStatus: row.trip?.status ? String(row.trip.status).replace(/_/g, " ") : null,
     fullPaymentOnce,
   });
   return {
@@ -47,7 +60,9 @@ mapPayment(row, customerName) {
     paymentStage: schedule.stage,
     canPay: schedule.canPay,
     fullPaymentOnce,
-    loadType: row.trip?.cargoRequest?.loadType || null,
+    payAfterDelivery: schedule.payAfterDelivery,
+    loadType: row.trip?.cargoRequest?.loadType || (isSharedPayment(row) ? "SHARED" : null),
+    tripStatus: row.trip?.status || null,
     deliveryConfirmedAt: row.trip?.deliveryConfirmedAt || null,
     status: row.status,
     method: row.method,
@@ -88,7 +103,7 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
   const totalDue = Number(payment.amount);
   const alreadyPaid = Number(payment.amountPaid || 0);
   const balanceDue = Math.max(0, totalDue - alreadyPaid);
-  const fullPaymentOnce = isSharedPayment(payment);
+  const fullPaymentOnce = false;
 
   if (payment.status === "Paid" || balanceDue <= 0) {
     const error = new Error("This payment is already completed");
@@ -108,24 +123,28 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
     error.status = 400;
     throw error;
   }
+  const tripStatusApi = payment.trip?.status
+    ? String(payment.trip.status).replace(/_/g, " ")
+    : null;
   const schedule = paymentSchedule({
     amount: totalDue,
     amountPaid: alreadyPaid,
     deliveryConfirmedAt: payment.trip?.deliveryConfirmedAt,
+    tripStatus: tripStatusApi,
     fullPaymentOnce,
   });
   const requiredAmount = schedule.requiredAmount;
-  if (!fullPaymentOnce && alreadyPaid > 0 && !payment.trip?.deliveryConfirmedAt) {
-    const error = new Error("The remaining 70% can only be paid after proof of delivery and customer confirmation");
+  const tripDelivered =
+    tripStatusApi === "Delivered" || Boolean(payment.trip?.deliveryConfirmedAt);
+  if (!fullPaymentOnce && !tripDelivered) {
+    const error = new Error(
+      "Payment is only available after the trip is Delivered (100% of the fare)"
+    );
     error.status = 409;
     throw error;
   }
   if (Math.abs(chargeAmount - requiredAmount) > 0.01) {
-    const stage = fullPaymentOnce
-      ? "full shared-trip payment"
-      : alreadyPaid <= 0
-        ? "30% deposit"
-        : "remaining 70% balance";
+    const stage = "full trip fare (100% after Delivered)";
     const error = new Error(`This payment must be the exact ${stage}: ${requiredAmount.toFixed(2)}`);
     error.status = 400;
     throw error;
@@ -169,18 +188,8 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
       include: paymentInclude,
     });
 
-    if (alreadyPaid <= 0 && payment.tripId) {
-      await prisma.trip.update({
-        where: { id: payment.tripId },
-        data: { status: "Assigned" },
-      });
-      if (payment.trip?.cargoRequestId) {
-        await prisma.cargoRequest.update({
-          where: { id: payment.trip.cargoRequestId },
-          data: { status: "Assigned" },
-        });
-      }
-    }
+    // FTL pays after Delivered — do not reset trip status on payment.
+    // (Previously a 30% deposit flipped the trip to Assigned.)
 
     await prisma.auditLog.create({
       data: {
@@ -203,7 +212,15 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
       data: {
         userId: customerId,
         type: "payment.completed",
-        message: `Payment of ${chargeAmount.toFixed(2)} ${currency} received for ${payment.tripId || "shipment"}.`,
+        message: formatNotifyLines(`Lacag ${chargeAmount.toFixed(2)} ${currency} waa la helay`, {
+          tripId: payment.tripId,
+          status: newStatus,
+          customerName: payment.customer?.name || null,
+          driverName: payment.trip?.driver?.name || null,
+          pickup: payment.trip?.pickup || payment.trip?.cargoRequest?.pickup,
+          destination: payment.trip?.destination || payment.trip?.cargoRequest?.destination,
+          body: "Waad ku mahadsan tahay bixintaada.",
+        }),
       },
     });
 
@@ -218,7 +235,14 @@ async processWaafiPayment({ paymentId, accountNo, customerId, actorId, payAmount
           data: {
             userId: admin.id,
             type: "payment.received",
-            message: `${customerName} paid ${chargeAmount.toFixed(2)} ${currency} via Waafi (${newStatus}).`,
+            message: formatNotifyLines(`${customerName} ayaa bixiyay ${chargeAmount.toFixed(2)} ${currency}`, {
+              tripId: payment.tripId,
+              status: newStatus,
+              customerName,
+              pickup: payment.trip?.pickup || payment.trip?.cargoRequest?.pickup,
+              destination: payment.trip?.destination || payment.trip?.cargoRequest?.destination,
+              body: "WaafiPay.",
+            }),
           },
         })
       )

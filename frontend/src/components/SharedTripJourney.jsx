@@ -1,14 +1,13 @@
-import { CheckCircle2, Flag, Navigation, Package, Truck, Users, Wallet } from "lucide-react";
+import { CheckCircle2, Flag, Navigation, Package, Truck, Users } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
 
-/** Explains shared-trip flow: create → book → pickup → in transit → delivered. */
+/** Shared flow: request → admin assign → pickup → transit → delivered. */
 export function SharedTripJourney({ status = null, compact = false, className = "" }) {
   const { t } = useLanguage();
 
   const STEPS = [
     { key: "create", title: t("sharedJourney.create"), text: t("sharedJourney.createText"), icon: Package },
-    { key: "open", title: t("sharedJourney.bookPay"), text: t("sharedJourney.bookPayText"), icon: Wallet },
-    { key: "bookings", title: t("sharedJourney.full"), text: t("sharedJourney.fullText"), icon: Users },
+    { key: "assign", title: t("sharedJourney.bookPay"), text: t("sharedJourney.bookPayText"), icon: Users },
     { key: "pickup", title: t("sharedJourney.pickup"), text: t("sharedJourney.pickupText"), icon: Truck },
     { key: "transit", title: t("sharedJourney.transit"), text: t("sharedJourney.transitText"), icon: Navigation },
     { key: "delivered", title: t("sharedJourney.delivered"), text: t("sharedJourney.deliveredText"), icon: Flag },
@@ -16,11 +15,10 @@ export function SharedTripJourney({ status = null, compact = false, className = 
 
   function stepIndexForStatus(value) {
     if (!value || value === "Cancelled") return -1;
-    if (value === "Delivered" || value === "Completed") return 5;
-    if (value === "In Transit") return 4;
-    if (value === "Pickup" || value === "Departed") return 3;
-    if (value === "Full") return 2;
-    if (value === "Open for booking" || value === "Draft") return 1;
+    if (value === "Delivered" || value === "Completed") return 4;
+    if (value === "In Transit" || value === "Near Destination") return 3;
+    if (value === "Pickup" || value === "Departed" || value === "Picked Up" || value === "Arrived at Pickup") return 2;
+    if (value === "Open for booking" || value === "Draft" || value === "Full" || value === "Assigned") return 1;
     return 0;
   }
 
@@ -31,7 +29,7 @@ export function SharedTripJourney({ status = null, compact = false, className = 
     return (
       <div className={`flex flex-wrap gap-1.5 ${className}`}>
         {STEPS.map((step, index) => {
-          const done = activeIndex > index || (activeIndex === index && step.key !== "create");
+          const done = activeIndex > index;
           const current = activeIndex === index;
           return (
             <span
@@ -72,7 +70,7 @@ export function SharedTripJourney({ status = null, compact = false, className = 
         ) : null}
       </div>
 
-      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {STEPS.map((step, index) => {
           const Icon = step.icon;
           const done = !cancelled && activeIndex > index;

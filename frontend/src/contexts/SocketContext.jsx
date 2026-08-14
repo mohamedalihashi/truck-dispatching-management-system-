@@ -46,7 +46,20 @@ export function SocketProvider({ children }) {
       "location.updated",
       "trip.rejected",
       "trip.feedback.submitted"
-    ].forEach((event) => socket.on(event, (payload) => push(event, payload)));
+    ].forEach((event) =>
+      socket.on(event, (payload) => {
+        // Inbox is per-user: ignore other users' notifications.
+        if (
+          event === "notification.created" &&
+          payload?.userId &&
+          user?.id &&
+          String(payload.userId) !== String(user.id)
+        ) {
+          return;
+        }
+        push(event, payload);
+      })
+    );
 
     if (user?.id) socket.emit("join", user.id);
 

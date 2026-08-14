@@ -10,7 +10,7 @@ import { useTripSummary, useTrips } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../services/api";
-import { money, TRIP_STATUSES } from "../../utils/helpers";
+import { money, fareAfterDelivered, TRIP_STATUSES } from "../../utils/helpers";
 
 const SHARED_TRIP_STATUSES = ["Open for booking", "Full", "Departed", "Completed", "Cancelled"];
 
@@ -49,7 +49,7 @@ export function TripsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Trips"
-        subtitle={canManage ? "Monitor FTL and shared trips separately across the marketplace." : "Monitor active and historical marketplace trips."}
+        subtitle={canManage ? "Monitor FTL and shared trips separately." : "Monitor your active and past trips."}
       />
 
       {canManage && (
@@ -126,7 +126,7 @@ export function TripsPage() {
               {
                 key: "fare",
                 label: "Fare",
-                render: (row) => money(row.fare)
+                render: (row) => fareAfterDelivered(row.status, row.fare)
               },
               {
                 key: "status",
@@ -153,29 +153,15 @@ export function TripsPage() {
         <Modal title={`Trip ${viewing.id}`} onClose={() => setViewing(null)} wide>
           <dl className="grid gap-3 sm:grid-cols-2 text-sm">
             <Detail label="Status" value={<StatusBadge status={viewing.status} />} />
-            <Detail label="Fare" value={money(viewing.fare)} />
+            <Detail label="Fare" value={fareAfterDelivered(viewing.status, viewing.fare)} />
             <Detail label="Customer" value={viewing.customer} />
             <Detail label="Driver" value={viewing.driver || "—"} />
             <Detail label="Truck" value={viewing.truck || "—"} />
             <Detail label="Cargo request" value={viewing.cargoRequestId || "—"} />
             <Detail label="Pickup" value={viewing.pickup} />
             <Detail label="Destination" value={viewing.destination} />
-            <Detail label="Booking customer role" value={viewing.customerRole ? `Customer is the ${viewing.customerRole.toLowerCase()}` : "—"} />
-            <Detail label="Sender" value={viewing.senderName || "—"} />
-            <Detail label="Sender phone" value={viewing.senderPhone || "—"} />
-            <Detail label="Receiver" value={viewing.receiverName || "—"} />
-            <Detail label="Receiver phone" value={viewing.receiverPhone || "—"} />
             <Detail label="Distance" value={viewing.distance || "—"} />
             <Detail label="ETA" value={viewing.estimatedTime || viewing.eta || "—"} />
-            <Detail
-              label="Last location"
-              value={
-                viewing.lastLocation
-                  ? `${Number(viewing.lastLocation.lat).toFixed(4)}, ${Number(viewing.lastLocation.lng).toFixed(4)}`
-                  : "—"
-              }
-              className="sm:col-span-2"
-            />
           </dl>
         </Modal>
       )}

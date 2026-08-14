@@ -8,11 +8,11 @@ import { dispatchVerificationEmail, verificationPayload } from "../services/emai
 import { registrationUpload, upload } from "../lib/uploads.js";
 import { deleteAssets, uploadBuffer } from "../services/cloudinaryService.js";
 import { persistUploadedFile } from "../lib/persistUpload.js";
-import { strongPasswordSchema } from "../lib/validation.js";
+import { strongPasswordSchema, fullNameSchema } from "../lib/validation.js";
 import { authLimiter, otpLimiter, passwordResetLimiter, registrationLimiter, resendLimiter } from "../middleware/security.js";
 
 const router = Router();
-const personName = z.string().trim().min(2).max(100);
+const personName = fullNameSchema;
 const username = z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9._-]+$/);
 const email = z.string().trim().email().max(254);
 const phone = z.string().trim().min(7).max(20).regex(/^\+?[0-9\s-]+$/, "Enter a valid phone number");
@@ -183,116 +183,42 @@ router.post("/register", registrationLimiter, registrationUpload.fields([
   const uploadedPublicIds = [];
   try {
     const role = String(req.body.role || "customer").toLowerCase();
-    if (!["customer", "driver"].includes(role)) {
-      return res.status(403).json({ message: "Public registration only supports customer or driver accounts" });
+    if (role !== "customer") {
+      return res.status(403).json({
+        message: "Only customer accounts can register online. Driver accounts are created by an admin."
+      });
     }
 
     const conflict = await db.findRegistrationConflict({
       username: req.body.username,
       email: req.body.email,
-      phone: req.body.phone,
-      nationalIdNumber: role === "driver" ? req.body.nationalIdNumber : undefined,
-      plateNumber: role === "driver" ? req.body.plateNumber : undefined
+      phone: req.body.phone
     });
     if (conflict) return res.status(409).json({ message: `${conflict} already registered` });
 
-    if (role === "customer") {
-      const profilePhoto = await uploadBuffer(req.files?.profilePhoto?.[0], "customers");
-      if (profilePhoto?.publicId) uploadedPublicIds.push(profilePhoto.publicId);
-      const payload = {
-        name: req.body.name,
-        username: req.body.username,
-        email: req.body.email,
-        phone: req.body.phone,
-        password: req.body.password,
-        role: "customer",
-        customerProfile: {
-          customerType: "Business",
-          city: req.body.city,
-          address: req.body.address,
-          profilePhotoUrl: profilePhoto?.url || undefined,
-          profilePhotoPublicId: profilePhoto?.publicId || undefined
-        }
-      };
-
-      const parsed = registerSchema.safeParse(payload);
-      if (!parsed.success) {
-        await deleteAssets(uploadedPublicIds);
-        return validationFailed(res, parsed);
-      }
-      const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-
-      if (!isAuthOtpEnabled()) {
-        const user = await db.createUser({
-          ...parsed.data,
-          password: undefined,
-          passwordHash
-        });
-        const safe = publicUser(user);
-        return res.status(201).json({ user: safe, token: signToken(safe) });
-      }
-
-      const pendingPayload = { ...parsed.data, password: undefined, passwordHash };
-      const { code } = await db.createVerificationCode({ email: parsed.data.email, purpose: "register", payload: pendingPayload });
-      const emailResult = await dispatchVerificationEmail(parsed.data.email, code, "register");
-      return res.status(202).json(verificationResponse(parsed.data.email, emailResult));
-    }
-
-    const driverImage = await persistRegistrationAsset(req.files?.driverImage?.[0], "drivers", uploadedPublicIds);
-    const licenseDoc = await persistRegistrationAsset(req.files?.driverLicenseDocument?.[0], "licenses", uploadedPublicIds);
-    const truckPhoto1 = await persistRegistrationAsset(req.files?.truckPhoto1?.[0], "trucks", uploadedPublicIds);
-    const truckDocs = (
-      await Promise.all(
-        (req.files?.truckDocuments || []).map((file) =>
-          persistRegistrationAsset(file, "truck-docs", uploadedPublicIds)
-        )
-      )
-    ).filter((saved) => saved.url);
-
-    if (!driverImage.url || !licenseDoc.url || !truckPhoto1.url || !truckDocs.length) {
-      await deleteAssets(uploadedPublicIds);
-      return res.status(400).json({
-        message: "Driver registration requires profile photo, license document, truck photo, and at least one truck document"
-      });
-    }
-
-    const capacityInfo = normalizeCapacity(req.body.capacity);
-    const driverPayload = {
+    const profilePhoto = await uploadBuffer(req.files?.profilePhoto?.[0], "customers");
+    if (profilePhoto?.publicId) uploadedPublicIds.push(profilePhoto.publicId);
+    const payload = {
       name: req.body.name,
       username: req.body.username,
       email: req.body.email,
       phone: req.body.phone,
       password: req.body.password,
-      role: "driver",
-      serviceType: req.body.serviceType,
-      nationalIdNumber: req.body.nationalIdNumber || undefined,
-      driverLicense: req.body.driverLicense,
-      driverLicenseUrl: licenseDoc.url,
-      driverLicensePublicId: licenseDoc.publicId || undefined,
-      driverImageUrl: driverImage.url,
-      driverImagePublicId: driverImage.publicId || undefined,
-      truck: {
-        truckNumber: req.body.truckNumber?.trim() || generateTruckNumber(),
-        plateNumber: req.body.plateNumber,
-        capacity: capacityInfo.capacity,
-        capacityTons: capacityInfo.capacityTons,
-        truckType: req.body.truckType,
-        region: req.body.region || "",
-        city: req.body.city || "",
-        photoUrl1: truckPhoto1.url,
-        photoPublicId1: truckPhoto1.publicId || undefined,
-        registrationDocumentUrl: truckDocs[0].url,
-        registrationDocumentPublicId: truckDocs[0].publicId || undefined,
-        documentUrls: truckDocs.map((doc) => doc.url)
+      role: "customer",
+      customerProfile: {
+        customerType: "Business",
+        city: req.body.city,
+        address: req.body.address,
+        profilePhotoUrl: profilePhoto?.url || undefined,
+        profilePhotoPublicId: profilePhoto?.publicId || undefined
       }
     };
 
-    const parsed = driverRegisterSchema.safeParse(driverPayload);
+    const parsed = registerSchema.safeParse(payload);
     if (!parsed.success) {
       await deleteAssets(uploadedPublicIds);
       return validationFailed(res, parsed);
     }
-
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
     if (!isAuthOtpEnabled()) {
@@ -302,11 +228,7 @@ router.post("/register", registrationLimiter, registrationUpload.fields([
         passwordHash
       });
       const safe = publicUser(user);
-      return res.status(201).json({
-        user: safe,
-        verificationPending: true,
-        message: "Driver account created. An admin will verify your documents before you can log in and take jobs."
-      });
+      return res.status(201).json({ user: safe, token: signToken(safe) });
     }
 
     const pendingPayload = { ...parsed.data, password: undefined, passwordHash };
@@ -333,18 +255,8 @@ router.post("/register/verify", otpLimiter, validate(verifySchema), async (req, 
 
     const role = payload.role;
     if (role === "driver") {
-      const parsed = driverRegisterSchema.safeParse({ ...payload, password: "Pending1!aA" });
-      if (!parsed.success) return res.status(400).json({ message: "Registration data expired. Please register again." });
-
-      const existing = await db.findUserByEmail(parsed.data.email);
-      if (existing) return res.status(409).json({ message: "Email already registered" });
-
-      const user = await db.createUser({ ...parsed.data, password: undefined, passwordHash: payload.passwordHash });
-      const safe = publicUser(user);
-      return res.status(201).json({
-        user: safe,
-        verificationPending: true,
-        message: "Email verified. An admin will check your documents before you can log in and take jobs."
+      return res.status(403).json({
+        message: "Driver self-registration is not allowed. Contact an admin to register your driver account."
       });
     }
 
@@ -373,6 +285,9 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res, next)
     }
     if (user.role === "dispatcher") {
       return res.status(403).json({ message: "Dispatcher accounts are no longer supported. Contact an admin." });
+    }
+    if (user.status === "Inactive") {
+      return res.status(403).json({ message: "Account is inactive. Contact an admin." });
     }
     if (user.status !== "Active") {
       const awaitingDocs =
@@ -456,6 +371,11 @@ router.post("/resend-code", resendLimiter, async (req, res, next) => {
       if (!payload) {
         return res.status(400).json({ message: "No pending registration found. Please fill the form again." });
       }
+      if (payload.role === "driver") {
+        return res.status(403).json({
+          message: "Driver self-registration is not allowed. Contact an admin to register your driver account."
+        });
+      }
       const existing = await db.findUserByEmail(email);
       if (existing) return res.status(409).json({ message: "Email already registered" });
     } else {
@@ -506,10 +426,27 @@ router.post("/change-password", requireAuth, async (req, res, next) => {
 
 router.patch("/me", requireAuth, requirePasswordChanged, async (req, res, next) => {
   try {
-    const { name, phone, password } = req.body;
+    const { name, phone: phoneValue, password } = req.body;
     const payload = {};
-    if (name !== undefined) payload.name = name;
-    if (phone !== undefined) payload.phone = phone;
+    if (name !== undefined) {
+      const parsedName = personName.safeParse(name);
+      if (!parsedName.success) {
+        return res.status(400).json({ message: parsedName.error.issues[0]?.message || "Invalid full name" });
+      }
+      payload.name = parsedName.data;
+    }
+    if (phoneValue !== undefined) {
+      const trimmedPhone = String(phoneValue || "").trim();
+      if (!trimmedPhone) {
+        payload.phone = null;
+      } else {
+        const parsedPhone = phone.safeParse(trimmedPhone);
+        if (!parsedPhone.success) {
+          return res.status(400).json({ message: parsedPhone.error.issues[0]?.message || "Invalid phone number" });
+        }
+        payload.phone = parsedPhone.data;
+      }
+    }
     if (password) payload.password = password;
     const user = await db.updateUser(req.user.sub, payload);
     if (!user) return res.status(404).json({ message: "User not found" });

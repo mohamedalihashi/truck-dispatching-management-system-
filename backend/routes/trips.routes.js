@@ -9,6 +9,7 @@ import { validate } from "../middleware/validate.js";
 import { createFeedbackToken } from "../services/deliveryFeedbackService.js";
 import { sendTripEventSms } from "../services/cargoSmsService.js";
 import { db } from "../services/dbService.js";
+import { emitUserNotification } from "../lib/notifyRealtime.js";
 
 const router = Router();
 const uploadDir = process.env.VERCEL
@@ -27,19 +28,44 @@ const upload = multer(
     : { dest: uploadDir }
 );
 
-const statusSchema = z.object({
-  status: z.enum([
-    "Pending",
-    "Assigned",
-    "Accepted",
-    "Arrived Pickup",
-    "Loaded",
-    "In Transit",
-    "Delivered",
-    "Cancelled",
-    "Delayed"
-  ])
-});
+const statusSchema = z
+  .object({
+    status: z.enum([
+      "Pending",
+      "Assigned",
+      "En Route to Pickup",
+      "Arrived at Pickup",
+      "Picked Up",
+      "In Transit",
+      "Near Destination",
+      "Delivered",
+      "Cancelled"
+    ]),
+    weightAmount: z.coerce.number().positive().optional(),
+    weightUnit: z.enum(["kg", "tons"]).optional(),
+    measuredQuantity: z.coerce.number().positive().optional(),
+    measurementUnit: z.enum(["KG", "LITER", "HEAD"]).optional()
+  })
+  .superRefine((data, ctx) => {
+    if (data.status === "Picked Up") {
+      const hasLegacy = data.weightAmount != null && data.weightAmount > 0;
+      const hasMeasured = data.measuredQuantity != null && data.measuredQuantity > 0;
+      if (!hasLegacy && !hasMeasured) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["measuredQuantity"],
+          message: "Enter the actual measurement when marking Picked Up"
+        });
+      }
+      if (hasLegacy && !data.weightUnit) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["weightUnit"],
+          message: "Select kg or tons"
+        });
+      }
+    }
+  });
 
 const feedbackSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -59,8 +85,13 @@ router.get("/", async (req, res, next) => {
       page: req.query.page,
       limit: req.query.limit
     };
-    if (req.user.role === "driver") filters.driverId = req.user.sub;
-    if (req.user.role === "customer") filters.customerId = req.user.sub;
+    if (req.user.role === "driver") {
+      filters.driverId = req.user.sub;
+    } else if (req.user.role === "customer") {
+      filters.customerId = req.user.sub;
+    } else if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not allowed to list trips" });
+    }
     const result = await db.listTrips(filters);
     res.json(result);
   } catch (error) {
@@ -71,8 +102,13 @@ router.get("/", async (req, res, next) => {
 router.get("/summary", async (req, res, next) => {
   try {
     const filters = {};
-    if (req.user.role === "driver") filters.driverId = req.user.sub;
-    if (req.user.role === "customer") filters.customerId = req.user.sub;
+    if (req.user.role === "driver") {
+      filters.driverId = req.user.sub;
+    } else if (req.user.role === "customer") {
+      filters.customerId = req.user.sub;
+    } else if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     res.json(await db.tripSummary(filters));
   } catch (error) {
     next(error);
@@ -93,19 +129,40 @@ router.get("/feedback", requireRole("admin", "driver"), async (req, res, next) =
   }
 });
 
-router.patch("/:id/status", requireRole("driver"), validate(statusSchema), async (req, res, next) => {
+router.patch("/:id/status", requireRole("driver", "admin"), validate(statusSchema), async (req, res, next) => {
   try {
+    let weight;
+    let measuredQuantity;
+    let measurementUnit;
+
+    if (req.body.status === "Picked Up") {
+      if (req.body.measuredQuantity != null) {
+        measuredQuantity = Number(req.body.measuredQuantity);
+        measurementUnit = req.body.measurementUnit;
+      } else if (req.body.weightAmount != null) {
+        const unit = req.body.weightUnit || "kg";
+        measuredQuantity = unit === "tons" ? Number(req.body.weightAmount) * 1000 : Number(req.body.weightAmount);
+        measurementUnit = "KG";
+        weight = `${req.body.weightAmount} ${unit}`;
+      }
+    }
+
     const result = await db.updateTripStatus(req.params.id, req.body.status, req.user.sub, {
-      role: "driver",
-      driverId: req.user.sub
+      role: req.user.role,
+      driverId: req.user.role === "driver" ? req.user.sub : undefined,
+      weight,
+      measuredQuantity,
+      measurementUnit
     });
     if (!result) return res.status(404).json({ message: "Trip not found" });
-    req.app.get("io").emit("trip.status.updated", result.trip);
-    if (result.notification) req.app.get("io").emit("notification.created", result.notification);
+    req.app.get("io")?.emit("trip.status.updated", result.trip);
+    emitUserNotification(req.app.get("io"), result.notification);
     const event = {
-      "Arrived Pickup": "cargo.arrived_pickup",
-      Loaded: "cargo.picked_up",
+      "En Route to Pickup": "cargo.en_route_pickup",
+      "Arrived at Pickup": "cargo.arrived_pickup",
+      "Picked Up": "cargo.picked_up",
       "In Transit": "cargo.in_transit",
+      "Near Destination": "cargo.near_destination",
       Cancelled: "cargo.cancelled",
     }[req.body.status];
     if (req.body.status === "Delivered") {
@@ -124,10 +181,39 @@ router.patch("/:id/status", requireRole("driver"), validate(statusSchema), async
 
 router.post("/:id/accept", requireRole("driver"), async (req, res, next) => {
   try {
-    const result = await db.updateTripStatus(req.params.id, "Accepted", req.user.sub, { driverId: req.user.sub, role: "driver" });
+    const result = await db.updateTripStatus(req.params.id, "En Route to Pickup", req.user.sub, {
+      driverId: req.user.sub,
+      role: "driver"
+    });
     if (!result) return res.status(404).json({ message: "Trip not found" });
-    req.app.get("io").emit("trip.status.updated", result.trip);
+    req.app.get("io")?.emit("trip.status.updated", result.trip);
+    void sendTripEventSms(result.trip.id, "cargo.en_route_pickup")
+      .catch((error) => console.error("En-route SMS failed:", error.message));
     res.json(result.trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
+const adjustSchema = z.object({
+  fare: z.coerce.number().positive().optional(),
+  estimatedTime: z.string().trim().min(1).max(50).optional(),
+  notes: z.string().trim().max(500).optional()
+}).refine((data) => data.fare != null || data.estimatedTime != null || data.notes !== undefined, {
+  message: "Provide fare, estimated time, or notes to update"
+});
+
+router.patch("/:id/assignment", requireRole("driver"), validate(adjustSchema), async (req, res, next) => {
+  try {
+    if (req.body.fare != null || req.body.estimatedTime != null) {
+      return res.status(403).json({
+        message: "Drivers cannot change fare or ETA. Accept or Reject only."
+      });
+    }
+    const trip = await db.adjustAssignedTrip(req.params.id, req.user.sub, req.body);
+    if (!trip) return res.status(404).json({ message: "Trip not found" });
+    req.app.get("io")?.emit("trip.status.updated", trip);
+    res.json(trip);
   } catch (error) {
     next(error);
   }
@@ -137,27 +223,56 @@ router.post("/:id/reject", requireRole("driver"), async (req, res, next) => {
   try {
     const result = await db.rejectTrip(req.params.id, req.user.sub);
     if (!result) return res.status(404).json({ message: "Trip not found" });
-    req.app.get("io").emit("trip.rejected", result);
+    req.app.get("io")?.emit("trip.rejected", result);
     res.json(result);
   } catch (error) {
     next(error);
   }
 });
 
-router.patch("/:id/location", requireRole("driver"), async (req, res, next) => {
+const locationSchema = z.object({
+  lat: z.coerce.number().finite(),
+  lng: z.coerce.number().finite(),
+  accuracy: z.coerce.number().finite().positive().max(5000).optional(),
+  speed: z.coerce.number().finite().min(0).max(100).optional(),
+  speedKmh: z.coerce.number().finite().min(0).max(250).optional(),
+  heading: z.coerce.number().finite().min(0).max(360).optional(),
+  timestamp: z.union([z.string(), z.number()]).optional(),
+});
+
+router.patch("/:id/location", requireRole("driver"), validate(locationSchema), async (req, res, next) => {
   try {
-    const options = req.user.role === "driver" ? { driverId: req.user.sub } : {};
     const trip = await db.updateTripLocation(
       req.params.id,
-      { lat: Number(req.body.lat), lng: Number(req.body.lng) },
-      options
+      {
+        lat: Number(req.body.lat),
+        lng: Number(req.body.lng),
+        ...(req.body.accuracy != null ? { accuracy: Number(req.body.accuracy) } : {}),
+        ...(req.body.speed != null ? { speed: Number(req.body.speed) } : {}),
+        ...(req.body.speedKmh != null ? { speedKmh: Number(req.body.speedKmh) } : {}),
+        ...(req.body.heading != null ? { heading: Number(req.body.heading) } : {}),
+        ...(req.body.timestamp != null ? { timestamp: req.body.timestamp } : {}),
+      },
+      { driverId: req.user.sub, io: req.app.get("io") }
     );
     if (!trip) return res.status(404).json({ message: "Trip not found" });
-    req.app.get("io").emit("location.updated", { tripId: trip.id, location: trip.lastLocation, eta: trip.eta });
-    if (trip.eta?.distanceKm <= 10) {
-      void sendTripEventSms(trip.id, "cargo.near_destination")
-        .catch((error) => console.error("Near-destination SMS failed:", error.message));
-    }
+    req.app.get("io")?.emit("location.updated", {
+      tripId: trip.id,
+      truckId: trip.truckId,
+      location: trip.lastLocation,
+      gpsStatus: trip.gpsStatus,
+      distanceTraveledKm: trip.distanceTraveledKm,
+      distance: trip.distance,
+      status: trip.status,
+      progress: trip.progress,
+    });
+    req.app.get("io")?.emit("truck:location:update", {
+      tripId: trip.id,
+      truckId: trip.truckId,
+      location: trip.lastLocation,
+      gpsStatus: trip.gpsStatus,
+      progress: trip.progress,
+    });
     res.json(trip);
   } catch (error) {
     next(error);
@@ -170,20 +285,52 @@ router.get("/:id/locations", async (req, res, next) => {
       userId: req.user.sub,
       role: req.user.role,
     });
-    if (!points) return res.status(404).json({ message: "Trip not found" });
-    res.json({ tripId: req.params.id, points });
+    if (points == null) return res.status(404).json({ message: "Trip not found" });
+    res.json({ points });
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/:id/proof", requireRole("driver"), upload.single("proof"), async (req, res, next) => {
+router.get("/:id/replay", async (req, res, next) => {
   try {
-    const deliveryProofUrl = req.file
-      ? process.env.VERCEL
-        ? `mock://proof-uploaded-${Date.now()}`
-        : `/uploads/${path.basename(req.file.filename)}`
-      : req.body.deliveryProofUrl || "mock://proof-uploaded";
+    const replay = await db.getTripReplay(req.params.id, {
+      userId: req.user.sub,
+      role: req.user.role,
+    });
+    if (!replay) return res.status(404).json({ message: "Trip not found" });
+    res.json(replay);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/events", async (req, res, next) => {
+  try {
+    const events = await db.listTripEvents(req.params.id, {
+      userId: req.user.sub,
+      role: req.user.role,
+    });
+    if (events == null) return res.status(404).json({ message: "Trip not found" });
+    res.json({ events });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/proof", requireRole("driver", "admin"), upload.single("proof"), async (req, res, next) => {
+  try {
+    const { persistUploadedFile } = await import("../lib/persistUpload.js");
+    let deliveryProofUrl = null;
+    if (req.file) {
+      deliveryProofUrl = await persistUploadedFile(req.file, "delivery-proofs");
+    }
+    if (!deliveryProofUrl) {
+      deliveryProofUrl = req.body.deliveryProofUrl || null;
+    }
+    if (!deliveryProofUrl) {
+      return res.status(400).json({ message: "Proof image is required" });
+    }
     const options = req.user.role === "driver" ? { driverId: req.user.sub } : {};
     const trip = await db.uploadTripProof(
       req.params.id,

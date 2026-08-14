@@ -1,6 +1,6 @@
-# TruckDispatch — Truck & Cargo Marketplace
+# TruckDispatch — Management System
 
-Web-based Truck Dispatcher platform that connects **Fleet Managers** (customers), **dispatchers**, **drivers**, and **admins** in one workflow: book cargo, assign trucks, track trips in real time, and manage payments.
+Web-based Truck Dispatcher / Management system that connects **customers**, **drivers**, and **admins** in one workflow: book cargo, assign trucks, track trips in real time, and manage payments.
 
 > **Design rule:** One driver account = one truck. Drivers cannot register without truck details.
 

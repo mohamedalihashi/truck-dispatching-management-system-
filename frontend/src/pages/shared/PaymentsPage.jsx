@@ -37,7 +37,7 @@ export function PaymentsPage() {
     enabled: isCustomer || isAdmin
   });
   const { data: customers } = useCustomers({ enabled: isAdmin });
-  const { data: trips } = useTrips({ limit: 100, enabled: isAdmin });
+  const { data: trips } = useTrips({ limit: 100 }, { enabled: isAdmin });
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [paying, setPaying] = useState(null);
@@ -165,7 +165,7 @@ export function PaymentsPage() {
         title={isAdmin ? "Finance" : t("customer.paymentPageTitle")}
         subtitle={
           isAdmin
-            ? "Track marketplace payments, Waafi settlements, and invoice status in real time."
+            ? "Track Management system payments, Waafi settlements, and invoice status in real time."
             : t("customer.paymentPageSubtitle")
         }
         actions={
@@ -184,12 +184,12 @@ export function PaymentsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-semibold text-on-surface">
-                {payable.some((row) => row.fullPaymentOnce || row.loadType === "SHARED")
+                {payable.some((row) => row.fullPaymentOnce)
                   ? t("payments.paySharedFull")
                   : t("payments.payFtlDeposit")}
               </p>
               <p className="text-sm text-on-surface-variant">
-                {payable.some((row) => row.fullPaymentOnce || row.loadType === "SHARED")
+                {payable.some((row) => row.fullPaymentOnce)
                   ? `${payable.length} ${t("payments.sharedHint")}`
                   : `${payable.length} ${t("payments.ftlHint")}`}
               </p>

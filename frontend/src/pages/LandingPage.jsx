@@ -14,7 +14,6 @@ import {
   Video
 } from "lucide-react";
 import { PublicSiteHeader } from "../components/PublicSiteHeader";
-import { PublicTrucksCatalog } from "../components/PublicTrucksCatalog";
 import { CustomerTestimonials } from "../components/CustomerTestimonials";
 import { HeroTruckCarousel } from "../components/HeroTruckCarousel";
 import { BrandLogo } from "../components/BrandLogo";
@@ -76,16 +75,10 @@ export function LandingPage() {
                   {t("landing.registerCta")} <ArrowRight className="transition group-hover:translate-x-1" size={18} />
                 </Link>
                 <Link
-                  to="/trucks"
-                  className="rounded-xl border border-white/20 bg-white/10 px-8 py-4 text-sm font-semibold text-white backdrop-blur-md hover:bg-white/20"
-                >
-                  {t("landing.browseCta")}
-                </Link>
-                <Link
                   to="/login"
                   className="rounded-xl border border-white/20 bg-white/10 px-8 py-4 text-sm font-semibold text-white backdrop-blur-md hover:bg-white/20"
                 >
-                  Explore Platform
+                  {t("landing.browseCta")}
                 </Link>
               </div>
               <div className="flex items-center gap-8 border-t border-white/10 pt-8">
@@ -136,7 +129,7 @@ export function LandingPage() {
                     <Shield size={28} />
                   </div>
                   <h3 className="mb-4 text-xl font-semibold text-primary">{t("Reliable & Safe")}</h3>
-                  <p className="text-on-surface-variant">{t("Every truck and driver on our platform undergoes a rigorous 5-step verification process to ensure safety.")}</p>
+                  <p className="text-on-surface-variant">{t("Drivers and trucks are registered by admin with license and truck documents on file.")}</p>
                 </div>
               </article>
               <article className="bento-card relative min-h-[300px] overflow-hidden rounded-3xl bg-primary-container p-6 text-white md:col-span-2">
@@ -145,8 +138,8 @@ export function LandingPage() {
                     <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur">
                       <Navigation size={28} />
                     </div>
-                    <h3 className="mb-4 text-xl font-semibold">{t("Real-time Tracking")}</h3>
-                    <p className="max-w-md text-on-primary-container">{t("GPS integration across all fleet vehicles provides sub-meter accuracy for real-time shipment monitoring and predictive ETA.")}</p>
+                    <h3 className="mb-4 text-xl font-semibold">{t("Trip Status Updates")}</h3>
+                    <p className="max-w-md text-on-primary-container">{t("Follow each load from assignment through pickup, in transit, and delivery with clear status updates.")}</p>
                   </div>
                   <div className="mt-8 flex gap-2">
                     <div className="h-1.5 w-12 rounded-full bg-secondary-container" />
@@ -162,7 +155,7 @@ export function LandingPage() {
                     <BookOpen size={28} />
                   </div>
                   <h3 className="mb-4 text-xl font-semibold text-primary">{t("Easy Booking")}</h3>
-                  <p className="max-w-sm text-on-surface-variant">{t("Browse FTL trucks and shared loads, view details first, then book directly with the driver in a few taps.")}</p>
+                  <p className="max-w-sm text-on-surface-variant">{t("Submit an FTL or shared request. An admin assigns a driver to start your trip.")}</p>
                 </div>
                 <div className="hidden w-1/3 rotate-3 aspect-square rounded-2xl border border-outline-variant/20 bg-surface-container-lowest p-4 shadow-inner sm:block">
                   <div className="flex h-full w-full flex-col gap-2 rounded-lg bg-surface-container-high p-2">
@@ -178,7 +171,7 @@ export function LandingPage() {
                     <FileText size={28} />
                   </div>
                   <h3 className="mb-4 text-xl font-semibold text-primary">{t("Secure Payments")}</h3>
-                  <p className="text-on-surface-variant">{t("Multi-layer encryption and escrow-based payment releases ensure every transaction is protected and transparent.")}</p>
+                  <p className="text-on-surface-variant">{t("Secure WaafiPay payments after Delivered — pay 100% of the fare when the trip is complete.")}</p>
                 </div>
               </article>
             </div>
@@ -190,17 +183,17 @@ export function LandingPage() {
             <div className="mb-20 text-center">
               <h2 className="text-[32px] font-bold text-primary">{t("landing.processTitle")}</h2>
               <p className="mt-4 text-on-surface-variant">
-                {t("From browsing to delivery — customers and drivers connect directly on one marketplace")}
+                {t("From request to delivery — admin assigns drivers, customers pay 100% after Delivered")}
               </p>
             </div>
             <div className="relative">
               <div className="absolute left-0 top-12 hidden h-[2px] w-full border-t border-dashed border-outline-variant lg:block" />
               <div className="relative z-10 grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
                 {[
-                  [Truck, "1. Browse Trucks & Loads", "See FTL trucks and shared trips together. Filter by type, view full details, then choose what fits."],
-                  [ClipboardEdit, "2. Book with the Driver", "Book a full truck or shared capacity. Tell us if you are sending or receiving the cargo — no middleman."],
-                  [Navigation, "3. Track in Real Time", "Follow live GPS from pickup to delivery. Drivers update status and share location across Somalia."],
-                  [Shield, "4. Deliver & Pay", "Confirm delivery, pay securely with WaafiPay, and the driver receives their share automatically."]
+                  [Truck, "1. Book FTL or Shared", "Submit an FTL or shared cargo request with your route and cargo details."],
+                  [ClipboardEdit, "2. Submit Request", "Send your route and cargo details. An admin reviews and assigns a driver — no direct contact."],
+                  [Navigation, "3. Follow Trip Status", "See pickup, in transit, and delivered updates for every load across Somalia."],
+                  [Shield, "4. Deliver & Pay 100%", "After Delivered, pay the full fare with WaafiPay — the driver gets their share."]
                 ].map(([Icon, title, text]) => (
                   <div key={title} className="group text-center">
                     <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-4 border-background bg-surface-container-lowest shadow-md transition duration-300 group-hover:border-secondary-container">
@@ -215,55 +208,38 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="trucks" className="bg-surface-container-low py-24">
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="mb-10 flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
-              <div>
-                <h2 className="text-[32px] font-bold text-primary">Browse Trucks & Loads</h2>
-                <p className="mt-3 max-w-2xl text-on-surface-variant">
-                  FTL trucks and shared loads together. Filter by service type, view full details, then book when ready.
-                </p>
-              </div>
-              <Link to="/trucks" className="text-sm font-semibold text-secondary-container hover:underline">
-                Open full browser
-              </Link>
-            </div>
-            <PublicTrucksCatalog limit={6} compact showViewAll />
-          </div>
-        </section>
-
         <CustomerTestimonials />
 
         <section className="relative overflow-hidden bg-primary-container py-24">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(254,107,0,0.08),transparent)]" />
           <div className="relative z-10 mx-auto max-w-7xl px-6 text-center text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary-fixed-dim">
-              Somalia Truck Marketplace
+              Somalia Truck Dispatch
             </p>
-            <h2 className="mt-3 text-[32px] font-bold">Join the GaariHel Marketplace</h2>
+            <h2 className="mt-3 text-[32px] font-bold">Join GaariHel</h2>
             <p className="mx-auto mt-4 max-w-2xl text-on-primary-container">
-              Browse FTL trucks and shared loads, book directly with drivers, and track every shipment across Somalia.
+              Submit FTL or shared requests, follow trip status, and pay 100% after Delivered — admin assigns drivers across Somalia.
             </p>
             <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
               {[
                 {
                   icon: User,
                   title: "Customer",
-                  text: "Browse trucks, book FTL or shared capacity, track shipments, and pay after delivery.",
+                  text: "Create an account, submit cargo requests, follow trip status, then pay 100% after Delivered.",
                   to: "/register",
                   cta: "Create Account"
                 },
                 {
                   icon: Truck,
                   title: "Driver",
-                  text: "Register with your truck, accept FTL jobs, post shared trips, and get paid when customers pay.",
-                  to: "/register",
-                  cta: "Register as Driver"
+                  text: "Only an admin can register you. After assignment, run trips and earn after customer payment.",
+                  to: "/login",
+                  cta: "Driver sign in"
                 },
                 {
                   icon: Shield,
                   title: "Admin",
-                  text: "Verify drivers, manage fleet and users, handle payouts, and run platform reports.",
+                  text: "Register drivers, review all customer requests, assign trucks, manage payouts and reports.",
                   to: "/login",
                   cta: "Admin Portal"
                 }
@@ -304,7 +280,7 @@ export function LandingPage() {
                 {APP_TAGLINE}
               </p>
               <p className="mb-8 text-sm text-on-surface-variant">
-                {APP_NAME} connects shippers and drivers for seamless deliveries across Somalia.
+                {APP_NAME} connects customers and drivers through admin dispatch across Somalia.
               </p>
               <div className="flex gap-4">
                 {[Share2, Globe, Video].map((Icon) => (
@@ -333,7 +309,7 @@ export function LandingPage() {
             </div>
             <div>
               <h5 className="mb-6 text-sm font-semibold text-primary">Get started</h5>
-              <p className="mb-4 text-sm text-on-surface-variant">Book a truck or register as a customer or driver.</p>
+              <p className="mb-4 text-sm text-on-surface-variant">Book a truck or create a customer account.</p>
               <div className="flex flex-wrap gap-2">
                 <Link to="/register" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Register</Link>
                 <Link to="/login" className="rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold">Sign in</Link>
