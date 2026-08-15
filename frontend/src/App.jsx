@@ -15,6 +15,8 @@ import { roleHome } from "./utils/helpers";
 const DashboardLayout = lazy(() => import("./layouts/DashboardLayout").then((m) => ({ default: m.DashboardLayout })));
 const PublicFeedbackPage = lazy(() => import("./pages/PublicFeedbackPage").then((m) => ({ default: m.PublicFeedbackPage })));
 const PublicInfoPage = lazy(() => import("./pages/PublicInfoPage").then((m) => ({ default: m.PublicInfoPage })));
+const AboutPage = lazy(() => import("./pages/AboutPage").then((m) => ({ default: m.AboutPage })));
+const ContactPage = lazy(() => import("./pages/ContactPage").then((m) => ({ default: m.ContactPage })));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then((m) => ({ default: m.AdminDashboard })));
 const UsersPage = lazy(() => import("./pages/admin/UsersPage").then((m) => ({ default: m.UsersPage })));
 const TrucksPage = lazy(() => import("./pages/admin/TrucksPage").then((m) => ({ default: m.TrucksPage })));
@@ -34,6 +36,12 @@ const SharedTripDetailPage = lazy(() => import("./pages/driver/SharedTripDetailP
 const SharedBookingPage = lazy(() => import("./pages/customer/SharedBookingPage").then((m) => ({ default: m.SharedBookingPage })));
 const TripsPage = lazy(() => import("./pages/shared/TripsPage").then((m) => ({ default: m.TripsPage })));
 const TrackingPage = lazy(() => import("./pages/shared/TrackingPage").then((m) => ({ default: m.TrackingPage })));
+const CustomerTrackPage = lazy(() =>
+  import("./pages/customer/CustomerTrackPage").then((m) => ({ default: m.CustomerTrackPage }))
+);
+const PublicTrackPage = lazy(() =>
+  import("./pages/PublicTrackPage").then((m) => ({ default: m.PublicTrackPage }))
+);
 const NotificationsPage = lazy(() => import("./pages/shared/NotificationsPage").then((m) => ({ default: m.NotificationsPage })));
 const PaymentsPage = lazy(() => import("./pages/shared/PaymentsPage").then((m) => ({ default: m.PaymentsPage })));
 const EarningsPage = lazy(() => import("./pages/shared/EarningsPage").then((m) => ({ default: m.EarningsPage })));
@@ -71,8 +79,9 @@ export default function App() {
           <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/feedback/:token" element={<PublicFeedbackPage />} />
           <Route path="/f/:token" element={<PublicFeedbackPage />} />
-          <Route path="/about" element={<PublicInfoPage />} />
-          <Route path="/contact" element={<PublicInfoPage />} />
+          <Route path="/track/:token" element={<PublicTrackPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/help" element={<PublicInfoPage />} />
           <Route path="/faqs" element={<PublicInfoPage />} />
           <Route path="/terms" element={<PublicInfoPage />} />
@@ -116,7 +125,7 @@ export default function App() {
               <Route path="shipments" element={<Navigate to="/customer/trips" replace />} />
               <Route path="bids/:cargoRequestId" element={<Navigate to="/customer/trips" replace />} />
               <Route path="trips" element={<CustomerTripsPage />} />
-              <Route path="tracking" element={<TrackingPage />} />
+              <Route path="tracking" element={<CustomerTrackPage />} />
               <Route path="payments" element={<PaymentsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="support" element={<SupportPage />} />

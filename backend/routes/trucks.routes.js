@@ -23,20 +23,36 @@ router.use(requirePasswordChanged);
 
 router.get("/", requireRole("admin", "driver"), async (req, res, next) => {
   try {
-    const result = await db.listTrucks({
+    const filters = {
       status: req.query.status,
       search: req.query.search,
       page: req.query.page,
-      limit: req.query.limit
-    });
+      limit: req.query.limit,
+    };
+    if (req.user.role === "driver") {
+      filters.driverId = req.user.sub;
+    }
+    const result = await db.listTrucks(filters);
     res.json(result);
   } catch (error) {
     next(error);
   }
 });
 
-router.get("/summary", requireRole("admin", "driver"), async (_req, res, next) => {
+router.get("/summary", requireRole("admin", "driver"), async (req, res, next) => {
   try {
+    if (req.user.role === "driver") {
+      const result = await db.listTrucks({ driverId: req.user.sub, limit: 5 });
+      const mine = result.data?.[0];
+      res.json({
+        total: result.total || 0,
+        active: mine?.status === "Available" ? 1 : 0,
+        busy: mine?.status === "Busy" ? 1 : 0,
+        maintenance: mine?.status === "Maintenance" ? 1 : 0,
+        inactive: 0,
+      });
+      return;
+    }
     res.json(await db.truckSummary());
   } catch (error) {
     next(error);

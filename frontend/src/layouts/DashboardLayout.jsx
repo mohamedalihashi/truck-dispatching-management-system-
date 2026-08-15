@@ -354,6 +354,38 @@ export function DashboardLayout() {
           <Outlet context={{ search: debouncedSearch, gps }} />
         </div>
       </main>
+
+      {user.role === "customer" ? (
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-outline-variant bg-surface-container-lowest/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] backdrop-blur-sm lg:hidden"
+          aria-label="Customer primary"
+        >
+          {[
+            { to: base, end: true, label: t("nav.dashboard"), icon: LayoutDashboard },
+            { to: `${base}/trips`, label: t("nav.trips"), icon: Route },
+            { to: `${base}/tracking`, label: t("nav.liveTracking"), icon: MapPin },
+            { to: `${base}/notifications`, label: t("nav.notifications"), icon: Bell },
+            { to: `${base}/profile`, label: t("nav.profile"), icon: User },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  `flex flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-[10px] font-semibold transition ${
+                    isActive ? "text-secondary-container" : "text-on-surface-variant"
+                  }`
+                }
+              >
+                <Icon size={18} />
+                <span className="truncate">{item.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+      ) : null}
     </div>
   );
 }

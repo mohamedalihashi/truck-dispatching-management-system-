@@ -4,7 +4,22 @@ import { api } from "../services/api";
 import { useTrips } from "./useApi";
 import { LIVE_TRACKING_STATUSES } from "../utils/helpers";
 
-const SEND_INTERVAL_MS = 10_000;
+const SEND_INTERVAL_MS = 4_000;
+const MIN_MOVE_M_FORCE_SEND = 25;
+
+function haversineMeters(a, b) {
+  if (!a || !b) return Infinity;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
 
 /** Stream driver GPS (lat/lng/speed/heading) while a trip is active. */
 export function useDriverGpsTracking() {
@@ -12,7 +27,7 @@ export function useDriverGpsTracking() {
   const isDriver = user?.role === "driver";
   const { data } = useTrips(
     { limit: 50 },
-    { enabled: isDriver, refetchInterval: isDriver ? 30_000 : false, refetchIntervalInBackground: true }
+    { enabled: isDriver, refetchInterval: isDriver ? 5_000 : false, refetchIntervalInBackground: true }
   );
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
@@ -20,6 +35,7 @@ export function useDriverGpsTracking() {
 
   const watchIdRef = useRef(null);
   const lastSendRef = useRef(0);
+  const lastSentCoordsRef = useRef(null);
   const tripIdRef = useRef(null);
   const positionRef = useRef(null);
 
@@ -50,11 +66,19 @@ export function useDriverGpsTracking() {
     async function sendLocation(coords, force = false) {
       const tripId = tripIdRef.current;
       if (!tripId || !coords) return;
+      if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) return;
 
       const now = Date.now();
-      if (!force && now - lastSendRef.current < SEND_INTERVAL_MS) return;
+      const movedM = haversineMeters(lastSentCoordsRef.current, coords);
+      const dueByTime = now - lastSendRef.current >= SEND_INTERVAL_MS;
+      const dueByMove = movedM >= MIN_MOVE_M_FORCE_SEND;
+      if (!force && !dueByTime && !dueByMove) return;
 
       lastSendRef.current = now;
+      lastSentCoordsRef.current = {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      };
       const speedMs = Number(coords.speed);
       const speedKmh =
         Number.isFinite(speedMs) && speedMs >= 0 ? Math.round(speedMs * 3.6 * 10) / 10 : null;
@@ -88,7 +112,7 @@ export function useDriverGpsTracking() {
           setError("Waiting for GPS signal…");
         }
       },
-      { enableHighAccuracy: true, maximumAge: 3_000, timeout: 15_000 }
+      { enableHighAccuracy: true, maximumAge: 1_000, timeout: 20_000 }
     );
 
     navigator.geolocation.getCurrentPosition(
@@ -97,7 +121,7 @@ export function useDriverGpsTracking() {
         sendLocation(pos.coords, true);
       },
       () => {},
-      { enableHighAccuracy: true, timeout: 15_000 }
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 }
     );
 
     const timer = setInterval(() => {

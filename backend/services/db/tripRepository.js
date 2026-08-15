@@ -6,6 +6,7 @@ import {
   customerMessageForTripStatus,
   formatCustomerNotifyLine,
   formatNotifyLines,
+  deliveryConfirmCode,
 } from "../../lib/tripCustomerMessages.js";
 import { haversineKm, shouldRecordPoint, coordsFromPlaceName } from "../../lib/somaliaGeo.js";
 import {
@@ -23,6 +24,8 @@ import {
   formatMeasuredQuantity,
   normalizeMeasurementUnit,
   resolveCargoMeasurement,
+  resolvePickupMeasurements,
+  validateMeasuredQuantity,
 } from "../../lib/cargoMeasurement.js";
 import {
   mapTrip,
@@ -111,12 +114,13 @@ async tripSummary({ driverId, customerId } = {}) {
   return { total, active, pending, cancelled, delivered };
 },
 
-async updateTripStatus(id, status, actorId, { driverId, role, weight, measuredQuantity, measurementUnit } = {}) {
+async updateTripStatus(id, status, actorId, { driverId, role, weight, measuredQuantity, measurementUnit, measurements, deliveryConfirmCode: confirmCodeInput } = {}) {
   const existing = await prisma.trip.findUnique({
     where: { id },
     include: {
       customer: { select: { id: true, name: true } },
       driver: { select: { id: true, name: true, phone: true } },
+      truck: { select: { truckNumber: true, plateNumber: true, truckType: true } },
       cargoRequest: {
         select: {
           bookingChannel: true,
@@ -159,32 +163,41 @@ async updateTripStatus(id, status, actorId, { driverId, role, weight, measuredQu
     throw error;
   }
 
-  if (status === "Picked Up") {
-    const cargoType = existing.cargoRequest?.cargoType;
-    const config = resolveCargoMeasurement(cargoType);
-    const qty = measuredQuantity != null ? Number(measuredQuantity) : Number.parseFloat(String(weight || ""));
-    const unit = normalizeMeasurementUnit(measurementUnit, cargoType);
-
-    if (!(qty > 0)) {
-      const error = new Error(`Enter ${config.label.toLowerCase()} when marking Picked Up`);
+  if (status === "Delivered") {
+    const expected = deliveryConfirmCode(id);
+    const provided = String(confirmCodeInput || "").trim();
+    if (!provided) {
+      const error = new Error("Gali koodhka xaqiijinta ee macmiilka (6 digits)");
+      error.status = 400;
+      throw error;
+    }
+    if (provided !== expected) {
+      const error = new Error("Koodhka xaqiijinta waa khaldan. Weydii macmiilka koodhka saxda ah.");
       error.status = 400;
       throw error;
     }
   }
 
+  let pickupMeasurement = null;
+  if (status === "Picked Up") {
+    const cargoType = existing.cargoRequest?.cargoType;
+    const resolved = resolvePickupMeasurements(
+      { measuredQuantity, measurementUnit, measurements, weightKg: weight },
+      cargoType
+    );
+    if (!resolved.ok) {
+      const error = new Error(resolved.message || `Enter quantity when marking Picked Up`);
+      error.status = 400;
+      throw error;
+    }
+    pickupMeasurement = {
+      measuredQuantity: resolved.measuredQuantity,
+      measurementUnit: resolved.measurementUnit,
+      weightLabel: resolved.weightLabel,
+    };
+  }
+
   const dbStatus = tripStatusToDb(status);
-  const pickupMeasurement =
-    status === "Picked Up"
-      ? {
-          measuredQuantity: Number(measuredQuantity ?? Number.parseFloat(String(weight || ""))),
-          measurementUnit: normalizeMeasurementUnit(measurementUnit, existing.cargoRequest?.cargoType),
-          weightLabel: formatMeasuredQuantity(
-            measuredQuantity ?? Number.parseFloat(String(weight || "")),
-            normalizeMeasurementUnit(measurementUnit, existing.cargoRequest?.cargoType),
-            existing.cargoRequest?.cargoType
-          ),
-        }
-      : null;
   const pickedUpWeight = pickupMeasurement?.weightLabel || null;
 
   return withTransaction(async (tx) => {
@@ -355,6 +368,9 @@ async updateTripStatus(id, status, actorId, { driverId, role, weight, measuredQu
               existing.cargoRequest?.receiverName ||
               null,
             driverName: existing.driver?.name || null,
+            truckType: existing.truck?.truckType || null,
+            plateNumber: existing.truck?.plateNumber || null,
+            truckNumber: existing.truck?.truckNumber || null,
             pickup: pickupAddr,
             destination: destAddr,
             fromRegion: existing.cargoRequest?.fromRegion,
@@ -916,7 +932,7 @@ async rejectTrip(id, driverId) {
       where: { id, driverId },
       include: {
         driver: { select: { id: true, name: true } },
-        truck: { select: { id: true, truckNumber: true, plateNumber: true } },
+        truck: { select: { id: true, truckNumber: true, plateNumber: true, truckType: true } },
         cargoRequest: {
           include: { sharedBooking: true },
         },
@@ -973,29 +989,39 @@ async rejectTrip(id, driverId) {
       trip.truck?.plateNumber ||
       trip.truckId ||
       "—";
-    const notifyUserId = trip.dispatcherId || trip.customerId;
-    const notification = await tx.notification.create({
-      data: {
-        userId: notifyUserId,
-        type: "trip.rejected",
-        message: formatNotifyLines("Darawalku wuu diiday safarka", {
-          tripId: id,
-          bookingId: trip.cargoRequestId || undefined,
-          status: "Cancelled",
-          customerName: trip.cargoRequest?.senderName || trip.cargoRequest?.receiverName || null,
-          driverName,
-          pickup: trip.pickup || trip.cargoRequest?.pickup,
-          destination: trip.destination || trip.cargoRequest?.destination,
-          fromRegion: trip.cargoRequest?.fromRegion,
-          fromDistrict: trip.cargoRequest?.fromDistrict,
-          toRegion: trip.cargoRequest?.toRegion,
-          toDistrict: trip.cargoRequest?.toDistrict,
-          body: `Darawal ${driverName} (gaari ${truckLabel}) ayaa diiday. Dib ayaa loogu qoondayn karaa.`,
-        }),
-      },
+    const rejectMessage = formatNotifyLines("Darawalku wuu diiday safarka", {
+      tripId: id,
+      bookingId: trip.cargoRequestId || undefined,
+      status: "Cancelled",
+      customerName: trip.cargoRequest?.senderName || trip.cargoRequest?.receiverName || null,
+      driverName,
+      truckType: trip.truck?.truckType || null,
+      plateNumber: trip.truck?.plateNumber || null,
+      truckNumber: trip.truck?.truckNumber || null,
+      pickup: trip.pickup || trip.cargoRequest?.pickup,
+      destination: trip.destination || trip.cargoRequest?.destination,
+      fromRegion: trip.cargoRequest?.fromRegion,
+      fromDistrict: trip.cargoRequest?.fromDistrict,
+      toRegion: trip.cargoRequest?.toRegion,
+      toDistrict: trip.cargoRequest?.toDistrict,
+      body: `Darawal ${driverName} (gaari ${truckLabel}) ayaa diiday. Dib ayaa loogu qoondayn karaa.`,
     });
 
-    return { id, status: "Cancelled", notification: mapNotification(notification) };
+    const notifyIds = new Set(
+      [trip.customerId, trip.dispatcherId].filter(Boolean).map(String)
+    );
+    let notification = null;
+    for (const userId of notifyIds) {
+      notification = await tx.notification.create({
+        data: {
+          userId,
+          type: "trip.rejected",
+          message: rejectMessage,
+        },
+      });
+    }
+
+    return { id, status: "Cancelled", notification: notification ? mapNotification(notification) : null };
   });
 },
 

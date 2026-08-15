@@ -44,6 +44,7 @@ export function SocketProvider({ children }) {
       "trip.status.updated",
       "notification.created",
       "location.updated",
+      "truck:location:update",
       "trip.rejected",
       "trip.feedback.submitted"
     ].forEach((event) =>
@@ -55,6 +56,11 @@ export function SocketProvider({ children }) {
           user?.id &&
           String(payload.userId) !== String(user.id)
         ) {
+          return;
+        }
+        // Normalize truck GPS event into the same cache patch path as location.updated
+        if (event === "truck:location:update") {
+          push("location.updated", payload);
           return;
         }
         push(event, payload);

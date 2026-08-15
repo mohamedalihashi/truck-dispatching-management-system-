@@ -20,6 +20,22 @@ describe("public registration validation", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts a customer without email", () => {
+    const result = registerSchema.safeParse({
+      name: "Customer No Email",
+      username: "customer.noemail",
+      phone: "+252610000099",
+      password,
+      role: "customer",
+      customerProfile: {
+        city: "Mogadishu",
+        address: "Hodan"
+      }
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.email).toBeUndefined();
+  });
+
   it("accepts a local /uploads profile photo path", () => {
     const result = registerSchema.safeParse({
       name: "Customer Two",

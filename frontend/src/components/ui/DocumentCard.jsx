@@ -1,13 +1,18 @@
 import { ExternalLink, FileText } from "lucide-react";
 import { resolveUploadUrl } from "../../config/api.js";
 
-function isLikelyImage(url) {
-  if (!url) return false;
-  return /\.(jpe?g|png|webp|gif|bmp)(\?|#|$)/i.test(url) || /\/image\//i.test(url);
+function isLikelyImage(url, forceImage = false) {
+  if (!url || String(url).startsWith("mock://")) return false;
+  if (forceImage) return true;
+  // Local uploads and Cloudinary image URLs often lack a file extension in the path
+  if (/\/uploads\//i.test(url) || /res\.cloudinary\.com/i.test(url) || /\/image\//i.test(url)) {
+    return true;
+  }
+  return /\.(jpe?g|png|webp|gif|bmp|heic)(\?|#|$)/i.test(url);
 }
 
-export function DocumentCard({ label, url, meta }) {
-  if (!url) {
+export function DocumentCard({ label, url, meta, asImage = false }) {
+  if (!url || String(url).startsWith("mock://")) {
     return (
       <div className="rounded-lg border border-dashed border-outline-variant bg-surface-container-low/40 p-3">
         <p className="text-xs font-medium uppercase tracking-wider text-on-surface-variant">{label}</p>
@@ -18,7 +23,7 @@ export function DocumentCard({ label, url, meta }) {
   }
 
   const href = resolveUploadUrl(url);
-  const image = isLikelyImage(url);
+  const image = isLikelyImage(url, asImage);
 
   return (
     <div className="overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest">
@@ -34,8 +39,20 @@ export function DocumentCard({ label, url, meta }) {
         </a>
       </div>
       {image ? (
-        <a href={href} target="_blank" rel="noreferrer" className="block">
-          <img src={href} alt={label} className="h-40 w-full object-cover" />
+        <a href={href} target="_blank" rel="noreferrer" className="block bg-surface-container-low">
+          <img
+            src={href}
+            alt={label}
+            className="max-h-64 w-full object-contain"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+              const fallback = e.currentTarget.nextElementSibling;
+              if (fallback) fallback.hidden = false;
+            }}
+          />
+          <span hidden className="flex h-40 items-center justify-center text-sm text-on-surface-variant">
+            Image failed to load — use Open
+          </span>
         </a>
       ) : (
         <a
@@ -55,9 +72,23 @@ export function DocumentCard({ label, url, meta }) {
 
 export function DocumentsGrid({ title = "Documents", children }) {
   return (
-    <div className="mt-8 rounded-xl border border-outline-variant bg-surface-container-low/30 p-5">
-      <h3 className="mb-4 text-lg font-semibold text-on-surface">{title}</h3>
+    <div className="mt-6 rounded-xl border border-outline-variant bg-surface-container-low/30 p-4">
+      <h3 className="mb-3 text-sm font-semibold text-on-surface">{title}</h3>
       <div className="grid gap-3 sm:grid-cols-2">{children}</div>
     </div>
+  );
+}
+
+/** Cargo + delivery proof photos for trip / request View modals. */
+export function TripPhotosSection({ cargoImageUrl, deliveryProofUrl, title = "Photos" }) {
+  const cargo = cargoImageUrl && !String(cargoImageUrl).startsWith("mock://") ? cargoImageUrl : null;
+  const proof = deliveryProofUrl && !String(deliveryProofUrl).startsWith("mock://") ? deliveryProofUrl : null;
+  if (!cargo && !proof) return null;
+
+  return (
+    <DocumentsGrid title={title}>
+      {cargo ? <DocumentCard label="Cargo photo" url={cargo} asImage /> : null}
+      {proof ? <DocumentCard label="Delivery proof" url={proof} asImage /> : null}
+    </DocumentsGrid>
   );
 }

@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MapPin, Weight } from "lucide-react";
+import { MapPin } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
-import { SharedTripJourney } from "../../components/SharedTripJourney";
 import { SharedPickupWeightModal } from "../../components/SharedPickupWeightModal";
+import { SharedDeliverCodeModal } from "../../components/SharedDeliverCodeModal";
 import { SharedTripDecision } from "../../components/SharedTripDecision";
 import { SharedTripStopsMap } from "../../components/shared/SharedTripStopsMap";
 import { SharedTripStopsPanel } from "../../components/shared/SharedTripStopsPanel";
 import { api } from "../../services/api";
-import { money, fareAfterDelivered } from "../../utils/helpers";
+import { fareAfterDelivered } from "../../utils/helpers";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   bookingIdsInOrder,
   buildSharedStops,
@@ -19,19 +20,11 @@ import {
 } from "../../utils/sharedTripStops";
 import { useLanguage } from "../../contexts/LanguageContext";
 
-function formatDuration(amount, unit) {
-  if (amount == null || !unit) return null;
-  const n = Number(amount);
-  if (!(n > 0)) return null;
-  const label = unit === "days" ? (n === 1 ? "day" : "days") : n === 1 ? "hour" : "hours";
-  return `${n} ${label}`;
-}
-
 function formatBookingWeight(b) {
   const raw = b.cargoRequest?.weight;
   if (raw && !/^(tbd|pending|n\/a)$/i.test(String(raw).trim())) return raw;
   if (Number(b.weightTons) > 0) return `${Number(b.weightTons)} t`;
-  return "Weight at pickup";
+  return "—";
 }
 
 function moveBookingId(ids, bookingId, delta) {
@@ -44,17 +37,57 @@ function moveBookingId(ids, bookingId, delta) {
   return copy;
 }
 
+/** Compact 4-step driver progress */
+function DriverStepBar({ phase }) {
+  const steps = [
+    { id: "accept", label: "1. Accept" },
+    { id: "pickup", label: "2. Pickup" },
+    { id: "transit", label: "3. Transit" },
+    { id: "deliver", label: "4. Deliver" },
+  ];
+  const order = { accept: 0, pickup: 1, transit: 2, deliver: 3, done: 4 };
+  const current = order[phase] ?? 0;
+
+  return (
+    <ol className="flex flex-wrap gap-2">
+      {steps.map((step, index) => {
+        const done = current > index;
+        const active = current === index;
+        return (
+          <li
+            key={step.id}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              active
+                ? "bg-secondary-container text-on-secondary"
+                : done
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                  : "bg-surface-container text-on-surface-variant"
+            }`}
+          >
+            {step.label}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function SharedTripDetailPage() {
   const { id } = useParams();
   const { t } = useLanguage();
+  const { user } = useAuth();
   const qc = useQueryClient();
-  const [pickupOpen, setPickupOpen] = useState(false);
+  const [pickupBookingId, setPickupBookingId] = useState(null);
+  const [deliverBookingId, setDeliverBookingId] = useState(null);
   const [driverPosition, setDriverPosition] = useState(null);
   const [deliveringId, setDeliveringId] = useState(null);
+  const [pickingId, setPickingId] = useState(null);
+  const [showMap, setShowMap] = useState(false);
 
-  const { data: trip, isLoading } = useQuery({
+  const { data: trip, isLoading, error } = useQuery({
     queryKey: ["shared-trip", id],
     queryFn: () => api.getSharedTrip(id),
+    retry: false,
   });
 
   function refresh() {
@@ -64,12 +97,20 @@ export function SharedTripDetailPage() {
     qc.invalidateQueries({ queryKey: ["my-shared-trips-dashboard"] });
   }
 
-  const startPickup = useMutation({
-    mutationFn: (payload) => api.startSharedTripPickup(id, payload),
+  const pickupBooking = useMutation({
+    mutationFn: ({ bookingId, measuredQuantity, measurementUnit, weightKg, measurements }) =>
+      api.pickupSharedBooking(id, bookingId, {
+        measuredQuantity,
+        measurementUnit,
+        weightKg,
+        measurements,
+      }),
     onSuccess: () => {
-      setPickupOpen(false);
+      setPickupBookingId(null);
+      setPickingId(null);
       refresh();
     },
+    onError: () => setPickingId(null),
   });
 
   const markInTransit = useMutation({
@@ -83,9 +124,11 @@ export function SharedTripDetailPage() {
   });
 
   const deliverBooking = useMutation({
-    mutationFn: (bookingId) => api.deliverSharedBooking(id, bookingId),
+    mutationFn: ({ bookingId, deliveryConfirmCode }) =>
+      api.deliverSharedBooking(id, bookingId, { deliveryConfirmCode }),
     onSuccess: () => {
       setDeliveringId(null);
+      setDeliverBookingId(null);
       refresh();
     },
     onError: () => setDeliveringId(null),
@@ -106,27 +149,70 @@ export function SharedTripDetailPage() {
   );
 
   useEffect(() => {
-    if (!navigator.geolocation) return undefined;
+    if (!navigator.geolocation || !showMap) return undefined;
     const watchId = navigator.geolocation.watchPosition(
       (pos) => setDriverPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  }, [showMap]);
 
-  if (isLoading) return <p className="py-16 text-center text-sm text-on-surface-variant">Loading…</p>;
-  if (!trip) return <p className="py-16 text-center text-sm text-error">Trip not found</p>;
+  if (isLoading) {
+    return <p className="py-16 text-center text-sm text-on-surface-variant">Loading…</p>;
+  }
+  if (error || !trip) {
+    return (
+      <div className="space-y-4 py-16 text-center">
+        <p className="text-sm text-error">{error?.message || "Trip not found"}</p>
+        <Link to="/driver/shared-trips">
+          <Button variant="secondary">{t("common.back")}</Button>
+        </Link>
+      </div>
+    );
+  }
+  if (user?.id && trip.driverId && String(trip.driverId) !== String(user.id)) {
+    return (
+      <div className="space-y-4 py-16 text-center">
+        <p className="text-sm text-error">Safarkan wuxuu u yaallaa darawal kale.</p>
+        <Link to="/driver/shared-trips">
+          <Button variant="secondary">{t("common.back")}</Button>
+        </Link>
+      </div>
+    );
+  }
 
-  const canPickup = ["Open for booking", "Full"].includes(trip.status);
-  const canInTransit = trip.status === "Pickup";
-  const canDeliverLoads = ["In Transit", "Departed"].includes(trip.status);
-  const canReorder = !["Assigned", "Delivered", "Completed", "Cancelled"].includes(trip.status);
-  const canCancel = ["Open for booking", "Full"].includes(trip.status);
   const needsAccept = trip.status === "Assigned";
-  const durationLabel = formatDuration(trip.durationAmount, trip.durationUnit);
+  const isFinished = ["Delivered", "Completed", "Cancelled"].includes(trip.status);
+  const pendingPickupCount = (trip.bookings || []).filter(
+    (b) => !["Pickup", "In Transit", "Delivered"].includes(b.status)
+  ).length;
+  const allLoadsPickedUp = (trip.bookings || []).length > 0 && pendingPickupCount === 0;
+  const canGatherPickup = ["Open for booking", "Full", "Pickup"].includes(trip.status);
+  const canInTransit = trip.status === "Pickup" && allLoadsPickedUp;
+  const canDeliverLoads = ["In Transit", "Departed"].includes(trip.status);
+  const canReorderPickup = canGatherPickup && pendingPickupCount > 1;
+  const canCancel = ["Open for booking", "Full"].includes(trip.status);
+
+  const phase = needsAccept
+    ? "accept"
+    : canDeliverLoads
+      ? "deliver"
+      : canInTransit || trip.status === "Pickup"
+        ? allLoadsPickedUp
+          ? "transit"
+          : "pickup"
+        : isFinished
+          ? "done"
+          : "pickup";
+
+  const activePickupBooking =
+    (trip.bookings || []).find((b) => b.id === pickupBookingId) || null;
+  const activeDeliverBooking =
+    (trip.bookings || []).find((b) => b.id === deliverBookingId) || null;
+
   const actionError =
-    startPickup.error?.message ||
+    pickupBooking.error?.message ||
     markInTransit.error?.message ||
     reorderStops.error?.message ||
     deliverBooking.error?.message ||
@@ -144,172 +230,214 @@ export function SharedTripDetailPage() {
     reorderStops.mutate({ pickupOrder, deliveryOrder });
   }
 
-  function handleDeliverBooking(bookingId) {
-    setDeliveringId(bookingId);
-    deliverBooking.mutate(bookingId);
-  }
-
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-3xl space-y-5">
       <PageHeader
         title={trip.id}
         subtitle={
-          needsAccept
-            ? "Admin wuxuu kuu qoondeeyay dhammaan loads-ka mid ahaan — Accept ama Reject."
-            : "Qaadis → miisaanka → In Transit → geeyn booking kasta. Macaamiisha waxay bixiyaan 100% ka dib Delivered."
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <StatusBadge status={trip.status} />
+            <span className="text-on-surface-variant">
+              {trip.bookings?.length || 0} load(s)
+            </span>
+          </span>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Link to="/driver/shared-trips">
-              <Button variant="secondary">{t("common.back")}</Button>
-            </Link>
-            {canPickup ? (
-              <Button onClick={() => setPickupOpen(true)} disabled={startPickup.isPending}>
-                {t("driver.startPickup")}
-              </Button>
-            ) : null}
-            {canInTransit ? (
-              <Button onClick={() => markInTransit.mutate()} disabled={markInTransit.isPending}>
-                {markInTransit.isPending ? t("common.loading") : t("driver.markInTransit")}
-              </Button>
-            ) : null}
-            {canCancel ? (
-              <Button variant="danger" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
-                {t("driver.cancelTrip")}
-              </Button>
-            ) : null}
-          </div>
+          <Link to="/driver/shared-trips">
+            <Button variant="secondary">{t("common.back")}</Button>
+          </Link>
         }
       />
 
+      <p className="flex items-start gap-2 text-sm text-on-surface">
+        <MapPin size={16} className="mt-0.5 shrink-0 text-secondary-container" />
+        <span>
+          {trip.pickup} → {trip.destination}
+        </span>
+      </p>
+
+      {!isFinished ? <DriverStepBar phase={phase} /> : null}
+
+      {actionError ? (
+        <p className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">
+          {actionError}
+        </p>
+      ) : null}
+
+      {/* Step 1 — Accept */}
       {needsAccept ? (
-        <section className="rounded-xl border border-secondary-container/40 bg-secondary-fixed/30 p-5">
-          <h2 className="text-lg font-semibold text-on-surface">Accept shared job</h2>
+        <section className="rounded-xl border border-secondary-container/40 bg-secondary-fixed/25 p-5">
+          <h2 className="text-lg font-semibold text-on-surface">Accept shaqada</h2>
           <p className="mt-1 text-sm text-on-surface-variant">
-            {trip.bookings?.length || trip.bookingsCount || 0} load(s) · {trip.pickup} → {trip.destination} · isku corridor — mid Accept.
+            Hal Accept = dhammaan loads-ka. Magacyada = macmiil.
           </p>
+          <ul className="mt-4 divide-y divide-outline-variant/50 rounded-lg border border-outline-variant bg-surface-container-lowest">
+            {(trip.bookings || []).map((b) => (
+              <li key={b.id} className="px-3 py-2.5 text-sm">
+                <p className="font-medium text-on-surface">
+                  {b.customer || "Macmiil"} · {b.cargoRequestId || "—"}
+                </p>
+                <p className="mt-0.5 text-xs text-on-surface-variant">
+                  {formatStopAddress(b.cargoRequest, "pickup")} →{" "}
+                  {formatStopAddress(b.cargoRequest, "delivery")}
+                </p>
+              </li>
+            ))}
+          </ul>
           <div className="mt-4">
             <SharedTripDecision trip={trip} />
           </div>
         </section>
       ) : null}
 
-      {actionError ? (
-        <p className="rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-error">{actionError}</p>
-      ) : null}
-
-      <SharedTripJourney status={trip.status} />
-
-      <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-on-surface">Khariidad — GPS live</h2>
-        </div>
-        <div className="mt-4">
-          <SharedTripStopsMap driverPosition={driverPosition} />
-        </div>
-        <p className="mt-2 text-xs text-on-surface-variant">
-          Cas = GPS-kaaga (live). From/to addresses waxaa ka eeg liiska hoose — calaamado qiyaas ah lama isticmaalo.
-        </p>
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
-          <h2 className="text-lg font-semibold text-on-surface">Qaadis — taxanaha</h2>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            Kor/hoos u dhaq si aad u beddesho taxanaha qaadista.
+      {/* Step 2 — Pickup per load */}
+      {!needsAccept && !canDeliverLoads && !isFinished ? (
+        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-on-surface">Pickup — mid mid</h2>
+            {canInTransit ? (
+              <Button onClick={() => markInTransit.mutate()} disabled={markInTransit.isPending}>
+                {markInTransit.isPending ? "…" : "In Transit"}
+              </Button>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Markaad load qaadato → <strong>Pickup</strong> + cabbirka (kg / liter / neef). Dhammaan
+            ka dib → In Transit.
+          </p>
+          <p className="mt-2 text-xs font-medium text-secondary-container">
+            {pendingPickupCount > 0
+              ? `${pendingPickupCount} load(s) weli lama qaadin`
+              : "Dhammaan waa la qaaday — riix In Transit"}
           </p>
           <div className="mt-4">
             <SharedTripStopsPanel
               stops={pickupStops}
               kind="pickup"
-              canReorder={canReorder && pickupStops.length > 1}
+              canReorder={canReorderPickup && pickupStops.length > 1}
+              canPickup={canGatherPickup}
+              pickingId={pickingId}
               onMove={(bookingId, delta) => handleMoveStop("pickup", bookingId, delta)}
+              onPickup={(bookingId) => {
+                setPickingId(bookingId);
+                setPickupBookingId(bookingId);
+              }}
             />
           </div>
+          {canCancel ? (
+            <div className="mt-4 border-t border-outline-variant pt-3">
+              <Button
+                variant="danger"
+                className="px-3 py-1 text-xs"
+                onClick={() => cancel.mutate()}
+                disabled={cancel.isPending}
+              >
+                Cancel trip
+              </Button>
+            </div>
+          ) : null}
         </section>
+      ) : null}
 
-        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
-          <h2 className="text-lg font-semibold text-on-surface">Geeyn — taxanaha</h2>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            Marka In Transit, riix Delivered booking kasta markaad geeyso.
+      {/* Step 4 — Deliver per load */}
+      {canDeliverLoads ? (
+        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5">
+          <h2 className="text-lg font-semibold text-on-surface">Geeyn — mid mid</h2>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Markaad geeyso load → riix <strong>Delivered</strong>.
           </p>
           <div className="mt-4">
             <SharedTripStopsPanel
               stops={deliveryStops}
               kind="delivery"
-              canReorder={canReorder && deliveryStops.length > 1}
-              canDeliver={canDeliverLoads}
+              canReorder={deliveryStops.length > 1}
+              canDeliver
               deliveringId={deliveringId}
               onMove={(bookingId, delta) => handleMoveStop("delivery", bookingId, delta)}
-              onDeliver={handleDeliverBooking}
+              onDeliver={(bookingId) => {
+                setDeliveringId(bookingId);
+                setDeliverBookingId(bookingId);
+              }}
             />
           </div>
         </section>
-      </div>
+      ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
+      {/* Done */}
+      {isFinished ? (
+        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-on-surface">Route (guud)</h2>
+            <h2 className="text-lg font-semibold text-on-surface">Dhamaaday</h2>
             <StatusBadge status={trip.status} />
           </div>
-          <p className="mt-3 flex items-center gap-1 text-sm text-on-surface">
-            <MapPin size={14} /> {trip.pickup} → {trip.destination}
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Macmiilku wuxuu bixiyaa 100% ka dib Delivered.
           </p>
-          <p className="mt-2 text-sm text-on-surface-variant">
-            <Weight size={14} className="inline" /> {trip.availableTons}t available of {trip.totalCapacityTons}t
-          </p>
-          {trip.pricePerTon != null ? <p className="mt-1 text-sm">{money(trip.pricePerTon)} per ton</p> : null}
-          {trip.departureDate ? (
-            <p className="mt-1 text-sm text-on-surface-variant">
-              Departure: {new Date(trip.departureDate).toLocaleDateString()}
-            </p>
-          ) : null}
-          {durationLabel ? (
-            <p className="mt-1 text-sm text-on-surface-variant">Duration: {durationLabel}</p>
-          ) : null}
-          {trip.notes ? <p className="mt-3 text-sm text-on-surface-variant">{trip.notes}</p> : null}
+          <ul className="mt-4 space-y-2">
+            {(trip.bookings || []).map((b) => (
+              <li key={b.id} className="rounded-lg border border-outline-variant px-3 py-2 text-sm">
+                <p className="font-medium text-on-surface">
+                  {b.customer || "Macmiil"} · {b.cargoRequestId || "—"} · {formatBookingWeight(b)}
+                  {" · "}
+                  {fareAfterDelivered(
+                    b.status || b.cargoRequest?.status,
+                    b.cargoRequest?.finalPrice ?? b.cargoRequest?.quotedPrice
+                  )}
+                </p>
+              </li>
+            ))}
+          </ul>
         </section>
+      ) : null}
 
-        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
-          <h2 className="text-lg font-semibold text-on-surface">Alaab kasta — pickup & destination</h2>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            Booking kasta wuxuu leeyahay pickup iyo destination u gaar ah.
-          </p>
-          {!trip.bookings?.length ? (
-            <p className="mt-3 text-sm text-on-surface-variant">No loads assigned yet.</p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {trip.bookings.map((b) => (
-                <li key={b.id} className="rounded-lg border border-outline-variant px-3 py-3 text-sm">
-                  <p className="font-semibold text-on-surface">
-                    {b.customer || "Customer"} · {formatBookingWeight(b)}
-                  </p>
-                  <p className="mt-1 text-on-surface-variant">
-                    {b.cargoRequestId || "—"} · <StatusBadge status={b.status} />
-                    {` · ${fareAfterDelivered(b.status || b.cargoRequest?.status, b.cargoRequest?.finalPrice ?? b.cargoRequest?.quotedPrice)}`}
-                  </p>
-                  <p className="mt-2 text-on-surface">
-                    <span className="font-medium text-blue-700 dark:text-blue-300">Qaadis:</span>{" "}
-                    {formatStopAddress(b.cargoRequest, "pickup")}
-                  </p>
-                  <p className="mt-1 text-on-surface">
-                    <span className="font-medium text-emerald-700 dark:text-emerald-300">Geeyn:</span>{" "}
-                    {formatStopAddress(b.cargoRequest, "delivery")}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
+      {/* Map — optional, collapsed by default */}
+      {!needsAccept && !isFinished ? (
+        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-sm font-semibold text-on-surface"
+            onClick={() => setShowMap((v) => !v)}
+          >
+            GPS live · Road map
+            <span className="text-xs font-normal text-on-surface-variant">
+              {showMap ? "Qari" : "Fur"}
+            </span>
+          </button>
+          {showMap && !pickupBookingId ? (
+            <div className="mt-3 max-w-full overflow-hidden">
+              <SharedTripStopsMap
+                driverPosition={driverPosition}
+                driverName={trip.driver || user?.name || ""}
+                pickup={trip.pickup || ""}
+                destination={trip.destination || ""}
+                className="h-56 w-full max-w-full rounded-xl"
+              />
+            </div>
+          ) : null}
         </section>
-      </div>
+      ) : null}
 
       <SharedPickupWeightModal
         trip={trip}
-        open={pickupOpen}
-        onClose={() => setPickupOpen(false)}
-        pending={startPickup.isPending}
-        onConfirm={(payload) => startPickup.mutateAsync(payload)}
+        booking={activePickupBooking}
+        open={Boolean(pickupBookingId && activePickupBooking)}
+        onClose={() => {
+          setPickupBookingId(null);
+          setPickingId(null);
+        }}
+        pending={pickupBooking.isPending}
+        onConfirm={(payload) => pickupBooking.mutateAsync(payload)}
+      />
+
+      <SharedDeliverCodeModal
+        booking={activeDeliverBooking}
+        open={Boolean(deliverBookingId && activeDeliverBooking)}
+        onClose={() => {
+          setDeliverBookingId(null);
+          setDeliveringId(null);
+        }}
+        pending={deliverBooking.isPending}
+        onConfirm={(payload) => deliverBooking.mutateAsync(payload)}
       />
     </div>
   );

@@ -13,10 +13,11 @@ import {
   somaliaRegions
 } from "../../data/somaliaLocations";
 import { BOOKING_MESSAGES, applyFormValidationIssues } from "../../utils/bookingValidation";
+import { CARGO_TYPES } from "../../components/CargoBookingFields";
 
 /**
  * Customer posts a SHARED capacity request (route + cargo type).
- * Weight is set later (admin / driver). No sender/receiver forms.
+ * Weight is set later (admin / driver). Sender/receiver phones are optional.
  */
 export function SharedBookingPage() {
   const { t } = useLanguage();
@@ -44,10 +45,14 @@ export function SharedBookingPage() {
       toRegion: "",
       toDistrict: "",
       toNeighborhood: "",
-      cargoType: ""
+      cargoType: "",
+      cargoTypeOther: "",
+      senderPhone: "",
+      receiverPhone: ""
     }
   });
   const values = watch();
+  const isOthersCargo = values.cargoType === "Others";
   const fromDistricts = somaliaLocations[values.fromRegion] || [];
   const toDistricts = somaliaLocations[values.toRegion] || [];
 
@@ -75,7 +80,15 @@ export function SharedBookingPage() {
     setServerError("");
     setPhotoError("");
     try {
-      const cargoType = formValues.cargoType?.trim() || "";
+      const selectedType = String(formValues.cargoType || "").trim();
+      const cargoType =
+        selectedType === "Others"
+          ? `Others — ${String(formValues.cargoTypeOther || "").trim()}`
+          : selectedType;
+      if (!cargoType || cargoType.length < 2) {
+        setServerError(BOOKING_MESSAGES.cargoTypeRequired);
+        return;
+      }
       const request = await create.mutateAsync({
         pickup: formatSomaliaLocation(
           formValues.fromNeighborhood,
@@ -94,13 +107,17 @@ export function SharedBookingPage() {
         toDistrict: formValues.toDistrict,
         toNeighborhood: formValues.toNeighborhood,
         truckType: "General",
-        cargoType: cargoType || undefined,
+        cargoType,
         weight: "TBD",
-        description: cargoType
-          ? `Shared load request — ${cargoType}`
-          : "Shared load request",
+        description: `Shared load request — ${cargoType}`,
         submissionKey: submissionKey.current,
-        loadType: "SHARED"
+        loadType: "SHARED",
+        ...(String(formValues.senderPhone || "").trim()
+          ? { senderPhone: String(formValues.senderPhone).trim() }
+          : {}),
+        ...(String(formValues.receiverPhone || "").trim()
+          ? { receiverPhone: String(formValues.receiverPhone).trim() }
+          : {})
       });
 
       setUploadingImage(true);
@@ -169,14 +186,99 @@ export function SharedBookingPage() {
         </div>
 
         <label className="block text-sm">
-          <span className="mb-1 block text-xs font-semibold text-on-surface-variant">Cargo type *</span>
-          <input
+          <span className="mb-1 block text-xs font-semibold text-on-surface-variant">
+            Cargo type / Nooca alaabta *
+          </span>
+          <select
             className="stitch-input w-full"
-            placeholder="e.g. Food, cement"
-            {...register("cargoType", { required: BOOKING_MESSAGES.cargoTypeRequired })}
-          />
-          {errors.cargoType ? <span className="mt-1 block text-xs text-error">{errors.cargoType.message}</span> : null}
+            {...register("cargoType", {
+              required: BOOKING_MESSAGES.cargoTypeRequired,
+              onChange: (event) => {
+                if (event.target.value !== "Others") {
+                  setValue("cargoTypeOther", "");
+                }
+              }
+            })}
+          >
+            <option value="">Select cargo type</option>
+            {CARGO_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          {errors.cargoType ? (
+            <span className="mt-1 block text-xs text-error">{errors.cargoType.message}</span>
+          ) : null}
         </label>
+
+        {isOthersCargo ? (
+          <label className="block text-sm">
+            <span className="mb-1 block text-xs font-semibold text-on-surface-variant">
+              Describe cargo *
+            </span>
+            <textarea
+              className="stitch-input min-h-[80px] w-full"
+              placeholder="e.g. bottles, market goods…"
+              maxLength={100}
+              {...register("cargoTypeOther", {
+                required: isOthersCargo ? "Describe the cargo type" : false,
+                validate: (value) =>
+                  !isOthersCargo ||
+                  String(value || "").trim().length >= 2 ||
+                  "Enter at least 2 characters"
+              })}
+            />
+            {errors.cargoTypeOther ? (
+              <span className="mt-1 block text-xs text-error">{errors.cargoTypeOther.message}</span>
+            ) : null}
+          </label>
+        ) : null}
+
+        <section className="space-y-3 rounded-xl border border-outline-variant/70 bg-surface-container-low/40 p-4">
+          <p className="text-sm font-semibold text-primary-container">
+            Sender &amp; receiver phones
+            <span className="ml-1 font-normal text-on-surface-variant">(optional)</span>
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs text-on-surface-variant">Sender phone (optional)</span>
+              <input
+                className="stitch-input w-full"
+                inputMode="tel"
+                placeholder="e.g. 61xxxxxxx"
+                {...register("senderPhone", {
+                  validate: (value) => {
+                    const phone = String(value || "").trim();
+                    if (!phone) return true;
+                    return phone.replace(/\D/g, "").length >= 7 || BOOKING_MESSAGES.phoneInvalid;
+                  }
+                })}
+              />
+              {errors.senderPhone ? (
+                <span className="mt-1 block text-xs text-error">{errors.senderPhone.message}</span>
+              ) : null}
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs text-on-surface-variant">Receiver phone (optional)</span>
+              <input
+                className="stitch-input w-full"
+                inputMode="tel"
+                placeholder="e.g. 61xxxxxxx"
+                {...register("receiverPhone", {
+                  validate: (value) => {
+                    const phone = String(value || "").trim();
+                    if (!phone) return true;
+                    return phone.replace(/\D/g, "").length >= 7 || BOOKING_MESSAGES.phoneInvalid;
+                  }
+                })}
+              />
+              {errors.receiverPhone ? (
+                <span className="mt-1 block text-xs text-error">{errors.receiverPhone.message}</span>
+              ) : null}
+            </label>
+          </div>
+        </section>
 
         <div>
           <p className="mb-2 text-xs font-semibold text-on-surface-variant">Cargo photo</p>

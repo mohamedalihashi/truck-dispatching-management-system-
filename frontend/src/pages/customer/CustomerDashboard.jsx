@@ -78,6 +78,13 @@ export function CustomerDashboard() {
       tone: "bg-primary-fixed text-on-primary-fixed"
     },
     {
+      to: "/customer/tracking",
+      icon: MapPin,
+      title: t("nav.liveTracking"),
+      text: t("customer.tripsText"),
+      tone: "bg-secondary-fixed text-on-secondary-fixed"
+    },
+    {
       to: "/customer/payments",
       icon: CreditCard,
       title: t("customer.paymentTitle"),
@@ -141,12 +148,12 @@ export function CustomerDashboard() {
 
       {live ? (
         <Link
-          to="/customer/notifications"
+          to={`/customer/tracking?trip=${encodeURIComponent(live.id)}`}
           className="flex items-center gap-3 rounded-xl border border-secondary-container/30 bg-secondary-fixed/20 px-4 py-3 text-sm text-on-surface transition hover:border-secondary-container/50 hover:bg-secondary-fixed/35"
         >
-          <Bell size={18} className="shrink-0 text-secondary-container" />
+          <MapPin size={18} className="shrink-0 text-secondary-container" />
           <span>
-            <strong>Trip {live.id}</strong> — {t("customer.tripStatusInNotifications")}
+            <strong>Trip {live.id}</strong> — {live.customerStatus || live.status}. Tap to track live.
           </span>
           <ChevronRight className="ml-auto shrink-0 text-on-surface-variant" size={18} />
         </Link>

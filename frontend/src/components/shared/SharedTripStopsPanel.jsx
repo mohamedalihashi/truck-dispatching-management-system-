@@ -8,9 +8,12 @@ export function SharedTripStopsPanel({
   kind = "pickup",
   canReorder = false,
   canDeliver = false,
+  canPickup = false,
   onMove,
   onDeliver,
+  onPickup,
   deliveringId = null,
+  pickingId = null,
 }) {
   if (!stops.length) {
     return (
@@ -18,13 +21,15 @@ export function SharedTripStopsPanel({
     );
   }
 
+  const pickupDone = (status) => ["Pickup", "In Transit", "Delivered"].includes(status);
+
   return (
     <ol className="space-y-3">
       {stops.map((stop, index) => (
         <li
           key={stop.id}
           className={`rounded-xl border px-4 py-3 ${
-            stop.status === "Delivered"
+            stop.status === "Delivered" || (kind === "pickup" && pickupDone(stop.status))
               ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30"
               : "border-outline-variant bg-surface-container-low"
           }`}
@@ -84,6 +89,15 @@ export function SharedTripStopsPanel({
                     <ChevronDown size={16} />
                   </button>
                 </div>
+              ) : null}
+              {canPickup && kind === "pickup" && !pickupDone(stop.status) ? (
+                <Button
+                  className="px-2 py-1 text-xs"
+                  disabled={pickingId === stop.bookingId}
+                  onClick={() => onPickup?.(stop.bookingId)}
+                >
+                  {pickingId === stop.bookingId ? "…" : "Pickup"}
+                </Button>
               ) : null}
               {canDeliver && stop.status !== "Delivered" ? (
                 <Button

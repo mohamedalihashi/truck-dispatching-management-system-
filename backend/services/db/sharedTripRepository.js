@@ -7,7 +7,13 @@ import {
   TRIP_NOTIFY,
   formatCustomerNotifyLine,
   formatNotifyLines,
+  deliveryConfirmCode,
 } from "../../lib/tripCustomerMessages.js";
+import {
+  formatMeasuredQuantity,
+  validateMeasuredQuantity,
+  resolvePickupMeasurements,
+} from "../../lib/cargoMeasurement.js";
 
 /** Capacity always comes from the registered truck — never from free-form input. */
 function resolveTruckCapacityTons(truck) {
@@ -183,7 +189,16 @@ async function createBookingTripAndPayment(tx, { request, sharedTrip, bookingId 
     }
   }
 
-  if (request.status !== "Assigned") {
+  const advancedStatuses = new Set([
+    "Assigned",
+    "Picked_Up",
+    "En_Route_to_Pickup",
+    "Arrived_at_Pickup",
+    "In_Transit",
+    "Near_Destination",
+    "Delivered",
+  ]);
+  if (!advancedStatuses.has(String(request.status || ""))) {
     await tx.cargoRequest.update({
       where: { id: request.id },
       data: { status: "Assigned" },
@@ -230,10 +245,21 @@ export const sharedTripRepository = {
     };
   },
 
-  async listSharedTrips({ driverId, status, search, page = 1, limit = 50, publicOnly = false } = {}) {
+  async listSharedTrips({
+    driverId,
+    status,
+    search,
+    page = 1,
+    limit = 50,
+    publicOnly = false,
+    excludeTerminal = false,
+  } = {}) {
     const where = {};
     if (driverId) where.driverId = driverId;
     if (status) where.status = status;
+    if (excludeTerminal && !status) {
+      where.status = { notIn: TERMINAL_SHARED_STATUSES };
+    }
     if (publicOnly) {
       where.status = "Open for booking";
       where.availableTons = { gt: 0 };
@@ -686,6 +712,7 @@ export const sharedTripRepository = {
         where: { id },
         include: {
           driver: { select: { id: true, name: true } },
+          truck: { select: { truckType: true, plateNumber: true, truckNumber: true } },
           bookings: {
             include: {
               cargoRequest: {
@@ -787,6 +814,9 @@ export const sharedTripRepository = {
                   booking.cargoRequest.receiverName ||
                   null,
                 driverName: row.driver?.name || null,
+                truckType: row.truck?.truckType || null,
+                plateNumber: row.truck?.plateNumber || null,
+                truckNumber: row.truck?.truckNumber || null,
                 pickup: booking.cargoRequest.pickup || row.pickup,
                 destination: booking.cargoRequest.destination || row.destination,
                 fromRegion: booking.cargoRequest.fromRegion || row.fromRegion,
@@ -816,6 +846,161 @@ export const sharedTripRepository = {
     });
   },
 
+  /**
+   * Pickup one load (gathering): enter measured quantity for that booking only
+   * (KG / LITER / HEAD — same rules as FTL). Shared trip → Pickup on first load;
+   * In Transit only after all loads picked up.
+   */
+  async pickupSharedBooking(
+    sharedTripId,
+    bookingId,
+    driverId,
+    { weightKg, measuredQuantity, measurementUnit, measurements } = {}
+  ) {
+    await withTransaction(async (tx) => {
+      const row = await tx.sharedTrip.findUnique({
+        where: { id: sharedTripId },
+        include: {
+          driver: { select: { id: true, name: true } },
+          truck: { select: { truckType: true, plateNumber: true, truckNumber: true } },
+          bookings: {
+            include: {
+              cargoRequest: {
+                include: {
+                  customer: { select: { id: true, name: true } },
+                  trips: { include: { payments: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!row || row.driverId !== driverId) {
+        const error = new Error("Shared trip not found");
+        error.status = 404;
+        throw error;
+      }
+      if (!["Open for booking", "Full", "Pickup"].includes(row.status)) {
+        const error = new Error("Cannot pickup loads in this trip status");
+        error.status = 400;
+        throw error;
+      }
+
+      const booking = (row.bookings || []).find((b) => String(b.id) === String(bookingId));
+      if (!booking) {
+        const error = new Error("Booking not found on this shared trip");
+        error.status = 404;
+        throw error;
+      }
+      if (["Pickup", "In Transit", "Delivered"].includes(booking.status)) {
+        const error = new Error("Load-kan waa la qaaday hore");
+        error.status = 400;
+        throw error;
+      }
+
+      const request = booking.cargoRequest;
+      if (!request) {
+        const error = new Error("Cargo request missing for this booking");
+        error.status = 400;
+        throw error;
+      }
+
+      const cargoType = request.cargoType || "";
+      const resolved = resolvePickupMeasurements(
+        { measuredQuantity, measurementUnit, measurements, weightKg },
+        cargoType
+      );
+      if (!resolved.ok) {
+        const error = new Error(
+          resolved.message || "Gali cabbirka (kg / liter / neef) markaad qaadanayso load-kan"
+        );
+        error.status = 400;
+        throw error;
+      }
+
+      const weightLabel = resolved.weightLabel;
+      const tons =
+        resolved.parts.find((p) => p.unit === "KG") != null
+          ? Math.round((resolved.parts.find((p) => p.unit === "KG").quantity / 1000) * 1000) / 1000
+          : resolved.parts.find((p) => p.unit === "LITER") != null
+            ? Math.round((resolved.parts.find((p) => p.unit === "LITER").quantity / 1000) * 1000) / 1000
+            : 0;
+
+      const updatedRequest = await tx.cargoRequest.update({
+        where: { id: request.id },
+        data: {
+          weight: weightLabel.slice(0, 120),
+          measuredQuantity: resolved.measuredQuantity,
+          measurementUnit: resolved.measurementUnit,
+          status: "Picked_Up",
+        },
+        include: cargoRequestInclude,
+      });
+
+      const shipment = await createBookingTripAndPayment(tx, {
+        request: updatedRequest,
+        sharedTrip: row,
+        bookingId: booking.id,
+      });
+
+      // Must set Pickup AFTER createBookingTripAndPayment (that helper sets Confirmed).
+      await tx.sharedTripBooking.update({
+        where: { id: booking.id },
+        data: { weightTons: tons, status: "Pickup" },
+      });
+
+      if (shipment?.id) {
+        await tx.trip.update({
+          where: { id: shipment.id },
+          data: { status: "Picked_Up", distanceTraveledKm: 0, distance: "0 km (GPS)" },
+        });
+      }
+
+      if (request.customerId) {
+        await tx.notification.create({
+          data: {
+            userId: request.customerId,
+            type: "shared.pickup",
+            message: formatCustomerNotifyLine(TRIP_NOTIFY.pickedUp, {
+              bookingId: booking.cargoRequestId,
+              tripId: shipment?.id || sharedTripId,
+              status: "Picked Up",
+              customerName:
+                request.customer?.name || request.senderName || request.receiverName || null,
+              driverName: row.driver?.name || null,
+              truckType: row.truck?.truckType || null,
+              plateNumber: row.truck?.plateNumber || null,
+              truckNumber: row.truck?.truckNumber || null,
+              pickup: request.pickup || row.pickup,
+              destination: request.destination || row.destination,
+              fromRegion: request.fromRegion || row.fromRegion,
+              fromDistrict: request.fromDistrict || row.fromDistrict,
+              toRegion: request.toRegion || row.toRegion,
+              toDistrict: request.toDistrict || row.toDistrict,
+              extra: `Cabbirka: ${weightLabel}.`,
+            }),
+          },
+        });
+      }
+
+      const allBookings = await tx.sharedTripBooking.findMany({ where: { sharedTripId } });
+      const totalBookedTons = allBookings.reduce((sum, b) => sum + Number(b.weightTons || 0), 0);
+      const capacity = Number(row.totalCapacityTons) || 0;
+      const availableTons = Math.max(0, Math.round((capacity - totalBookedTons) * 100) / 100);
+
+      if (row.truckId) {
+        await tx.truck.update({ where: { id: row.truckId }, data: { status: "Busy" } });
+      }
+
+      await tx.sharedTrip.update({
+        where: { id: sharedTripId },
+        data: { status: "Pickup", availableTons },
+      });
+    });
+
+    return this.getSharedTripById(sharedTripId, { includeDriverPhone: true });
+  },
+
   /** After pickup, move shared trip + child trips to In Transit. */
   async markSharedTripInTransit(id, driverId) {
     return withTransaction(async (tx) => {
@@ -840,6 +1025,17 @@ export const sharedTripRepository = {
       }
       if (!["Pickup", "Departed"].includes(row.status)) {
         const error = new Error("Trip must be in Pickup before marking In Transit");
+        error.status = 400;
+        throw error;
+      }
+
+      const pendingPickup = (row.bookings || []).filter(
+        (b) => !["Pickup", "In Transit", "Delivered"].includes(b.status)
+      );
+      if (pendingPickup.length) {
+        const error = new Error(
+          `Weli ${pendingPickup.length} load(s) lama qaadin — Pickup mid mid ka dib In Transit.`
+        );
         error.status = 400;
         throw error;
       }
@@ -1459,12 +1655,13 @@ export const sharedTripRepository = {
   },
 
   /** Mark one shared load as Delivered (per customer). Completes trip when all loads delivered. */
-  async markSharedBookingDelivered(sharedTripId, bookingId, driverId) {
+  async markSharedBookingDelivered(sharedTripId, bookingId, driverId, { deliveryConfirmCode: confirmCodeInput } = {}) {
     return withTransaction(async (tx) => {
       const row = await tx.sharedTrip.findUnique({
         where: { id: sharedTripId },
         include: {
           driver: { select: { id: true, name: true } },
+          truck: { select: { truckType: true, plateNumber: true, truckNumber: true } },
           bookings: {
             include: {
               cargoRequest: {
@@ -1501,6 +1698,20 @@ export const sharedTripRepository = {
       }
 
       const childTrip = booking.cargoRequest?.trips?.[0];
+      const codeTripId = childTrip?.id || booking.cargoRequestId || booking.id;
+      const expected = deliveryConfirmCode(codeTripId);
+      const provided = String(confirmCodeInput || "").trim();
+      if (!provided) {
+        const error = new Error("Gali koodhka xaqiijinta ee macmiilka (6 digits)");
+        error.status = 400;
+        throw error;
+      }
+      if (provided !== expected) {
+        const error = new Error("Koodhka xaqiijinta waa khaldan. Weydii macmiilka koodhka saxda ah.");
+        error.status = 400;
+        throw error;
+      }
+
       if (childTrip && childTrip.status !== "Delivered") {
         let finalFare = Number(childTrip.fare || 0);
         const traveledKm = Number(childTrip.distanceTraveledKm || 0);
@@ -1604,6 +1815,9 @@ export const sharedTripRepository = {
                 booking.cargoRequest.receiverName ||
                 null,
               driverName: row.driver?.name || null,
+              truckType: row.truck?.truckType || null,
+              plateNumber: row.truck?.plateNumber || null,
+              truckNumber: row.truck?.truckNumber || null,
               pickup: booking.cargoRequest.pickup || row.pickup,
               destination: booking.cargoRequest.destination || row.destination,
               fromRegion: booking.cargoRequest.fromRegion || row.fromRegion,

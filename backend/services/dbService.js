@@ -12,6 +12,7 @@ import { cargoRepository } from "./db/cargoRepository.js";
 import { tripRepository } from "./db/tripRepository.js";
 import { reportRepository } from "./db/reportRepository.js";
 import { supportComplaintRepository } from "./db/supportComplaintRepository.js";
+import { contactMessageRepository } from "./db/contactMessageRepository.js";
 import { sharedTripRepository } from "./db/sharedTripRepository.js";
 import { fleetRepository } from "./db/fleetRepository.js";
 
@@ -31,6 +32,7 @@ export const db = {
   ...tripRepository,
   ...reportRepository,
   ...supportComplaintRepository,
+  ...contactMessageRepository,
   ...sharedTripRepository,
   ...fleetRepository,
 

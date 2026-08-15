@@ -68,7 +68,7 @@ const cargoRequestFields = z.object({
     }, "Preferred pickup date cannot be in the past")
   ),
   submissionKey: z.string().uuid().optional(),
-  customerId: z.string().uuid().optional(),
+  customerId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   preferredTruckId: z.string().uuid().optional(),
   loadType: z.enum(["FTL", "SHARED"]).optional()
 });
@@ -153,16 +153,28 @@ router.get("/summary", async (req, res, next) => {
 
 router.post("/", requireRole("customer", "admin"), validate(cargoRequestSchema), async (req, res, next) => {
   try {
+    // Logged-in customers always book as themselves — never require customerId in the body.
     let customerId = req.user.sub;
     if (req.user.role === "admin") {
-      if (!req.body.customerId) {
-        return res.status(400).json({ message: "customerId is required" });
+      const fromBody = typeof req.body.customerId === "string" ? req.body.customerId.trim() : "";
+      if (!fromBody) {
+        return res.status(400).json({ message: "Select a customer for this booking" });
       }
-      customerId = req.body.customerId;
+      customerId = fromBody;
+    } else if (req.user.role === "customer") {
+      customerId = req.user.sub;
+    } else {
+      return res.status(403).json({ message: "Not allowed" });
     }
+
     const customer = await db.findBookingCustomerById(customerId);
     if (!customer || customer.role !== "customer") {
-      return res.status(400).json({ message: "Valid customer is required" });
+      return res.status(400).json({
+        message:
+          req.user.role === "admin"
+            ? "Select a valid customer for this booking"
+            : "Your account is not a customer account. Log in with a customer account to book."
+      });
     }
     if (
       req.user.role === "customer" &&
@@ -191,15 +203,12 @@ router.post("/", requireRole("customer", "admin"), validate(cargoRequestSchema),
           formatSomaliaLocation(req.body.toNeighborhood, req.body.toDistrict, req.body.toRegion),
       };
     }
-    // Customers book against their account; admin may attach optional sender/receiver contacts.
+    // Customers may optionally attach sender/receiver contact phones for pickup/delivery.
     if (req.user.role === "customer") {
       delete bookingDetails.customerRole;
-      delete bookingDetails.senderName;
-      delete bookingDetails.senderPhone;
-      delete bookingDetails.receiverName;
-      delete bookingDetails.receiverPhone;
       delete bookingDetails.sender;
       delete bookingDetails.receiver;
+      delete bookingDetails.customerId; // always from auth, never from body
     }
 
     const { request, notification } = await db.createCargoRequest({
@@ -225,10 +234,6 @@ router.patch("/:id", requireRole("customer", "admin"), validate(updateCargoReque
     let payload = { ...req.body };
     if (req.user.role === "customer") {
       delete payload.customerRole;
-      delete payload.senderName;
-      delete payload.senderPhone;
-      delete payload.receiverName;
-      delete payload.receiverPhone;
       delete payload.sender;
       delete payload.receiver;
     }

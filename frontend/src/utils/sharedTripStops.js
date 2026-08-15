@@ -15,11 +15,39 @@ function sortBookings(bookings, orderKey) {
 export function formatStopAddress(cargo, kind) {
   if (!cargo) return "—";
   if (kind === "pickup") {
-    const parts = [cargo.fromNeighborhood, cargo.fromDistrict, cargo.fromRegion, cargo.pickup].filter(Boolean);
-    return parts.join(", ") || cargo.pickup || "—";
+    const structured = [cargo.fromNeighborhood, cargo.fromDistrict, cargo.fromRegion]
+      .map((p) => String(p || "").trim())
+      .filter(Boolean);
+    if (structured.length >= 2) return structured.join(", ");
+    return cargo.pickup || structured.join(", ") || "—";
   }
-  const parts = [cargo.toNeighborhood, cargo.toDistrict, cargo.toRegion, cargo.destination].filter(Boolean);
-  return parts.join(", ") || cargo.destination || "—";
+  const structured = [cargo.toNeighborhood, cargo.toDistrict, cargo.toRegion]
+    .map((p) => String(p || "").trim())
+    .filter(Boolean);
+  if (structured.length >= 2) return structured.join(", ");
+  return cargo.destination || structured.join(", ") || "—";
+}
+
+/** Normalize pickup key so "same place" loads share one pickup action.
+ * Same district + region = isku meel (neighborhood may differ slightly).
+ */
+export function pickupLocationKey(cargo, fallbackPickup = "") {
+  if (!cargo && !fallbackPickup) return "";
+  const district = String(cargo?.fromDistrict || "").trim().toLowerCase();
+  const region = String(cargo?.fromRegion || "").trim().toLowerCase();
+  if (district && region) {
+    return `${district}|${region}`;
+  }
+  return String(cargo?.pickup || fallbackPickup || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+export function bookingsShareSamePickup(bookings = [], fallbackPickup = "") {
+  if (!bookings.length) return false;
+  const keys = bookings.map((b) => pickupLocationKey(b.cargoRequest, fallbackPickup || b.cargoRequest?.pickup));
+  if (keys.some((k) => !k)) return false;
+  return keys.every((k) => k === keys[0]);
 }
 
 export function buildSharedStops(bookings, kind = "pickup") {
@@ -31,7 +59,7 @@ export function buildSharedStops(bookings, kind = "pickup") {
       bookingId: b.id,
       order,
       kind,
-      label: b.customer || "Customer",
+      label: b.customer ? `Macmiil: ${b.customer}` : "Macmiil",
       cargoRequestId: b.cargoRequestId,
       tripId: b.tripId || null,
       status: b.status,

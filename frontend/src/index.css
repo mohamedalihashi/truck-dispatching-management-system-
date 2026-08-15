@@ -357,3 +357,9 @@
     transform: translateY(0);
   }
 }
+
+/* Keep Leaflet below app modals (modal uses z-[2000]) */
+.leaflet-container {
+  z-index: 0 !important;
+  max-width: 100%;
+}

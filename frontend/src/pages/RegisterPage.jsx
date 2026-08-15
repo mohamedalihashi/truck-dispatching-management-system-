@@ -42,7 +42,9 @@ export function RegisterPage() {
 
   function buildCustomerPayload(values) {
     const payload = new FormData();
-    ["name", "username", "email", "phone", "password"].forEach((key) => payload.append(key, values[key]));
+    ["name", "username", "phone", "password"].forEach((key) => payload.append(key, values[key]));
+    const email = String(values.email || "").trim();
+    if (email) payload.append("email", email);
     payload.append("role", "customer");
     payload.append("city", values.city);
     payload.append("address", values.address);
@@ -169,8 +171,20 @@ export function RegisterPage() {
                 <Field label="Phone">
                   <input className="stitch-input" type="tel" inputMode="tel" maxLength={20} {...register("phone", { required: true, minLength: 7, maxLength: 20 })} />
                 </Field>
-                <Field label="Email">
-                  <input className="stitch-input" type="email" maxLength={254} {...register("email", { required: true, maxLength: 254 })} />
+                <Field label="Email (optional)">
+                  <input
+                    className="stitch-input"
+                    type="email"
+                    maxLength={254}
+                    placeholder="Optional"
+                    {...register("email", {
+                      maxLength: 254,
+                      validate: (v) =>
+                        !String(v || "").trim() ||
+                        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()) ||
+                        "Enter a valid email"
+                    })}
+                  />
                 </Field>
                 <Field label="City">
                   <input className="stitch-input" type="text" maxLength={100} {...register("city", { required: true, maxLength: 100 })} />

@@ -171,11 +171,21 @@ export const api = {
   listAuditLogs: (params = {}) => apiClient.get("/admin/audit-logs", { params }),
   listSupportComplaints: (params = {}) => apiClient.get("/support", { params }),
   getSupportContact: () => apiClient.get("/support/contact"),
+  createContactMessage: (payload) => apiClient.post("/support/messages", payload),
+  listContactMessages: (params = {}) => apiClient.get("/support/messages", { params }),
+  updateContactMessageStatus: (id, payload) =>
+    apiClient.patch(`/support/messages/${encodeURIComponent(id)}/status`, payload),
   createSupportComplaint: (payload) => apiClient.post("/support", payload),
   updateSupportComplaintStatus: (id, payload) => apiClient.patch(`/support/${id}/status`, payload),
   getPublicFeedback: (token) => apiClient.get(`/public/feedback/${encodeURIComponent(token)}`),
   submitPublicFeedback: (token, payload) => apiClient.post(`/public/feedback/${encodeURIComponent(token)}`, payload),
   listPublicTestimonials: (params = {}) => apiClient.get("/public/testimonials", { params }),
+  getPublicTrack: (token) => apiClient.get(`/public/track/${encodeURIComponent(token)}`),
+  getTripTracking: (id) => apiClient.get(`/trips/${encodeURIComponent(id)}/tracking`),
+  createTripTrackingLink: (id, payload = {}) =>
+    apiClient.post(`/trips/${encodeURIComponent(id)}/tracking-link`, payload),
+  revokeTripTrackingLink: (id, params = {}) =>
+    apiClient.delete(`/trips/${encodeURIComponent(id)}/tracking-link`, { params }),
   sharedTripsSummary: (params = {}) => apiClient.get("/shared-trips/summary", { params }),
   listSharedTrips: (params = {}) => apiClient.get("/shared-trips", { params }),
   listMySharedTrips: (params = {}) => apiClient.get("/shared-trips/me", { params }),
@@ -185,13 +195,19 @@ export const api = {
   rejectSharedTrip: (id) => apiClient.post(`/shared-trips/${encodeURIComponent(id)}/reject`),
   startSharedTripPickup: (id, payload = {}) =>
     apiClient.post(`/shared-trips/${encodeURIComponent(id)}/pickup`, payload),
+  pickupSharedBooking: (sharedTripId, bookingId, payload = {}) =>
+    apiClient.post(
+      `/shared-trips/${encodeURIComponent(sharedTripId)}/bookings/${encodeURIComponent(bookingId)}/pickup`,
+      payload
+    ),
   markSharedTripInTransit: (id) => apiClient.post(`/shared-trips/${id}/in-transit`),
   markSharedTripDelivered: (id) => apiClient.post(`/shared-trips/${id}/deliver`),
   reorderSharedTripStops: (id, payload) =>
     apiClient.patch(`/shared-trips/${encodeURIComponent(id)}/stops`, payload),
-  deliverSharedBooking: (sharedTripId, bookingId) =>
+  deliverSharedBooking: (sharedTripId, bookingId, payload = {}) =>
     apiClient.post(
-      `/shared-trips/${encodeURIComponent(sharedTripId)}/bookings/${encodeURIComponent(bookingId)}/deliver`
+      `/shared-trips/${encodeURIComponent(sharedTripId)}/bookings/${encodeURIComponent(bookingId)}/deliver`,
+      payload
     ),
   assignSharedPool: (payload) => apiClient.post("/shared-trips/assign-pool", payload)
 };

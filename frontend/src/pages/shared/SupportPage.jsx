@@ -5,7 +5,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAuth } from "../../contexts/AuthContext";
-import { useSupportContact, useSupportComplaints, useTrips } from "../../hooks/useApi";
+import { useSupportContact, useSupportComplaints, useContactMessages, useTrips } from "../../hooks/useApi";
 import { api } from "../../services/api";
 
 export function SupportPage({ embedded = false }) {
@@ -15,6 +15,7 @@ export function SupportPage({ embedded = false }) {
   const isCustomer = user?.role === "customer";
   const isAdmin = user?.role === "admin";
   const complaintsQuery = useSupportComplaints({}, { enabled: isCustomer || isAdmin });
+  const contactMessagesQuery = useContactMessages({}, { enabled: isAdmin });
   const tripsQuery = useTrips({ limit: 100 }, { enabled: isCustomer });
 
   const [form, setForm] = useState({
@@ -69,6 +70,11 @@ export function SupportPage({ embedded = false }) {
   const updateStatus = useMutation({
     mutationFn: ({ id, status }) => api.updateSupportComplaintStatus(id, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["support-complaints"] })
+  });
+
+  const updateContactStatus = useMutation({
+    mutationFn: ({ id, status }) => api.updateContactMessageStatus(id, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contact-messages"] })
   });
 
   const channels = [
@@ -326,8 +332,56 @@ export function SupportPage({ embedded = false }) {
         </section>
       ) : isAdmin ? (
         <p className="rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
-          Admins review customer complaints below. To file a complaint, sign in with a customer account.
+          Admins review contact-page messages and customer complaints below.
         </p>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.04)]">
+          <div className="border-b border-outline-variant px-6 py-5">
+            <h3 className="text-xl font-semibold text-primary-container">Contact page messages</h3>
+            <p className="mt-1 text-sm text-on-surface-variant">
+              Messages sent from the public Contact “Send message” form are stored here.
+            </p>
+          </div>
+          <div className="divide-y divide-outline-variant">
+            {contactMessagesQuery.isLoading ? (
+              <p className="p-6 text-center text-sm text-on-surface-variant">Loading…</p>
+            ) : null}
+            {(contactMessagesQuery.data?.data || []).map((row) => (
+              <article key={row.id} className="px-6 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-on-surface">{row.name}</p>
+                    <p className="mt-1 text-sm text-on-surface-variant">
+                      {row.phone}
+                      {row.email ? ` · ${row.email}` : ""}
+                      {row.createdAt ? ` · ${new Date(row.createdAt).toLocaleString()}` : ""}
+                    </p>
+                    <p className="mt-2 text-sm text-on-surface">{row.message}</p>
+                  </div>
+                  <StatusBadge status={row.status} />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {["Open", "In Review", "Resolved", "Closed"].map((status) => (
+                    <Button
+                      key={status}
+                      variant="secondary"
+                      className="px-2 py-1 text-xs"
+                      disabled={updateContactStatus.isPending || row.status === status}
+                      onClick={() => updateContactStatus.mutate({ id: row.id, status })}
+                    >
+                      {status}
+                    </Button>
+                  ))}
+                </div>
+              </article>
+            ))}
+            {!contactMessagesQuery.isLoading && !(contactMessagesQuery.data?.data || []).length ? (
+              <p className="p-6 text-center text-on-surface-variant">No contact messages yet.</p>
+            ) : null}
+          </div>
+        </section>
       ) : null}
 
       {(isCustomer || isAdmin) && (

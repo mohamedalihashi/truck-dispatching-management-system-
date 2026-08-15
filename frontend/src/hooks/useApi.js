@@ -29,10 +29,50 @@ function patchTripLocationInCache(qc, payload) {
               lastLocation: payload.location ?? trip.lastLocation,
               distanceTraveledKm: payload.distanceTraveledKm ?? trip.distanceTraveledKm,
               distance: payload.distance ?? trip.distance,
-              status: payload.status ?? trip.status
+              status: payload.status ?? trip.status,
+              progress: payload.progress ?? trip.progress,
+              gpsStatus: payload.gpsStatus ?? trip.gpsStatus,
             }
           : trip
       )
+    };
+  });
+
+  // Admin Live Tracking reads fleet, not trips — patch it so the truck moves immediately.
+  qc.setQueriesData({ queryKey: ["live-fleet"] }, (old) => {
+    if (!old?.data) return old;
+    const nextLoc =
+      payload.location?.lat != null && payload.location?.lng != null
+        ? {
+            ...payload.location,
+            lat: Number(payload.location.lat),
+            lng: Number(payload.location.lng),
+          }
+        : null;
+    return {
+      ...old,
+      data: old.data.map((truck) => {
+        const tripMatch = truck.activeTrip?.id === payload.tripId;
+        const truckMatch = payload.truckId && truck.id === payload.truckId;
+        if (!tripMatch && !truckMatch) return truck;
+        const location = nextLoc || truck.lastLocation;
+        return {
+          ...truck,
+          lastLocation: location,
+          gpsStatus: payload.gpsStatus ?? truck.gpsStatus,
+          lastSeenLabel: "just now",
+          activeTrip: truck.activeTrip
+            ? {
+                ...truck.activeTrip,
+                distanceTraveledKm:
+                  payload.distanceTraveledKm ?? truck.activeTrip.distanceTraveledKm,
+                status: payload.status ?? truck.activeTrip.status,
+                progress: payload.progress ?? truck.activeTrip.progress,
+                lastLocation: location || truck.activeTrip.lastLocation,
+              }
+            : truck.activeTrip,
+        };
+      }),
     };
   });
 
@@ -501,6 +541,14 @@ export function useSupportContact() {
   });
 }
 
+export function useContactMessages(params = {}, options = {}) {
+  return useQuery({
+    queryKey: ["contact-messages", params],
+    queryFn: () => api.listContactMessages(params),
+    ...options
+  });
+}
+
 export function usePermissions() {
   return useQuery({
     queryKey: ["permissions"],
@@ -594,14 +642,26 @@ export function useTripActions() {
   };
   return {
     updateStatus: useMutation({
-      mutationFn: ({ id, status, weightAmount, weightUnit, measuredQuantity, measurementUnit }) =>
+      mutationFn: ({
+        id,
+        status,
+        weightAmount,
+        weightUnit,
+        measuredQuantity,
+        measurementUnit,
+        measurements,
+        deliveryConfirmCode,
+      }) =>
         api.updateTripStatus(id, {
           status,
-          ...(measuredQuantity != null
-            ? { measuredQuantity, measurementUnit }
-            : weightAmount != null
-              ? { weightAmount, weightUnit: weightUnit || "tons" }
-              : {})
+          ...(deliveryConfirmCode ? { deliveryConfirmCode } : {}),
+          ...(measurements
+            ? { measurements, measuredQuantity, measurementUnit }
+            : measuredQuantity != null
+              ? { measuredQuantity, measurementUnit }
+              : weightAmount != null
+                ? { weightAmount, weightUnit: weightUnit || "tons" }
+                : {}),
         }),
       onMutate: async ({ id, status }) => {
         await qc.cancelQueries({ queryKey: ["trips"] });

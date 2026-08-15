@@ -192,6 +192,7 @@ export function navForRole(role, user = null) {
     { to: "tracking", labelKey: "nav.liveTracking", icon: "map" },
     { to: "notifications", labelKey: "nav.notifications", icon: "notifications" },
     { to: "payments", labelKey: "nav.payment", icon: "chart" },
-    { to: "support", labelKey: "nav.support", icon: "help" }
+    { to: "support", labelKey: "nav.support", icon: "help" },
+    { to: "profile", labelKey: "nav.profile", icon: "users" }
   ];
 }

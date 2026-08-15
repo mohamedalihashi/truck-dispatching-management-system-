@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma.js";
 import { estimateDistanceKm } from "./pricingService.js";
 import {
   parseLegacyQuantity,
+  parseMeasurementParts,
   resolveCargoMeasurement,
   cargoPricingKey,
 } from "../lib/cargoMeasurement.js";
@@ -219,14 +220,6 @@ export function calculateDeliveryFare(
 
   const config = resolveCargoMeasurement(cargoType);
   const unit = String(measurementUnit || config.unit || "KG").toUpperCase();
-  let quantity = measuredQuantity != null ? Number(measuredQuantity) : 0;
-  if (!(quantity > 0) && weight) {
-    quantity = parseLegacyQuantity(weight, unit);
-    if (!(quantity > 0) && unit === "KG") {
-      quantity = parseWeightKg(weight);
-    }
-  }
-  if (!(quantity > 0)) return null;
 
   const gpsKm = Number(traveledKm);
   const routeKm = routeDistanceKm != null ? Number(routeDistanceKm) : null;
@@ -240,13 +233,48 @@ export function calculateDeliveryFare(
   const rateKm = effectivePricingRate(pricing, loadType, "km");
   const distanceCharge = rateKm > 0 && km > 0 ? km * rateKm : 0;
 
-  let cargoRate = 0;
-  const priceKey = cargoPricingKey(cargoType, unit);
-  if (unit === "LITER") cargoRate = effectivePricingRate(pricing, loadType, "liter");
-  else if (unit === "HEAD") cargoRate = effectivePricingRate(pricing, loadType, priceKey);
-  else cargoRate = effectivePricingRate(pricing, loadType, "kg");
+  const mixedParts =
+    unit === "MIXED" || (String(weight || "").includes("+") && /\d/.test(String(weight || "")))
+      ? parseMeasurementParts(weight, unit, measuredQuantity)
+      : [];
 
-  const cargoCharge = cargoRate > 0 ? quantity * cargoRate : 0;
+  let cargoCharge = 0;
+  if (unit === "MIXED" || mixedParts.length > 1) {
+    const parts =
+      mixedParts.length > 0
+        ? mixedParts
+        : measuredQuantity != null && Number(measuredQuantity) > 0
+          ? [{ unit: "KG", quantity: Number(measuredQuantity) }]
+          : [];
+    if (!parts.length) return null;
+    for (const part of parts) {
+      const priceKey = cargoPricingKey(cargoType, part.unit);
+      let partRate = 0;
+      if (part.unit === "LITER") partRate = effectivePricingRate(pricing, loadType, "liter");
+      else if (part.unit === "HEAD") {
+        partRate = effectivePricingRate(pricing, loadType, priceKey || "sheep");
+      } else partRate = effectivePricingRate(pricing, loadType, "kg");
+      if (partRate > 0) cargoCharge += part.quantity * partRate;
+    }
+  } else {
+    let quantity = measuredQuantity != null ? Number(measuredQuantity) : 0;
+    if (!(quantity > 0) && weight) {
+      quantity = parseLegacyQuantity(weight, unit);
+      if (!(quantity > 0) && unit === "KG") {
+        quantity = parseWeightKg(weight);
+      }
+    }
+    if (!(quantity > 0)) return null;
+
+    const priceKey = cargoPricingKey(cargoType, unit);
+    let cargoRate = 0;
+    if (unit === "LITER") cargoRate = effectivePricingRate(pricing, loadType, "liter");
+    else if (unit === "HEAD") cargoRate = effectivePricingRate(pricing, loadType, priceKey);
+    else cargoRate = effectivePricingRate(pricing, loadType, "kg");
+
+    cargoCharge = cargoRate > 0 ? quantity * cargoRate : 0;
+  }
+
   const total = distanceCharge + cargoCharge;
   if (!(total > 0)) return null;
   return Math.round(total * 100) / 100;

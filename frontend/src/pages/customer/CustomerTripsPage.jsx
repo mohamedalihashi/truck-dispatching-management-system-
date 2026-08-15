@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Eye, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
+import { Eye, MapPin, Pencil, Plus, RotateCcw, Share2, Star, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { DataTable } from "../../components/ui/DataTable";
@@ -8,12 +8,12 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { TripFeedbackForm } from "../../components/TripFeedbackForm";
-import { resolveUploadUrl } from "../../config/api.js";
 import { useCancelCargo, useCargoRequests, useRestoreCargo, useTrips, useUpdateCargo } from "../../hooks/useApi";
 import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { api } from "../../services/api";
 import { useQueryClient } from "@tanstack/react-query";
-import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES, fareAfterDelivered } from "../../utils/helpers";
+import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES, LIVE_MAP_STATUSES, fareAfterDelivered } from "../../utils/helpers";
+import { formatTripCargoQuantity } from "../../utils/cargoMeasurement";
 import { QuoteReviewPanel } from "../../components/QuoteReviewPanel";
 import { TripPaymentJourney } from "../../components/TripPaymentJourney";
 import {
@@ -25,6 +25,7 @@ import { applyFormValidationIssues } from "../../utils/bookingValidation";
 import { deliveryConfirmCode } from "../../data/tripCustomerMessages";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { TripPhotosSection } from "../../components/ui/DocumentCard";
 
 export function CustomerTripsPage() {
   const { t } = useLanguage();
@@ -36,6 +37,8 @@ export function CustomerTripsPage() {
   const [viewingTrip, setViewingTrip] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
+
+  const [shareBusyId, setShareBusyId] = useState(null);
 
   const { data: trips, isLoading: tripsLoading } = useTrips({ search: search || undefined });
   const { data: requests, isLoading: requestsLoading } = useCargoRequests({
@@ -116,6 +119,26 @@ export function CustomerTripsPage() {
     qc.invalidateQueries({ queryKey: ["trips"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     qc.invalidateQueries({ queryKey: ["trip-feedback"] });
+  }
+
+  async function shareTripLink(row) {
+    setShareBusyId(row.id);
+    try {
+      const link = await api.createTripTrackingLink(row.id);
+      const url =
+        link.url ||
+        `${window.location.origin}${link.path || `/track/${link.token}`}`;
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        alert("Tracking link copied. Anyone with the link can follow this trip live.");
+      } else {
+        prompt("Copy tracking link", url);
+      }
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setShareBusyId(null);
+    }
   }
 
   return (
@@ -260,6 +283,26 @@ export function CustomerTripsPage() {
                     <button type="button" className="p-1 text-on-surface-variant" onClick={() => setViewingTrip(row)} title="View">
                       <Eye size={16} />
                     </button>
+                    {LIVE_MAP_STATUSES.includes(row.status) && (
+                      <Link
+                        to={`/customer/tracking?trip=${encodeURIComponent(row.id)}`}
+                        className="p-1 text-secondary-container"
+                        title="Live track"
+                      >
+                        <MapPin size={16} />
+                      </Link>
+                    )}
+                    {!["Cancelled"].includes(row.status) && (
+                      <button
+                        type="button"
+                        className="p-1 text-on-surface-variant disabled:opacity-50"
+                        onClick={() => shareTripLink(row)}
+                        disabled={shareBusyId === row.id}
+                        title="Share tracking link"
+                      >
+                        <Share2 size={16} />
+                      </button>
+                    )}
                     {row.status === "Delivered" && row.deliveryProofUrl && !row.deliveryConfirmedAt && (
                       <Button className="px-2 py-1 text-xs" onClick={() => confirmDelivery(row)}>
                         Confirm delivery
@@ -326,6 +369,7 @@ export function CustomerTripsPage() {
             <Detail label="Description" value={viewingRequest.description} className="sm:col-span-2" />
             <Detail label="Instructions" value={viewingRequest.specialInstructions || "—"} className="sm:col-span-2" />
           </dl>
+          <TripPhotosSection cargoImageUrl={viewingRequest.cargoImageUrl} />
           <div className="mt-4 flex justify-end gap-2">
             {viewingRequest.status === "Pending" && (
               <Button onClick={() => { setViewingRequest(null); openEdit(viewingRequest); }}>Edit</Button>
@@ -342,26 +386,16 @@ export function CustomerTripsPage() {
             <Detail label="Status" value={<StatusBadge status={viewingTrip.status} />} />
             <Detail label="Driver" value={viewingTrip.driver || "—"} />
             <Detail label="Truck" value={viewingTrip.truck || "—"} />
+            <Detail label="Cargo type / Nooca alaabta" value={viewingTrip.cargoType || viewingTrip.cargo || "—"} />
+            <Detail label="Quantity / Tirada" value={formatTripCargoQuantity(viewingTrip)} />
             <Detail label="Distance" value={viewingTrip.distance || "—"} />
             <Detail label="ETA" value={viewingTrip.estimatedTime || "—"} />
             <Detail label="Fare" value={fareAfterDelivered(viewingTrip.status, viewingTrip.fare)} />
-            {viewingTrip.deliveryProofUrl && !viewingTrip.deliveryProofUrl.startsWith("mock://") ? (
-              <Detail
-                label="Proof of delivery"
-                value={
-                  <a
-                    href={resolveUploadUrl(viewingTrip.deliveryProofUrl)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-secondary-container hover:underline"
-                  >
-                    View delivery photo
-                  </a>
-                }
-                className="sm:col-span-2"
-              />
-            ) : null}
           </dl>
+          <TripPhotosSection
+            cargoImageUrl={viewingTrip.cargoImageUrl}
+            deliveryProofUrl={viewingTrip.deliveryProofUrl}
+          />
 
           {["Near Destination", "Delivered"].includes(viewingTrip.status) ? (
             <p className="mt-6 rounded-lg border border-secondary-container/40 bg-secondary-fixed/30 px-3 py-2 text-sm text-on-surface">
@@ -401,6 +435,7 @@ export function CustomerTripsPage() {
               watch={watch}
               setValue={setValue}
               showLoadType={false}
+              showContactFields
             />
             {error && <p className="text-sm text-error">{error}</p>}
             <div className="flex justify-end gap-2">

@@ -32,13 +32,19 @@ export const EMPTY_CARGO_BOOKING = {
   toNeighborhood: "",
   cargoType: "",
   cargoTypeOther: "",
-  specialInstructions: ""
+  specialInstructions: "",
+  senderName: "",
+  senderPhone: "",
+  receiverName: "",
+  receiverPhone: ""
 };
 
 export function buildCargoBookingPayload(formValues, { requireCustomer = false } = {}) {
   const otherType = String(formValues.cargoTypeOther || "").trim();
   const resolvedCargoType =
-    formValues.cargoType === "Others" ? otherType : String(formValues.cargoType || "").trim();
+    formValues.cargoType === "Others"
+      ? `Others — ${otherType}`
+      : String(formValues.cargoType || "").trim();
 
   if (!resolvedCargoType || resolvedCargoType.length < 2) {
     throw new Error(BOOKING_MESSAGES.cargoTypeRequired);
@@ -59,7 +65,9 @@ export function buildCargoBookingPayload(formValues, { requireCustomer = false }
   );
 
   return {
-    ...(formValues.customerId ? { customerId: formValues.customerId } : {}),
+    ...(requireCustomer && formValues.customerId
+      ? { customerId: String(formValues.customerId).trim() }
+      : {}),
     pickup,
     destination,
     fromRegion: formValues.fromRegion,
@@ -91,11 +99,18 @@ export function buildCargoBookingPayload(formValues, { requireCustomer = false }
 
 export function bookingDefaultsFromRequest(row = {}) {
   let cargoType = row.cargoType || "";
-  if (cargoType && !CARGO_TYPES.includes(cargoType)) {
+  let cargoTypeOther = "";
+  const raw = String(cargoType);
+  const othersMatch = raw.match(/^others\s*[—\-–]\s*(.+)$/i);
+  if (othersMatch) {
+    cargoType = "Others";
+    cargoTypeOther = othersMatch[1].trim();
+  } else if (cargoType && !CARGO_TYPES.includes(cargoType)) {
     if (String(cargoType).toLowerCase() === "livestock") {
       cargoType = LIVESTOCK_CARGO_TYPES.find((t) => t.includes("Ari")) || LIVESTOCK_CARGO_TYPES[1];
     } else {
       cargoType = "Others";
+      cargoTypeOther = raw;
     }
   }
   const known = CARGO_TYPES.includes(cargoType) ? cargoType : "";
@@ -107,9 +122,13 @@ export function bookingDefaultsFromRequest(row = {}) {
     toDistrict: row.toDistrict || "",
     toNeighborhood: row.toNeighborhood || "",
     cargoType: known,
-    cargoTypeOther: known === "Others" ? row.cargoType || "" : "",
+    cargoTypeOther: known === "Others" ? cargoTypeOther || raw : "",
     specialInstructions: row.specialInstructions || "",
-    loadType: row.loadType === "SHARED" ? "SHARED" : "FTL"
+    loadType: row.loadType === "SHARED" ? "SHARED" : "FTL",
+    senderName: row.senderName || "",
+    senderPhone: row.senderPhone || "",
+    receiverName: row.receiverName || "",
+    receiverPhone: row.receiverPhone || ""
   };
 }
 
@@ -219,7 +238,7 @@ export function CargoBookingFields({
 
   return (
     <div className="space-y-5 sm:col-span-2">
-      {customers ? (
+      {customers != null ? (
         <Field label="Customer *" error={errors.customerId?.message}>
           <select className="stitch-input w-full" {...register("customerId", { required: "Select a customer" })}>
             <option value="">Select customer</option>
@@ -310,53 +329,61 @@ export function CargoBookingFields({
         ) : null}
 
         {showContactFields ? (
-          <section className="grid gap-4 sm:grid-cols-2">
-            <Field label="Sender name" error={errors.senderName?.message}>
-              <input
-                className="stitch-input w-full"
-                placeholder="e.g. Cabdi Axmed Xaashi"
-                {...register("senderName", {
-                  validate: (value) => validateFullNameField(value, { label: "Sender name" })
-                })}
-              />
-            </Field>
-            <Field label="Sender phone" error={errors.senderPhone?.message}>
-              <input
-                className="stitch-input w-full"
-                inputMode="tel"
-                {...register("senderPhone", {
-                  validate: (value) => {
-                    const phone = String(value || "").trim();
-                    if (!phone) return true;
-                    const digits = phone.replace(/\D/g, "");
-                    return digits.length >= 7 || BOOKING_MESSAGES.phoneInvalid;
-                  }
-                })}
-              />
-            </Field>
-            <Field label="Receiver name" error={errors.receiverName?.message}>
-              <input
-                className="stitch-input w-full"
-                placeholder="e.g. Sahra Ali"
-                {...register("receiverName", {
-                  validate: (value) => validateFullNameField(value, { label: "Receiver name" })
-                })}
-              />
-            </Field>
-            <Field label="Receiver phone" error={errors.receiverPhone?.message}>
-              <input
-                className="stitch-input w-full"
-                inputMode="tel"
-                {...register("receiverPhone", {
-                  validate: (value) => {
-                    const phone = String(value || "").trim();
-                    if (!phone) return true;
-                    const digits = phone.replace(/\D/g, "");
-                    return digits.length >= 7 || BOOKING_MESSAGES.phoneInvalid;
-                  }
-                })}
-              />
-            </Field>
+          <section className="space-y-3 rounded-xl border border-outline-variant/70 bg-surface-container-low/40 p-4">
+            <p className="text-sm font-semibold text-primary-container">
+              Sender &amp; receiver contacts
+              <span className="ml-1 font-normal text-on-surface-variant">(optional)</span>
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Sender phone (optional)" error={errors.senderPhone?.message}>
+                <input
+                  className="stitch-input w-full"
+                  inputMode="tel"
+                  placeholder="e.g. 61xxxxxxx"
+                  {...register("senderPhone", {
+                    validate: (value) => {
+                      const phone = String(value || "").trim();
+                      if (!phone) return true;
+                      const digits = phone.replace(/\D/g, "");
+                      return digits.length >= 7 || BOOKING_MESSAGES.phoneInvalid;
+                    }
+                  })}
+                />
+              </Field>
+              <Field label="Receiver phone (optional)" error={errors.receiverPhone?.message}>
+                <input
+                  className="stitch-input w-full"
+                  inputMode="tel"
+                  placeholder="e.g. 61xxxxxxx"
+                  {...register("receiverPhone", {
+                    validate: (value) => {
+                      const phone = String(value || "").trim();
+                      if (!phone) return true;
+                      const digits = phone.replace(/\D/g, "");
+                      return digits.length >= 7 || BOOKING_MESSAGES.phoneInvalid;
+                    }
+                  })}
+                />
+              </Field>
+              <Field label="Sender name (optional)" error={errors.senderName?.message}>
+                <input
+                  className="stitch-input w-full"
+                  placeholder="e.g. Cabdi Axmed Xaashi"
+                  {...register("senderName", {
+                    validate: (value) => validateFullNameField(value, { label: "Sender name" })
+                  })}
+                />
+              </Field>
+              <Field label="Receiver name (optional)" error={errors.receiverName?.message}>
+                <input
+                  className="stitch-input w-full"
+                  placeholder="e.g. Sahra Ali"
+                  {...register("receiverName", {
+                    validate: (value) => validateFullNameField(value, { label: "Receiver name" })
+                  })}
+                />
+              </Field>
+            </div>
           </section>
         ) : null}
 
@@ -396,10 +423,11 @@ export function CargoBookingFields({
         ) : null}
 
         {showSpecialInstructions ? (
-          <Field label="Special instructions">
+          <Field label="Special instructions / Tilmaamaha">
             <textarea
-              className="stitch-input min-h-16 w-full"
-              placeholder="Optional notes"
+              className="stitch-input min-h-24 w-full"
+              placeholder="Qor tilmaamaha gaarka ah (tusaale: waqtiga qaadista, albaabka, xiriirka…)"
+              rows={3}
               {...register("specialInstructions")}
             />
           </Field>

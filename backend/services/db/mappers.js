@@ -1,10 +1,52 @@
 import { deliveryConfirmCode } from "../../lib/tripCustomerMessages.js";
+import { resolveLocationCoords } from "../../lib/somaliaGeo.js";
+import { tripProgress } from "../../lib/fleetTracking.js";
 
 // Prisma enum values use underscores; the API uses spaces.
 export const tripStatusToDb = (s) => (s ? s.replace(/ /g, "_") : s);
 export const tripStatusToApi = (s) => (s ? s.replace(/_/g, " ") : s);
 export const reqStatusToDb = (s) => (s ? s.replace(/ /g, "_") : s);
 export const reqStatusToApi = (s) => (s ? s.replace(/_/g, " ") : s);
+
+const CUSTOMER_STATUS_LABELS = {
+  Pending: "Waiting for Driver",
+  Assigned: "Driver Assigned",
+  "En Route to Pickup": "Driver On The Way",
+  "Arrived at Pickup": "Driver Arrived",
+  "Picked Up": "Trip Started",
+  "In Transit": "In Transit",
+  "Near Destination": "Near Destination",
+  Delivered: "Trip Completed",
+  Cancelled: "Cancelled",
+};
+
+export function mapCustomerStatus(status) {
+  return CUSTOMER_STATUS_LABELS[status] || status;
+}
+
+function parseDistanceKm(distance) {
+  if (distance == null) return null;
+  const n = Number(String(distance).replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export function computeTripProgress(row) {
+  if (!row) return null;
+  const destinationPoint = resolveLocationCoords({
+    text: row.destination,
+    district: row.cargoRequest?.toDistrict,
+    region: row.cargoRequest?.toRegion,
+  });
+  return tripProgress({
+    plannedDistanceKm: parseDistanceKm(row.distance),
+    completedDistanceKm: row.distanceTraveledKm != null ? Number(row.distanceTraveledKm) : 0,
+    currentLat: row.lastLat,
+    currentLng: row.lastLng,
+    destinationLat: destinationPoint.lat,
+    destinationLng: destinationPoint.lng,
+    speedKmh: row.lastSpeedKmh,
+  });
+}
 
 export function mapUser(row) {
   if (!row) return null;
@@ -195,6 +237,9 @@ export function mapTrip(row) {
     dispatcher: row.dispatcher?.name || null,
     truckId: row.truckId,
     truck: row.truck?.truckNumber || null,
+    plateNumber: row.truck?.plateNumber || null,
+    truckType: row.truck?.truckType || null,
+    driverPhone: row.driver?.phone || null,
     pickup: row.pickup,
     destination: row.destination,
     route: `${row.pickup} -> ${row.destination}`,
@@ -215,6 +260,8 @@ export function mapTrip(row) {
     estimatedTime: row.estimatedTime,
     eta: row.estimatedTime,
     status: tripStatusToApi(row.status),
+    customerStatus: mapCustomerStatus(tripStatusToApi(row.status)),
+    progress: computeTripProgress(row),
     fare: Number(row.fare || 0),
     deliveryConfirmCode: ["Near Destination", "Delivered"].includes(tripStatusToApi(row.status))
       ? deliveryConfirmCode(row.id)

@@ -380,6 +380,9 @@ export function SettingsPage() {
                   setDraft((s) => ({ ...s, general: { ...s.general, supportPhone: e.target.value } }))
                 }
               />
+              <p className="mt-1 text-xs text-on-surface-variant">
+                Same number is used for calls and WhatsApp.
+              </p>
             </label>
             <label className="block text-sm">
               <span className="mb-1.5 block font-medium text-on-surface-variant">Currency</span>

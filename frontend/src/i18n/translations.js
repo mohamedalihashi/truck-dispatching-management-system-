@@ -62,6 +62,7 @@ export const translations = {
       ftlBook: "FTL Request",
       sharedBook: "Shared Request",
       notifications: "Notifications",
+      profile: "Profile",
     },
     public: {
       features: "Features",
@@ -72,6 +73,8 @@ export const translations = {
       register: "Register",
       openDashboard: "Open Dashboard",
       home: "Home",
+      about: "About",
+      contact: "Contact",
     },
     landing: {
       badge: "GaariHel Platform",
@@ -246,6 +249,7 @@ export const translations = {
       ftlBook: "Codsi FTL",
       sharedBook: "Codsi Shared",
       notifications: "Ogeysiisyada",
+      profile: "Profile",
     },
     public: {
       features: "Astaamaha",
@@ -256,6 +260,8 @@ export const translations = {
       register: "Isdiiwaangeli",
       openDashboard: "Fur Dashboard",
       home: "Guriga",
+      about: "Ku saabsan",
+      contact: "Xiriir",
     },
     landing: {
       badge: "Platform-ka GaariHel",

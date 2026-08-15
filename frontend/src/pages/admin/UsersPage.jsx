@@ -119,10 +119,11 @@ export function UsersPage({ mode } = {}) {
       if (editing) {
         const payload = {
           name: values.name,
-          email: values.email,
           phone: values.phone || undefined,
           role: values.role
         };
+        const email = String(values.email || "").trim();
+        if (email) payload.email = email;
         if (values.password) payload.password = values.password;
 
         const editRole = editing.role || values.role;
@@ -165,7 +166,8 @@ export function UsersPage({ mode } = {}) {
           const formData = new FormData();
           formData.append("name", values.name);
           formData.append("username", values.username);
-          formData.append("email", values.email);
+          const email = String(values.email || "").trim();
+          if (email) formData.append("email", email);
           formData.append("role", createRole);
           if (values.phone) formData.append("phone", values.phone);
           formData.append("driverLicense", values.driverLicense);
@@ -192,7 +194,8 @@ export function UsersPage({ mode } = {}) {
           const formData = new FormData();
           formData.append("name", values.name);
           formData.append("username", values.username);
-          formData.append("email", values.email);
+          const email = String(values.email || "").trim();
+          if (email) formData.append("email", email);
           formData.append("phone", values.phone.trim());
           formData.append("role", "customer");
           formData.append("city", values.city.trim());
@@ -202,10 +205,11 @@ export function UsersPage({ mode } = {}) {
           const payload = {
             name: values.name,
             username: values.username,
-            email: values.email,
             role: values.role,
             phone: values.phone || undefined
           };
+          const email = String(values.email || "").trim();
+          if (email) payload.email = email;
           result = await mutations.create.mutateAsync(payload);
         }
         const parts = [result.message || "User created."];
@@ -601,7 +605,17 @@ export function UsersPage({ mode } = {}) {
             />
             <input className="stitch-input" placeholder="Phone" {...register("phone", { required: selectedRole === "customer" })} />
             {!editing ? <input className="stitch-input sm:col-span-2" placeholder="Username" {...register("username", { required: true, minLength: 3 })} /> : null}
-            <input className="stitch-input sm:col-span-2" type="email" placeholder={selectedRole === "customer" ? "Email (Gmail)" : "Email"} {...register("email", { required: true })} />
+            <input
+              className="stitch-input sm:col-span-2"
+              type="email"
+              placeholder="Email (optional)"
+              {...register("email", {
+                validate: (v) =>
+                  !String(v || "").trim() ||
+                  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()) ||
+                  "Enter a valid email"
+              })}
+            />
             {editing ? (
               <input
                 className="stitch-input"
@@ -611,7 +625,7 @@ export function UsersPage({ mode } = {}) {
               />
             ) : (
               <p className="sm:col-span-2 rounded-lg bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant">
-                A temporary password will be emailed automatically. The user must set a new password on first sign-in.
+                If an email is provided, a temporary password is sent there. Otherwise the password is shown after create for you to share.
               </p>
             )}
             {!isFleet && !isCustomersMode ? (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LocateFixed, Radio, Search, Truck } from "lucide-react";
+import { LocateFixed, MapPin, Navigation, Radio, Search, Truck } from "lucide-react";
 import { Link, useOutletContext } from "react-router-dom";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { StatusBadge } from "../../components/ui/StatusBadge";
@@ -15,7 +15,7 @@ import {
 } from "../../hooks/useApi";
 import { useAuth } from "../../contexts/AuthContext";
 import { LIVE_MAP_STATUSES, nextTripStatus, roleHome } from "../../utils/helpers";
-import { matchSomaliaCity, resolveTripMapPosition } from "../../utils/geo";
+import { resolveTripMapPosition, buildTripRoadDisplay, fetchOsrmRoadPath } from "../../utils/geo";
 import { useLanguage } from "../../contexts/LanguageContext";
 
 const LIVE_POLL_MS = 5_000;
@@ -40,6 +40,33 @@ function formatEta(minutes) {
   const rem = m % 60;
   if (h <= 0) return `${rem}m`;
   return `${h}h ${rem}m`;
+}
+
+function formatDistanceKm(km) {
+  if (km == null || !Number.isFinite(Number(km))) return "—";
+  return `${Number(km).toFixed(1)} km`;
+}
+
+/** Prefer billed GPS km; if still 0, infer from planned − remaining so the UI matches the map. */
+function displayProgress(progress) {
+  if (!progress) return null;
+  const planned = Number(progress.plannedDistanceKm);
+  const remaining = Number(progress.remainingDistanceKm);
+  let completed = Number(progress.completedDistanceKm) || 0;
+  if (
+    completed <= 0 &&
+    Number.isFinite(planned) &&
+    planned > 0 &&
+    Number.isFinite(remaining)
+  ) {
+    completed = Math.max(0, Math.round((planned - remaining) * 10) / 10);
+  }
+  return { ...progress, completedDistanceKm: completed };
+}
+
+function isGpsOnline(status) {
+  const s = String(status || "OFFLINE").toUpperCase();
+  return s === "MOVING" || s === "IDLE" || s === "ONLINE";
 }
 
 export function TrackingPage() {
@@ -84,10 +111,12 @@ export function TrackingPage() {
 
   const filteredFleet = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return fleetRows.filter((row) => {
+    const rows = fleetRows.filter((row) => {
       const status = String(row.gpsStatus || "OFFLINE").toUpperCase();
       if (gpsFilter === "ONLINE") {
         if (status !== "MOVING" && status !== "IDLE") return false;
+      } else if (gpsFilter === "ACTIVE") {
+        if (!row.activeTrip) return false;
       } else if (gpsFilter !== "ALL" && status !== gpsFilter) {
         return false;
       }
@@ -105,43 +134,86 @@ export function TrackingPage() {
         .toLowerCase();
       return haystack.includes(q);
     });
+    // Active trips first, then GPS-online trucks
+    return rows.slice().sort((a, b) => {
+      const aLive = a.activeTrip ? 1 : 0;
+      const bLive = b.activeTrip ? 1 : 0;
+      if (aLive !== bLive) return bLive - aLive;
+      const aGps = isGpsOnline(a.gpsStatus) ? 1 : 0;
+      const bGps = isGpsOnline(b.gpsStatus) ? 1 : 0;
+      return bGps - aGps;
+    });
   }, [fleetRows, search, gpsFilter]);
 
-  // Map markers always follow the filtered list (never fall back to unfiltered trips).
+  /** Admin: active assigned trips (shown in top strip). */
+  const liveTripCards = useMemo(() => {
+    if (!canManage) return [];
+    return fleetRows
+      .filter((row) => row.activeTrip)
+      .map((truck) => ({
+        truckId: truck.id,
+        tripId: truck.activeTrip.id,
+        truckNumber: truck.truckNumber,
+        plateNumber: truck.plateNumber,
+        driver: truck.driver,
+        pickup: truck.activeTrip.pickup,
+        destination: truck.activeTrip.destination,
+        status: truck.activeTrip.status,
+        gpsStatus: truck.gpsStatus,
+        lastSeenLabel: truck.lastSeenLabel,
+        progress: truck.activeTrip.progress,
+        hasGps:
+          truck.activeTrip?.lastLocation?.lat != null ||
+          truck.lastLocation?.lat != null,
+      }))
+      .sort((a, b) => Number(b.hasGps) - Number(a.hasGps));
+  }, [canManage, fleetRows]);
+
+  // Map markers: GPS trucks + selected offline trip still gets road FROM→TO via origin/destination.
   const mapTrips = useMemo(() => {
     if (!canManage) return liveTrips;
     return filteredFleet
-      .filter((t) => t.lastLocation?.lat != null && t.lastLocation?.lng != null)
-      .map((truck) => ({
-        id: truck.activeTrip?.id || truck.id,
-        truckNumber: truck.truckNumber,
-        truck: truck.truckNumber,
-        driver: truck.driver,
-        pickup: truck.activeTrip?.pickup,
-        destination: truck.activeTrip?.destination,
-        status: truck.activeTrip?.status || truck.status,
-        gpsStatus: truck.gpsStatus,
-        lastSeenLabel: truck.lastSeenLabel,
-        lastLocation: {
-          ...truck.lastLocation,
-          speedKmh: truck.lastLocation?.speedKmh,
-        },
-        distanceTraveledKm: truck.activeTrip?.distanceTraveledKm,
-        progress: truck.activeTrip?.progress,
-        plateNumber: truck.plateNumber,
-        _truckId: truck.id,
-      }));
+      .map((truck) => {
+        const loc = truck.activeTrip?.lastLocation || truck.lastLocation;
+        if (loc?.lat == null || loc?.lng == null) return null;
+        return {
+          id: truck.activeTrip?.id || truck.id,
+          truckNumber: truck.truckNumber,
+          truck: truck.truckNumber,
+          driver: truck.driver,
+          pickup: truck.activeTrip?.pickup,
+          destination: truck.activeTrip?.destination,
+          status: truck.activeTrip?.status || truck.status,
+          gpsStatus: truck.gpsStatus,
+          lastSeenLabel: truck.lastSeenLabel,
+          lastLocation: {
+            lat: Number(loc.lat),
+            lng: Number(loc.lng),
+            updatedAt: loc.updatedAt,
+            speedKmh: loc.speedKmh != null ? Number(loc.speedKmh) : null,
+            heading: loc.heading != null ? Number(loc.heading) : null,
+          },
+          distanceTraveledKm: truck.activeTrip?.distanceTraveledKm,
+          progress: truck.activeTrip?.progress,
+          plateNumber: truck.plateNumber,
+          _truckId: truck.id,
+        };
+      })
+      .filter(Boolean);
   }, [canManage, filteredFleet, liveTrips]);
 
-  // Keep selection inside the current filter results.
+  // Prefer selecting an active trip; keep selection inside filter results.
   useEffect(() => {
     if (!canManage) return;
     const stillVisible = filteredFleet.some(
       (t) => t.id === selectedId || t.activeTrip?.id === selectedId
     );
     if (!stillVisible) {
-      const first = filteredFleet[0];
-      setSelectedId(first?.activeTrip?.id || first?.id || null);
+      const preferred =
+        filteredFleet.find((t) => t.activeTrip) ||
+        filteredFleet.find((t) => isGpsOnline(t.gpsStatus)) ||
+        filteredFleet[0];
+      setSelectedId(preferred?.activeTrip?.id || preferred?.id || null);
     }
   }, [canManage, filteredFleet, selectedId]);
 
@@ -154,14 +226,16 @@ export function TrackingPage() {
             id: truck.activeTrip?.id || truck.id,
             truckNumber: truck.truckNumber,
             truck: truck.truckNumber,
+            plateNumber: truck.plateNumber,
             driver: truck.driver,
             pickup: truck.activeTrip?.pickup,
             destination: truck.activeTrip?.destination,
             status: truck.activeTrip?.status,
             gpsStatus: truck.gpsStatus,
             lastSeenLabel: truck.lastSeenLabel,
-            lastLocation: truck.lastLocation,
+            lastLocation: truck.activeTrip?.lastLocation || truck.lastLocation,
             progress: truck.activeTrip?.progress,
+            activeTrip: truck.activeTrip,
             _truckId: truck.id,
           }))[0]
       : null) ||
@@ -176,7 +250,12 @@ export function TrackingPage() {
         ) || null
       : null;
 
-  const routeTripId = selected?.activeTrip?.id || (selected?.pickup ? selected.id : null);
+  const routeTripId =
+    selectedFleet?.activeTrip?.id ||
+    selected?.activeTrip?.id ||
+    (selected?.pickup ? selected.id : null);
+  const selectedHasGps =
+    selected?.lastLocation?.lat != null && selected?.lastLocation?.lng != null;
   const { data: routeData } = useTripRoute(routeTripId, {
     enabled: Boolean(routeTripId),
     refetchInterval: LIVE_POLL_MS,
@@ -186,11 +265,61 @@ export function TrackingPage() {
     refetchInterval: 15_000,
   });
 
-  const routePoints = routeData?.points || [];
-  const destinationPoint = selected
-    ? matchSomaliaCity(selected.destination) || matchSomaliaCity(selected.pickup)
-    : null;
-  const progress = selectedFleet?.activeTrip?.progress || selected?.progress || null;
+  const routePointsGps = routeData?.points || [];
+  const [osrmPath, setOsrmPath] = useState([]);
+
+  const roadDisplay = useMemo(() => {
+    const tripForRoad = selected
+      ? {
+          ...selected,
+          pickup: selected.pickup || selected.activeTrip?.pickup,
+          destination: selected.destination || selected.activeTrip?.destination,
+          lastLocation: selected.lastLocation || selectedFleet?.lastLocation,
+        }
+      : null;
+    return buildTripRoadDisplay({
+      trip: tripForRoad,
+      gpsTrail: routePointsGps,
+    });
+  }, [selected, selectedFleet, routePointsGps]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const { origin, destination, livePoint } = roadDisplay;
+    if (!origin || !destination) {
+      setOsrmPath([]);
+      return undefined;
+    }
+    // Always fetch real road (ignore short GPS stubs)
+    fetchOsrmRoadPath(origin, destination, livePoint).then((path) => {
+      if (!cancelled && path?.length) setOsrmPath(path);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    roadDisplay.origin?.lat,
+    roadDisplay.origin?.lng,
+    roadDisplay.destination?.lat,
+    roadDisplay.destination?.lng,
+    roadDisplay.livePoint?.lat,
+    roadDisplay.livePoint?.lng,
+  ]);
+
+  // Prefer OSRM road; never use 2-point GPS stub as the main route
+  const routePoints =
+    osrmPath.length >= 2
+      ? osrmPath
+      : roadDisplay.routePoints.length >= 3
+        ? roadDisplay.routePoints
+        : routePointsGps.length >= 8
+          ? routePointsGps
+          : roadDisplay.routePoints;
+  const originPoint = roadDisplay.origin;
+  const destinationPoint = roadDisplay.destination;
+  const progress = displayProgress(
+    selectedFleet?.activeTrip?.progress || selected?.progress || null
+  );
   const lastUpdated = (canManage ? fleetQuery.dataUpdatedAt : tripsQuery.dataUpdatedAt)
     ? new Date(canManage ? fleetQuery.dataUpdatedAt : tripsQuery.dataUpdatedAt).toLocaleTimeString()
     : "—";
@@ -233,16 +362,12 @@ export function TrackingPage() {
             { label: "Offline", value: summary.offline, filter: "OFFLINE" },
             { label: "Active trips", value: summary.activeTrips, filter: "ACTIVE" },
           ].map((card) => {
-            const active =
-              card.filter === "ACTIVE" ? false : gpsFilter === card.filter;
+            const active = gpsFilter === card.filter;
             return (
               <button
                 key={card.label}
                 type="button"
-                onClick={() => {
-                  if (card.filter === "ACTIVE") setGpsFilter("ALL");
-                  else setGpsFilter(card.filter);
-                }}
+                onClick={() => setGpsFilter(card.filter)}
                 className={`rounded-xl border px-4 py-3 text-left shadow-sm transition ${
                   active
                     ? "border-secondary-container bg-secondary-fixed/30"
@@ -257,13 +382,91 @@ export function TrackingPage() {
         </div>
       ) : null}
 
+      {canManage && liveTripCards.length > 0 ? (
+        <section className="overflow-hidden rounded-xl border border-secondary-container/40 bg-surface-container-lowest shadow-[0px_4px_16px_rgba(0,0,0,0.05)]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <Navigation size={18} className="text-secondary-container" />
+              <h2 className="text-base font-semibold text-primary-container">Live trips</h2>
+              <span className="rounded-full bg-secondary-fixed px-2 py-0.5 text-[11px] font-bold text-on-secondary-fixed">
+                {liveTripCards.length}
+              </span>
+            </div>
+            <p className="text-xs text-on-surface-variant">
+              Assigned / in progress — tap to focus on the map
+            </p>
+          </div>
+          <div className="flex gap-3 overflow-x-auto px-4 py-3 sm:px-5">
+            {liveTripCards.map((card) => {
+              const active = selectedId === card.tripId || selected?._truckId === card.truckId;
+              return (
+                <button
+                  key={card.tripId}
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(card.tripId);
+                    setGpsFilter("ACTIVE");
+                  }}
+                  className={`min-w-[260px] max-w-[320px] shrink-0 rounded-xl border p-3 text-left transition ${
+                    active
+                      ? "border-secondary-container bg-secondary-fixed/25 shadow-sm"
+                      : "border-outline-variant bg-surface-container-low/50 hover:border-secondary-container/50"
+                  }`}
+                >
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-bold text-primary-container">
+                      {card.plateNumber || card.truckNumber}
+                      {card.plateNumber && card.truckNumber ? (
+                        <span className="font-medium text-on-surface-variant"> · #{card.truckNumber}</span>
+                      ) : null}
+                    </span>
+                    <StatusBadge status={card.status} />
+                  </div>
+                  <p className="truncate text-xs text-on-surface-variant">
+                    {card.driver || "No driver"} · Trip {card.tripId}
+                  </p>
+                  <p className="mt-1.5 flex items-start gap-1 text-xs font-medium text-on-surface">
+                    <MapPin size={12} className="mt-0.5 shrink-0 text-rose-600" />
+                    <span className="line-clamp-2">
+                      {card.pickup} → {card.destination}
+                    </span>
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold">
+                    <span className={`rounded-full px-2 py-0.5 ${gpsBadgeClass(card.gpsStatus)}`}>
+                      {card.hasGps ? card.gpsStatus : "WAITING GPS"}
+                    </span>
+                    {card.hasGps && card.progress?.etaMinutes != null ? (
+                      <span className="text-on-surface-variant">
+                        ETA {formatEta(card.progress.etaMinutes)}
+                      </span>
+                    ) : (
+                      <span className="text-amber-800">Driver app GPS pending</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : canManage ? (
+        <div className="rounded-xl border border-dashed border-outline-variant bg-surface-container-low/40 px-4 py-3 text-sm text-on-surface-variant">
+          No live trips yet — assign a driver to a cargo request to track here.
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3 text-sm text-on-surface-variant">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-800">
           <Radio size={14} className={tripsQuery.isFetching || fleetQuery.isFetching ? "animate-pulse" : ""} />
           Live · Socket + {LIVE_POLL_MS / 1000}s refresh
         </span>
         <span>Last sync: {lastUpdated}</span>
-        {!canManage ? <span>{liveTrips.length} GPS live</span> : null}
+        {canManage ? (
+          <span>
+            {liveTripCards.length} live trip{liveTripCards.length === 1 ? "" : "s"} · {mapTrips.length} GPS on map
+          </span>
+        ) : (
+          <span>{liveTrips.length} GPS live</span>
+        )}
       </div>
 
       <div className="grid grid-cols-12 gap-6">
@@ -273,8 +476,8 @@ export function TrackingPage() {
               <h2 className="text-xl font-semibold text-on-surface">Live Fleet Map</h2>
               <p className="text-xs text-on-surface-variant">
                 {canManage
-                  ? `${filteredFleet.length} of ${fleetRows.length} trucks · ${mapTrips.length} on map`
-                  : `${mapTrips.length} markers · zoom / pan · click truck for details`}
+                  ? `${filteredFleet.length} of ${fleetRows.length} trucks · FROM → road → TO`
+                  : `${mapTrips.length} live · red FROM · green TO · green road`}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -296,6 +499,7 @@ export function TrackingPage() {
                     aria-label="GPS status filter"
                   >
                     <option value="ALL">All GPS</option>
+                    <option value="ACTIVE">Active trips only</option>
                     <option value="ONLINE">Online (Moving + Idle)</option>
                     <option value="MOVING">Moving</option>
                     <option value="IDLE">Idle</option>
@@ -331,6 +535,7 @@ export function TrackingPage() {
               selectedId={selected?.id}
               onSelect={setSelectedId}
               routePoints={routePoints}
+              originPoint={originPoint}
               destinationPoint={destinationPoint}
               className="absolute inset-0 h-full w-full"
             />
@@ -345,7 +550,11 @@ export function TrackingPage() {
             {canManage ? (
               <p className="mt-1 text-xs text-on-surface-variant">
                 Showing {filteredFleet.length}
-                {gpsFilter !== "ALL" ? ` · ${gpsFilter}` : ""}
+                {gpsFilter === "ACTIVE"
+                  ? " · active trips"
+                  : gpsFilter !== "ALL"
+                    ? ` · ${gpsFilter}`
+                    : ""}
                 {search.trim() ? ` · “${search.trim()}”` : ""}
               </p>
             ) : null}
@@ -353,36 +562,52 @@ export function TrackingPage() {
 
           {selected && canManage ? (
             <div className="space-y-2 border-b border-outline-variant bg-secondary-fixed/20 px-5 py-4 text-sm">
-              <p className="text-lg font-semibold text-primary-container">
-                {selectedFleet?.truckNumber || selected.truckNumber || selected.truck || selected.id}
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold text-primary-container">
+                    {selectedFleet?.plateNumber || selected.plateNumber || selectedFleet?.truckNumber || selected.truckNumber || "—"}
+                  </p>
+                  <p className="text-xs text-on-surface-variant">
+                    Truck #{selectedFleet?.truckNumber || selected.truckNumber || "—"}
+                    {routeTripId ? ` · Trip ${routeTripId}` : ""}
+                  </p>
+                </div>
+                {(selectedFleet?.activeTrip?.status || selected.status) && (
+                  <StatusBadge status={selectedFleet?.activeTrip?.status || selected.status} />
+                )}
+              </div>
               <p>Driver: {selected.driver || "—"}</p>
               <p>
                 GPS:{" "}
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${gpsBadgeClass(selected.gpsStatus)}`}>
-                  {selected.gpsStatus || "—"}
+                  {selectedHasGps ? selected.gpsStatus || "—" : "WAITING GPS"}
                 </span>
-                {selected.lastSeenLabel ? ` · ${selected.lastSeenLabel}` : ""}
+                {selectedHasGps && selected.lastSeenLabel ? ` · ${selected.lastSeenLabel}` : null}
+                {!selectedHasGps ? " · driver has not shared location yet" : null}
               </p>
               <p>
                 Speed:{" "}
-                {selected.lastLocation?.speedKmh != null
+                {selectedHasGps && selected.lastLocation?.speedKmh != null
                   ? `${selected.lastLocation.speedKmh} km/h`
                   : "—"}
               </p>
-              <p>
-                Trip: {selected.pickup || "—"} → {selected.destination || "—"}
-              </p>
-              {selected.activeTrip?.status || selected.status ? (
-                <p>Status: {selected.activeTrip?.status || selected.status}</p>
-              ) : null}
+              {(selected.pickup || selected.destination) && (
+                <p className="text-sm font-medium">
+                  {selected.pickup || "—"} → {selected.destination || "—"}
+                </p>
+              )}
               {progress ? (
-                <>
-                  <p>Distance: {progress.plannedDistanceKm ?? "—"} km</p>
-                  <p>Completed: {progress.completedDistanceKm ?? "—"} km</p>
-                  <p>Remaining: {progress.remainingDistanceKm ?? "—"} km</p>
-                  <p>ETA: {formatEta(progress.etaMinutes)}</p>
-                </>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-surface-container-lowest/80 p-2 text-xs">
+                  <p>Distance: {formatDistanceKm(progress.plannedDistanceKm)}</p>
+                  <p>Completed: {formatDistanceKm(progress.completedDistanceKm)}</p>
+                  <p>Remaining: {formatDistanceKm(progress.remainingDistanceKm)}</p>
+                  <p>
+                    ETA:{" "}
+                    {selectedHasGps
+                      ? formatEta(progress.etaMinutes)
+                      : "— (needs GPS)"}
+                  </p>
+                </div>
               ) : null}
               {routeTripId ? (
                 <Button
@@ -411,21 +636,38 @@ export function TrackingPage() {
                     }
                   >
                     <div className="mb-2 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-primary-container">
-                        <Truck size={16} className="text-secondary-container" />
-                        {truck.truckNumber}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-primary-container">
+                          <Truck size={16} className="shrink-0 text-secondary-container" />
+                          <span className="truncate">
+                            {truck.plateNumber || truck.truckNumber}
+                          </span>
+                        </div>
+                        {truck.plateNumber && truck.truckNumber ? (
+                          <p className="pl-6 text-[11px] text-on-surface-variant">#{truck.truckNumber}</p>
+                        ) : null}
                       </div>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${gpsBadgeClass(truck.gpsStatus)}`}>
-                        {truck.gpsStatus}
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${gpsBadgeClass(truck.gpsStatus)}`}>
+                        {truck.activeTrip?.lastLocation?.lat != null || truck.lastLocation?.lat != null
+                          ? truck.gpsStatus
+                          : "NO GPS"}
                       </span>
                     </div>
                     <p className="text-sm text-on-surface-variant">
-                      {truck.driver || "Unassigned"} · {truck.plateNumber}
+                      {truck.driver || "Unassigned"}
+                      {truck.activeTrip ? (
+                        <span className="ml-1 font-semibold text-secondary-container"> · Live trip</span>
+                      ) : null}
                     </p>
                     {truck.activeTrip ? (
-                      <p className="mt-1 text-sm font-medium">
-                        {truck.activeTrip.pickup} → {truck.activeTrip.destination}
-                      </p>
+                      <>
+                        <p className="mt-1 text-sm font-medium">
+                          {truck.activeTrip.pickup} → {truck.activeTrip.destination}
+                        </p>
+                        <div className="mt-1">
+                          <StatusBadge status={truck.activeTrip.status} />
+                        </div>
+                      </>
                     ) : (
                       <p className="mt-1 text-xs text-on-surface-variant">No active trip</p>
                     )}

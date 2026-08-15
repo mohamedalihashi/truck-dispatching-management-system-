@@ -29,7 +29,9 @@ import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../services/api";
 import { CANCELABLE_REQUEST_STATUSES, REQUEST_STATUSES, fareAfterDelivered } from "../../utils/helpers";
+import { formatTripCargoQuantity } from "../../utils/cargoMeasurement";
 import { applyFormValidationIssues } from "../../utils/bookingValidation";
+import { TripPhotosSection } from "../../components/ui/DocumentCard";
 
 function truckServiceType(truck) {
   if (truck?.driverServiceType === "SHARED" || truck?.serviceType === "SHARED") return "SHARED";
@@ -496,8 +498,15 @@ export function RequestsPage() {
               }
             />
             <Detail label="Type" value={viewing.loadType || "FTL"} />
-            <Detail label="Cargo type" value={viewing.cargoType || viewing.description || "—"} />
-            <Detail label="Weight" value={viewing.weight} />
+            <Detail label="Cargo type / Nooca alaabta" value={viewing.cargoType || viewing.description || "—"} />
+            <Detail
+              label="Quantity / Tirada"
+              value={
+                formatTripCargoQuantity(viewing) !== "—"
+                  ? formatTripCargoQuantity(viewing)
+                  : "Pending — driver enters at pickup"
+              }
+            />
             <Detail label="Price" value={fareAfterDelivered(viewing.status, viewing.finalPrice ?? viewing.quotedPrice)} />
             <Detail label="ETA" value={viewing.quotedEstimatedTime || "—"} />
             <Detail label="Distance" value={viewing.distanceKm != null ? `${viewing.distanceKm} km` : "—"} />            <Detail label="Driver" value={viewing.driver || "—"} />
@@ -505,6 +514,7 @@ export function RequestsPage() {
             <Detail label="Description" value={viewing.description} className="sm:col-span-2" />
             <Detail label="Instructions" value={viewing.specialInstructions || "—"} className="sm:col-span-2" />
           </dl>
+          <TripPhotosSection cargoImageUrl={viewing.cargoImageUrl} />
         </Modal>
       )}
 
@@ -538,7 +548,7 @@ export function RequestsPage() {
               errors={createErrors}
               watch={watchCreate}
               setValue={setCreateValue}
-              customers={customers?.data || []}
+              customers={customers?.data}
               showContactFields
               photoPreview={photoPreview}
               photoError={photoError}

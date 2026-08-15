@@ -241,7 +241,7 @@ model CargoRequest {
   cargoType             String?       @map("cargo_type") @db.VarChar(100)
   measuredQuantity      Decimal?      @map("measured_quantity") @db.Decimal(14, 3)
   measurementUnit       String?       @map("measurement_unit") @db.VarChar(20)
-  weight                String        @db.VarChar(30)
+  weight                String        @db.VarChar(120)
   description           String
   receiver              String?       @db.VarChar(150)
   sender                String?       @db.VarChar(150)
@@ -342,6 +342,7 @@ model Trip {
   earnings     Earning[]
   feedback     TripFeedback?
   feedbackToken DeliveryFeedbackToken?
+  trackingLinks TrackingLink[]
   locationPoints TripLocationPoint[]
   events         TripEvent[]
 
@@ -562,6 +563,25 @@ model DeliveryFeedbackToken {
   @@map("delivery_feedback_tokens")
 }
 
+/** Secure shareable live-tracking links (public /track/:token). */
+model TrackingLink {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId     String    @map("trip_id")
+  tokenHash  String    @unique @map("token_hash")
+  label      String?   @db.VarChar(120)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz()
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz()
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  lastViewedAt DateTime? @map("last_viewed_at") @db.Timestamptz()
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, revokedAt], map: "idx_tracking_links_trip")
+  @@index([expiresAt], map: "idx_tracking_links_expires")
+  @@map("tracking_links")
+}
+
 model SmsNotification {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType        String    @map("entity_type")
@@ -609,6 +629,22 @@ model SupportComplaint {
   @@index([customerId, createdAt], map: "idx_support_complaints_customer")
   @@index([status, createdAt], map: "idx_support_complaints_status")
   @@map("support_complaints")
+}
+
+/** Public Contact page messages (landing “Send message”). */
+model ContactMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(150)
+  email     String?  @db.VarChar(254)
+  phone     String   @db.VarChar(40)
+  message   String   @db.VarChar(2000)
+  status    String   @default("Open") @db.VarChar(30)
+  adminNote String?  @map("admin_note") @db.VarChar(1000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status, createdAt], map: "idx_contact_messages_status")
+  @@map("contact_messages")
 }
 
 model SharedTrip {

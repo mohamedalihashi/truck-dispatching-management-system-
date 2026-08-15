@@ -3,8 +3,9 @@ import { generateTruckId } from "../../lib/truckId.js";
 import { mapTruck } from "./mappers.js";
 
 export const truckRepository = {
-async listTrucks({ status, search, page = 1, limit = 50 } = {}) {
+async listTrucks({ status, search, page = 1, limit = 50, driverId } = {}) {
   const where = {};
+  if (driverId) where.driverId = driverId;
   if (status) where.status = status;
   if (search) {
     where.OR = [

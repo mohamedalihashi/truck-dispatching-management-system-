@@ -81,6 +81,37 @@ export const fleetRepository = {
       if (gpsStatus && derived !== gpsStatus) continue;
 
       const activeTrip = truck.trips[0] || null;
+
+      // Prefer the active trip's live GPS when it is newer (or truck has none).
+      // Otherwise the map can stay stuck on an old truck pin / registration area.
+      const tripHasGps = activeTrip?.lastLat != null && activeTrip?.lastLng != null;
+      const truckHasGps = truck.lastLat != null && truck.lastLng != null;
+      const tripNewer =
+        tripHasGps &&
+        (!truck.lastLocationAt ||
+          !activeTrip.lastLocationAt ||
+          new Date(activeTrip.lastLocationAt).getTime() >= new Date(truck.lastLocationAt).getTime());
+      const liveLat = tripHasGps && (tripNewer || !truckHasGps) ? Number(activeTrip.lastLat) : truck.lastLat;
+      const liveLng = tripHasGps && (tripNewer || !truckHasGps) ? Number(activeTrip.lastLng) : truck.lastLng;
+      const liveAt =
+        tripHasGps && (tripNewer || !truckHasGps) ? activeTrip.lastLocationAt : truck.lastLocationAt;
+      const liveSpeed =
+        tripHasGps && (tripNewer || !truckHasGps)
+          ? activeTrip.lastSpeedKmh != null
+            ? Number(activeTrip.lastSpeedKmh)
+            : null
+          : truck.lastSpeedKmh != null
+            ? Number(truck.lastSpeedKmh)
+            : null;
+      const liveHeading =
+        tripHasGps && (tripNewer || !truckHasGps)
+          ? activeTrip.lastHeading != null
+            ? Number(activeTrip.lastHeading)
+            : null
+          : truck.lastHeading != null
+            ? Number(truck.lastHeading)
+            : null;
+
       const dest = activeTrip
         ? coordsFromPlaceName(activeTrip.destination) ||
           coordsFromPlaceName(
@@ -96,18 +127,30 @@ export const fleetRepository = {
                 ? Number(activeTrip.cargoRequest.distanceKm)
                 : null,
             completedDistanceKm: Number(activeTrip.distanceTraveledKm || 0),
-            currentLat: truck.lastLat ?? activeTrip.lastLat,
-            currentLng: truck.lastLng ?? activeTrip.lastLng,
+            currentLat: liveLat,
+            currentLng: liveLng,
             destinationLat: dest?.lat,
             destinationLng: dest?.lng,
-            speedKmh: truck.lastSpeedKmh,
+            speedKmh: liveSpeed,
           })
         : null;
+
+      const lastLocation =
+        liveLat != null && liveLng != null
+          ? {
+              lat: Number(liveLat),
+              lng: Number(liveLng),
+              updatedAt: liveAt,
+              speedKmh: liveSpeed,
+              heading: liveHeading,
+            }
+          : null;
 
       data.push({
         ...mapTruck({ ...truck, gpsStatus: derived }),
         gpsStatus: derived,
-        lastSeenLabel: msToAgoLabel(truck.lastLocationAt, now),
+        lastLocation,
+        lastSeenLabel: msToAgoLabel(liveAt || truck.lastLocationAt, now),
         activeTrip: activeTrip
           ? {
               id: activeTrip.id,
@@ -119,6 +162,17 @@ export const fleetRepository = {
                   ? Number(activeTrip.distanceTraveledKm)
                   : null,
               progress,
+              lastLocation: tripHasGps
+                ? {
+                    lat: Number(activeTrip.lastLat),
+                    lng: Number(activeTrip.lastLng),
+                    updatedAt: activeTrip.lastLocationAt,
+                    speedKmh:
+                      activeTrip.lastSpeedKmh != null ? Number(activeTrip.lastSpeedKmh) : null,
+                    heading:
+                      activeTrip.lastHeading != null ? Number(activeTrip.lastHeading) : null,
+                  }
+                : null,
             }
           : null,
       });

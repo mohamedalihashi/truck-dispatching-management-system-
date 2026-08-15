@@ -568,7 +568,13 @@ async rejectCargoQuote(id, { customerId, note }) {
 
 /** Driver declines a Pending / Quote Rejected booking before sending a price. */
 async declineCargoBooking(id, { driverId, note }) {
-  const existing = await prisma.cargoRequest.findUnique({ where: { id } });
+  const existing = await prisma.cargoRequest.findUnique({
+    where: { id },
+    include: {
+      driver: { select: { name: true } },
+      truck: { select: { truckType: true, plateNumber: true, truckNumber: true } },
+    },
+  });
   if (!existing) return null;
   if (existing.driverId !== driverId) {
     const error = new Error("Not allowed to decline this booking");
@@ -586,6 +592,9 @@ async declineCargoBooking(id, { driverId, note }) {
     error.status = 400;
     throw error;
   }
+
+  const declinedDriverName = existing.driver?.name || null;
+  const declinedTruck = existing.truck || null;
 
   const updated = await prisma.cargoRequest.update({
     where: { id },
@@ -614,6 +623,10 @@ async declineCargoBooking(id, { driverId, note }) {
         bookingId: id,
         status: "Cancelled",
         customerName: existing.senderName || existing.receiverName || null,
+        driverName: declinedDriverName,
+        truckType: declinedTruck?.truckType || null,
+        plateNumber: declinedTruck?.plateNumber || null,
+        truckNumber: declinedTruck?.truckNumber || null,
         pickup: existing.pickup,
         destination: existing.destination,
         fromRegion: existing.fromRegion,

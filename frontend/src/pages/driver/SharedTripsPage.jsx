@@ -1,26 +1,32 @@
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { MapPin, Weight, Package, Truck, CheckCircle2, Navigation, Flag } from "lucide-react";
+import { MapPin, Package, Truck, Flag } from "lucide-react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Button } from "../../components/ui/Button";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { MetricCard } from "../../components/ui/MetricCard";
 import { api } from "../../services/api";
-import { money } from "../../utils/helpers";
-import { SharedTripJourney } from "../../components/SharedTripJourney";
 import { SharedTripDecision } from "../../components/SharedTripDecision";
+
+function nextActionLabel(status) {
+  if (status === "Assigned") return "Accept / Reject";
+  if (["Open for booking", "Full", "Pickup"].includes(status)) return "Pickup loads";
+  if (["In Transit", "Departed"].includes(status)) return "Deliver loads";
+  if (["Delivered", "Completed"].includes(status)) return "Done";
+  return "Open";
+}
 
 export function SharedTripsPage() {
   const qc = useQueryClient();
 
   const { data: summary } = useQuery({
     queryKey: ["shared-trips-summary"],
-    queryFn: () => api.sharedTripsSummary()
+    queryFn: () => api.sharedTripsSummary(),
   });
 
   const { data, isLoading } = useQuery({
     queryKey: ["shared-trips-me"],
-    queryFn: () => api.listMySharedTrips({ limit: 50 })
+    queryFn: () => api.listMySharedTrips({ limit: 50 }),
   });
 
   const cancel = useMutation({
@@ -28,74 +34,122 @@ export function SharedTripsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["shared-trips-me"] });
       qc.invalidateQueries({ queryKey: ["shared-trips-summary"] });
-    }
+    },
   });
 
   const trips = data?.data || [];
+  const active = trips.filter((t) => !["Delivered", "Completed", "Cancelled"].includes(t.status));
+  const done = trips.filter((t) => ["Delivered", "Completed"].includes(t.status));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Shared Trips"
-        subtitle="Admin assigns shared loads as one job. Accept once → gather → pickup weight → In Transit → Delivered."
+        subtitle="Accept → Pickup mid mid → In Transit → Delivered mid mid"
       />
 
-      <SharedTripJourney />
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <MetricCard icon={Package} label="Total trips" value={summary?.total ?? 0} tone="navy" />
+      <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard icon={Truck} label="Awaiting accept" value={summary?.assigned ?? 0} tone="orange" />
-        <MetricCard icon={Truck} label="Open" value={summary?.open ?? 0} tone="blue" />
-        <MetricCard icon={CheckCircle2} label="Full" value={summary?.full ?? 0} tone="green" />
-        <MetricCard icon={Navigation} label="Pickup" value={summary?.pickup ?? summary?.departed ?? 0} tone="orange" />
+        <MetricCard
+          icon={Package}
+          label="Active"
+          value={(summary?.open ?? 0) + (summary?.full ?? 0) + (summary?.pickup ?? summary?.departed ?? 0)}
+          tone="navy"
+        />
         <MetricCard icon={Flag} label="Delivered" value={summary?.delivered ?? summary?.completed ?? 0} tone="green" />
       </div>
 
       {isLoading ? (
         <p className="py-10 text-center text-sm text-on-surface-variant">Loading…</p>
       ) : !trips.length ? (
-        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-10 text-center">
-          <p className="font-semibold text-on-surface">No shared trips yet</p>
-          <p className="mt-2 text-sm text-on-surface-variant">
-            Waiting for admin to assign SHARED loads to your truck from Shared Loads.
+        <div className="rounded-xl border border-dashed border-outline-variant px-6 py-12 text-center">
+          <p className="font-semibold text-on-surface">Weli ma jiraan shared trips</p>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Admin ayaa SHARED loads kuu qoondaynaya.
           </p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {trips.map((trip) => (
-            <article key={trip.id} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-5">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-on-surface">{trip.id}</p>
-                  <p className="mt-1 flex items-center gap-1 text-sm text-on-surface-variant">
-                    <MapPin size={14} /> {trip.pickup} → {trip.destination}
-                  </p>
-                </div>
-                <StatusBadge status={trip.status} />
-              </div>
-              <p className="mt-2 text-sm text-on-surface-variant">
-                <Weight size={14} className="inline" /> {trip.availableTons}t / {trip.totalCapacityTons}t · {trip.bookingsCount} booking(s)
-              </p>
-              {trip.pricePerTon != null ? <p className="text-sm text-on-surface-variant">{money(trip.pricePerTon)}/ton</p> : null}
-              <SharedTripJourney status={trip.status} compact className="mt-4" />
-              {trip.status === "Assigned" ? (
-                <div className="mt-4 rounded-lg border border-secondary-container/40 bg-secondary-fixed/20 p-3">
-                  <p className="mb-2 text-xs font-semibold text-on-surface">
-                    Hal shaqo · {trip.bookingsCount} load(s) · isku mel
-                  </p>
-                  <SharedTripDecision trip={trip} />
-                </div>
-              ) : null}
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link to={`/driver/shared-trips/${trip.id}`}>
-                  <Button variant="secondary" className="px-3 py-1 text-xs">View</Button>
-                </Link>
-                {["Open for booking", "Full"].includes(trip.status) ? (
-                  <Button className="px-3 py-1 text-xs" onClick={() => cancel.mutate(trip.id)}>Cancel</Button>
-                ) : null}
-              </div>
-            </article>
-          ))}
+        <div className="space-y-8">
+          {active.length ? (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant">
+                Active ({active.length})
+              </h2>
+              <ul className="space-y-3">
+                {active.map((trip) => (
+                  <li
+                    key={trip.id}
+                    className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-on-surface">{trip.id}</p>
+                          <StatusBadge status={trip.status} />
+                        </div>
+                        <p className="mt-1 flex items-center gap-1 text-sm text-on-surface-variant">
+                          <MapPin size={14} className="shrink-0" />
+                          <span className="truncate">
+                            {trip.pickup} → {trip.destination}
+                          </span>
+                        </p>
+                        <p className="mt-1 text-xs text-on-surface-variant">
+                          {trip.bookingsCount ?? 0} load(s) · Next: {nextActionLabel(trip.status)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link to={`/driver/shared-trips/${trip.id}`}>
+                          <Button className="px-3 py-1 text-xs">Open</Button>
+                        </Link>
+                        {["Open for booking", "Full"].includes(trip.status) ? (
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-1 text-xs"
+                            onClick={() => cancel.mutate(trip.id)}
+                          >
+                            Cancel
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {trip.status === "Assigned" ? (
+                      <div className="mt-3 border-t border-outline-variant/60 pt-3">
+                        <SharedTripDecision trip={trip} compact />
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {done.length ? (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant">
+                Completed ({done.length})
+              </h2>
+              <ul className="space-y-2">
+                {done.map((trip) => (
+                  <li
+                    key={trip.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-outline-variant/50 px-4 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-on-surface">{trip.id}</p>
+                      <p className="text-xs text-on-surface-variant">
+                        {trip.pickup} → {trip.destination}
+                      </p>
+                    </div>
+                    <Link to={`/driver/shared-trips/${trip.id}`}>
+                      <Button variant="secondary" className="px-3 py-1 text-xs">
+                        View
+                      </Button>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </div>
       )}
     </div>

@@ -21,7 +21,10 @@ const LANDING_LINKS = [
   { href: "#testimonials", labelKey: "public.clients" }
 ];
 
-const PUBLIC_ROUTES = [];
+const PUBLIC_ROUTES = [
+  { to: "/about", labelKey: "public.about" },
+  { to: "/contact", labelKey: "public.contact" }
+];
 
 export function PublicSiteHeader({ variant = "landing", className = "" }) {
   const [menuOpen, setMenuOpen] = useState(false);

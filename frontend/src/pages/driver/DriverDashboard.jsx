@@ -21,7 +21,6 @@ import { useDashboardSummary, useTripActions } from "../../hooks/useApi";
 import { isSharedDriver, money, fareAfterDelivered, nextTripStatus } from "../../utils/helpers";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { api } from "../../services/api";
-import { SharedTripJourney } from "../../components/SharedTripJourney";
 import { SharedTripDecision } from "../../components/SharedTripDecision";
 import { FTL_DRIVER_ACTIONS } from "../../components/FtlDriverJourney";
 import { AssignedTripDecision } from "../../components/AssignedTripDecision";
@@ -70,69 +69,57 @@ function SharedDriverDashboard({ user }) {
   const trips = tripsData?.data || [];
   const awaitingAccept = trips.filter((trip) => trip.status === "Assigned");
 
-  const statusData = buildNamedCounts([
-    ["Assigned", summary?.assigned],
-    ["Open", summary?.open],
-    ["Full", summary?.full],
-    ["Pickup", summary?.pickup ?? summary?.departed],
-    ["In Transit", summary?.inTransit],
-    ["Delivered", summary?.delivered ?? summary?.completed]
-  ]);
-  const trendData = buildMonthlyTripTrend(
-    trips.map((trip) => ({
-      ...trip,
-      status: trip.status === "Delivered" || trip.status === "Completed" ? "Delivered" : trip.status
-    }))
-  );
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title={t("driver.sharedDashboardTitle")}
-        subtitle={t("Welcome back, {name}. Admin assigns shared loads as one job — Accept once, then gather → pickup → Delivered.", {
-          name: firstName
-        })}
+        subtitle={`Salaan ${firstName}. Accept → Pickup mid mid → In Transit → Delivered.`}
       />
-
-      <SharedTripJourney />
 
       {awaitingAccept.length ? (
         <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-on-surface-variant">
+            Cusub — Accept
+          </h2>
           {awaitingAccept.map((trip) => (
             <div
               key={trip.id}
-              className="rounded-xl border border-secondary-container/40 bg-secondary-fixed/25 p-5"
+              className="rounded-xl border border-secondary-container/40 bg-secondary-fixed/25 p-4"
             >
-              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
-                    New shared job — Accept once
-                  </p>
-                  <p className="text-lg font-bold text-primary-container">{trip.id}</p>
+                  <p className="font-bold text-on-surface">{trip.id}</p>
                   <p className="text-sm text-on-surface-variant">
                     {trip.pickup} → {trip.destination} · {trip.bookingsCount} load(s)
                   </p>
                 </div>
                 <StatusBadge status={trip.status} />
               </div>
-              <SharedTripDecision trip={trip} />
+              <SharedTripDecision trip={trip} compact />
               <Link
                 to={`/driver/shared-trips/${trip.id}`}
-                className="mt-3 inline-block text-sm font-semibold text-secondary hover:underline"
+                className="mt-2 inline-block text-sm font-semibold text-secondary hover:underline"
               >
-                View details
+                Faahfaahin →
               </Link>
             </div>
           ))}
         </section>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-        <MetricCard icon={Package} label="Total trips" value={summary?.total ?? 0} tone="orange" />
-        <MetricCard icon={Truck} label="Awaiting accept" value={summary?.assigned ?? 0} tone="soft" />
-        <MetricCard icon={CheckCircle2} label="Full" value={summary?.full ?? 0} tone="blue" />
-        <MetricCard icon={Navigation} label="Pickup" value={summary?.pickup ?? summary?.departed ?? 0} tone="navy" />
-        <MetricCard icon={Navigation} label="In Transit" value={summary?.inTransit ?? 0} tone="amber" />
+      <div className="grid grid-cols-3 gap-3">
+        <MetricCard icon={Truck} label="Accept" value={summary?.assigned ?? 0} tone="orange" />
+        <MetricCard
+          icon={Navigation}
+          label="Active"
+          value={
+            (summary?.open ?? 0) +
+            (summary?.full ?? 0) +
+            (summary?.pickup ?? 0) +
+            (summary?.inTransit ?? 0)
+          }
+          tone="navy"
+        />
         <MetricCard
           icon={Flag}
           label="Delivered"
@@ -141,36 +128,34 @@ function SharedDriverDashboard({ user }) {
         />
       </div>
 
-      <Suspense fallback={<ChartsSkeleton />}>
-        <DriverDashboardCharts
-          variant="shared"
-          statusData={statusData}
-          trendData={trendData}
-          totalTrips={summary?.total ?? trips.length}
-        />
-      </Suspense>
-
-      <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0px_4px_20px_rgba(0,0,0,0.05)]">
-        <div className="flex items-center justify-between border-b border-outline-variant px-6 py-5">
-          <h2 className="text-xl font-semibold text-primary-container">{t("Your shared trips")}</h2>
-          <Link to="/driver/shared-trips" className="text-sm font-semibold text-secondary hover:underline">{t("View all")}</Link>
+      <section className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest">
+        <div className="flex items-center justify-between border-b border-outline-variant px-4 py-3">
+          <h2 className="font-semibold text-on-surface">{t("Your shared trips")}</h2>
+          <Link to="/driver/shared-trips" className="text-sm font-semibold text-secondary hover:underline">
+            {t("View all")}
+          </Link>
         </div>
         {isLoading ? (
-          <p className="py-10 text-center text-sm text-on-surface-variant">{t("Loading trips…")}</p>
+          <p className="py-8 text-center text-sm text-on-surface-variant">{t("Loading trips…")}</p>
         ) : !trips.length ? (
-          <EmptyState title="No shared trips yet" text="Admin will assign SHARED loads to your truck from Shared Loads." />
+          <div className="p-4">
+            <EmptyState title="No shared trips yet" text="Admin will assign SHARED loads to your truck." />
+          </div>
         ) : (
           <div className="divide-y divide-outline-variant">
             {trips.slice(0, 5).map((trip) => (
-              <Link key={trip.id} to={`/driver/shared-trips/${trip.id}`} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 transition hover:bg-surface-container-low">
-                <div>
+              <Link
+                key={trip.id}
+                to={`/driver/shared-trips/${trip.id}`}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 transition hover:bg-surface-container-low"
+              >
+                <div className="min-w-0">
                   <p className="font-semibold text-on-surface">{trip.id}</p>
-                  <p className="text-sm text-on-surface-variant">{trip.pickup} → {trip.destination}</p>
+                  <p className="truncate text-sm text-on-surface-variant">
+                    {trip.pickup} → {trip.destination}
+                  </p>
                 </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="flex items-center gap-1 text-on-surface-variant"><Weight size={14} /> {trip.availableTons}t / {trip.totalCapacityTons}t</span>
-                  <StatusBadge status={trip.status} />
-                </div>
+                <StatusBadge status={trip.status} />
               </Link>
             ))}
           </div>

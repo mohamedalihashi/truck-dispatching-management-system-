@@ -9,12 +9,14 @@ import {
   buildCargoBookingPayload
 } from "../../components/CargoBookingFields";
 import { useCreateCargo } from "../../hooks/useApi";
+import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../services/api";
 import { applyFormValidationIssues } from "../../utils/bookingValidation";
 
 export function BookTruckPage() {
   const create = useCreateCargo();
   const navigate = useNavigate();
+  const { user, refreshUser } = useAuth();
   const submissionKey = useRef(crypto.randomUUID());
   const [cargoPhoto, setCargoPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState("");
@@ -60,10 +62,18 @@ export function BookTruckPage() {
     setServerError("");
     setPhotoError("");
     try {
+      // Ensure role matches the customer book page (stale session after role change).
+      const latest = await refreshUser().catch(() => user);
+      if (latest?.role && latest.role !== "customer") {
+        setServerError("Log in with a customer account to submit this request.");
+        return;
+      }
       const payload = {
         ...buildCargoBookingPayload({ ...formValues, loadType: "FTL" }),
         submissionKey: submissionKey.current
       };
+      // Customer bookings use the logged-in account — never send empty customerId.
+      delete payload.customerId;
       const request = await create.mutateAsync(payload);
 
       setUploadingImage(true);
@@ -106,7 +116,8 @@ export function BookTruckPage() {
           watch={watch}
           setValue={setValue}
           showLoadType={false}
-          showSpecialInstructions={false}
+          showSpecialInstructions
+          showContactFields
           photoPreview={photoPreview}
           photoError={photoError}
           onSelectPhoto={selectPhoto}

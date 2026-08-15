@@ -31,7 +31,7 @@ describe("cargoSmsRecipients", () => {
 });
 
 describe("formatAssignedTruckLine", () => {
-  it("includes truck type and truck number for assignment SMS", () => {
+  it("includes driver name before truck plate for assignment SMS", () => {
     expect(
       formatAssignedTruckLine({
         driverName: "Axmed",
@@ -40,7 +40,7 @@ describe("formatAssignedTruckLine", () => {
         plateNumber: "SO-1234",
       })
     ).toBe(
-      " Nooca gaadhiga: Box truck. Lambarka gaadhiga: TRK-12 (taarikada SO-1234). Darawalka: Axmed."
+      " Darawalka: Axmed. Nooca gaariga: Box truck. Taargada: SO-1234. Gaari: TRK-12."
     );
   });
 
@@ -51,6 +51,6 @@ describe("formatAssignedTruckLine", () => {
         truckNumber: "SO-99",
         plateNumber: "SO-99",
       })
-    ).toBe(" Nooca gaadhiga: Flatbed. Lambarka gaadhiga: SO-99.");
+    ).toBe(" Darawalka: Darawal. Nooca gaariga: Flatbed. Taargada: SO-99.");
   });
 });

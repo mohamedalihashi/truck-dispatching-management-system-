@@ -19,9 +19,15 @@ export const settingsRepository = {
   async getSupportContact() {
     const row = await prisma.setting.findUnique({ where: { key: "general" } });
     const general = row?.value && typeof row.value === "object" ? row.value : {};
+    const supportEmail =
+      general.supportEmail || process.env.SUPPORT_EMAIL || "support@gaarihel.so";
+    const supportPhone =
+      general.supportPhone || process.env.SUPPORT_PHONE || "";
     return {
-      supportEmail: general.supportEmail || process.env.SUPPORT_EMAIL || "support@truckdispatch.so",
-      supportPhone: general.supportPhone || process.env.SUPPORT_PHONE || "+252 61 XXX XXXX",
+      supportEmail,
+      supportPhone,
+      // WhatsApp uses the same number as phone (no separate setting).
+      supportWhatsApp: supportPhone,
     };
   },
 

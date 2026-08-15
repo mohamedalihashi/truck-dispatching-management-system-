@@ -8,13 +8,13 @@ import { dispatchVerificationEmail, verificationPayload } from "../services/emai
 import { registrationUpload, upload } from "../lib/uploads.js";
 import { deleteAssets, uploadBuffer } from "../services/cloudinaryService.js";
 import { persistUploadedFile } from "../lib/persistUpload.js";
-import { strongPasswordSchema, fullNameSchema } from "../lib/validation.js";
+import { strongPasswordSchema, fullNameSchema, optionalEmailSchema, resolveAccountEmail, isPlaceholderEmail } from "../lib/validation.js";
 import { authLimiter, otpLimiter, passwordResetLimiter, registrationLimiter, resendLimiter } from "../middleware/security.js";
 
 const router = Router();
 const personName = fullNameSchema;
 const username = z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9._-]+$/);
-const email = z.string().trim().email().max(254);
+const email = optionalEmailSchema;
 const phone = z.string().trim().min(7).max(20).regex(/^\+?[0-9\s-]+$/, "Enter a valid phone number");
 const shortText = z.string().trim().min(1).max(100);
 const addressText = z.string().trim().min(1).max(255);
@@ -191,7 +191,7 @@ router.post("/register", registrationLimiter, registrationUpload.fields([
 
     const conflict = await db.findRegistrationConflict({
       username: req.body.username,
-      email: req.body.email,
+      email: String(req.body.email || "").trim() || undefined,
       phone: req.body.phone
     });
     if (conflict) return res.status(409).json({ message: `${conflict} already registered` });
@@ -201,7 +201,7 @@ router.post("/register", registrationLimiter, registrationUpload.fields([
     const payload = {
       name: req.body.name,
       username: req.body.username,
-      email: req.body.email,
+      email: String(req.body.email || "").trim() || undefined,
       phone: req.body.phone,
       password: req.body.password,
       role: "customer",
@@ -219,22 +219,25 @@ router.post("/register", registrationLimiter, registrationUpload.fields([
       await deleteAssets(uploadedPublicIds);
       return validationFailed(res, parsed);
     }
+    const accountEmail = resolveAccountEmail({
+      email: parsed.data.email,
+      username: parsed.data.username,
+      phone: parsed.data.phone
+    });
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    const userPayload = { ...parsed.data, email: accountEmail, password: undefined, passwordHash };
 
-    if (!isAuthOtpEnabled()) {
-      const user = await db.createUser({
-        ...parsed.data,
-        password: undefined,
-        passwordHash
-      });
+    // No real email → skip OTP (cannot deliver a code)
+    if (!isAuthOtpEnabled() || isPlaceholderEmail(accountEmail) || !parsed.data.email) {
+      const user = await db.createUser(userPayload);
       const safe = publicUser(user);
       return res.status(201).json({ user: safe, token: signToken(safe) });
     }
 
-    const pendingPayload = { ...parsed.data, password: undefined, passwordHash };
-    const { code } = await db.createVerificationCode({ email: parsed.data.email, purpose: "register", payload: pendingPayload });
-    const emailResult = await dispatchVerificationEmail(parsed.data.email, code, "register");
-    return res.status(202).json(verificationResponse(parsed.data.email, emailResult));
+    const pendingPayload = userPayload;
+    const { code } = await db.createVerificationCode({ email: accountEmail, purpose: "register", payload: pendingPayload });
+    const emailResult = await dispatchVerificationEmail(accountEmail, code, "register");
+    return res.status(202).json(verificationResponse(accountEmail, emailResult));
   } catch (error) {
     await deleteAssets(uploadedPublicIds);
     if (isDbBusyError(error)) return dbBusyResponse(res);

@@ -9,7 +9,7 @@ export const TRIP_NOTIFY = {
   assigned: {
     title: "Gaari La Qoondeeyay",
     body:
-      "Gaari ayaa laguu qoondeeyay. Darawalkaaga ayaa diyaar u ah inuu usoo dhaqaaqo goobta xamuulka laga qaadayo, waxaana kuu soo gaari doona sida ugu dhaqsiyaha badan.",
+      "Gaari iyo darawal ayaa laguu qoondeeyay. Magaca darawalka iyo taargada gaariga waxaad ka arkaysaa ogeysiiskan. Darawalkaagu wuu diyaar u yahay inuu usoo dhaqaaqo goobta xamuulka.",
   },
   enRoutePickup: {
     title: "Darawalka Wuu Kusoo Socdaa",
@@ -95,6 +95,46 @@ export function formatRouteAddress({ pickup, destination, fromRegion, fromDistri
   return { pickup: from, destination: to };
 }
 
+/** Append Macmiil / Darawal / truck / route lines. Driver always shown when truck info exists. */
+function appendTripPartyLines(lines, details = {}) {
+  const {
+    status,
+    customerName,
+    driverName,
+    truckType,
+    plateNumber,
+    truckNumber,
+    pickup,
+    destination,
+    fromRegion,
+    fromDistrict,
+    toRegion,
+    toDistrict,
+  } = details;
+  const driver = String(driverName || "").trim();
+  const hasTruck = Boolean(truckType || plateNumber || truckNumber);
+  const route = formatRouteAddress({
+    pickup,
+    destination,
+    fromRegion,
+    fromDistrict,
+    toRegion,
+    toDistrict,
+  });
+
+  if (status) lines.push(`Xaalad: ${status}`);
+  if (customerName) lines.push(`Macmiil: ${customerName}`);
+  if (driver || hasTruck) lines.push(`Darawal: ${driver || "—"}`);
+  if (truckType) lines.push(`Nooca gaariga: ${truckType}`);
+  if (plateNumber) lines.push(`Taargada: ${plateNumber}`);
+  if (truckNumber && truckNumber !== plateNumber) lines.push(`Gaari: ${truckNumber}`);
+  else if (!plateNumber && truckNumber) lines.push(`Gaari: ${truckNumber}`);
+  if (route.pickup || route.destination) {
+    lines.push(`Jidka: ${route.pickup || "—"} → ${route.destination || "—"}`);
+  }
+  return lines;
+}
+
 /**
  * Build a full in-app notification so the user can follow name + addresses + status.
  */
@@ -121,35 +161,7 @@ export function formatCustomerNotifyLine(
   if (!entry) return null;
   const ref = tripId || bookingId;
   const lines = [entry.title + (ref ? ` (${ref})` : "")];
-  const route = formatRouteAddress({
-    pickup,
-    destination,
-    fromRegion,
-    fromDistrict,
-    toRegion,
-    toDistrict,
-  });
-
-  if (status) lines.push(`Xaalad: ${status}`);
-  if (customerName) lines.push(`Macmiil: ${customerName}`);
-  if (driverName) lines.push(`Darawal: ${driverName}`);
-  if (truckType) lines.push(`Nooca gaariga: ${truckType}`);
-  if (plateNumber) lines.push(`Taargada: ${plateNumber}`);
-  else if (truckNumber) lines.push(`Gaari: ${truckNumber}`);
-  if (route.pickup || route.destination) {
-    lines.push(`Jidka: ${route.pickup || "—"} → ${route.destination || "—"}`);
-  }
-  if (entry.body) lines.push(entry.body);
-  if (extra) lines.push(String(extra));
-
-  return lines.join("\n");
-}
-
-/** Free-form multi-line notification (driver / admin / one-off events). */
-export function formatNotifyLines(title, details = {}) {
-  const {
-    tripId,
-    bookingId,
+  appendTripPartyLines(lines, {
     status,
     customerName,
     driverName,
@@ -162,29 +174,18 @@ export function formatNotifyLines(title, details = {}) {
     fromDistrict,
     toRegion,
     toDistrict,
-    body,
-    extra,
-  } = details;
+  });
+  if (entry.body) lines.push(entry.body);
+  if (extra) lines.push(String(extra));
+  return lines.join("\n");
+}
+
+/** Free-form multi-line notification (driver / admin / one-off events). */
+export function formatNotifyLines(title, details = {}) {
+  const { tripId, bookingId, body, extra, ...party } = details;
   const ref = tripId || bookingId;
   const lines = [String(title) + (ref ? ` (${ref})` : "")];
-  const route = formatRouteAddress({
-    pickup,
-    destination,
-    fromRegion,
-    fromDistrict,
-    toRegion,
-    toDistrict,
-  });
-
-  if (status) lines.push(`Xaalad: ${status}`);
-  if (customerName) lines.push(`Macmiil: ${customerName}`);
-  if (driverName) lines.push(`Darawal: ${driverName}`);
-  if (truckType) lines.push(`Nooca gaariga: ${truckType}`);
-  if (plateNumber) lines.push(`Taargada: ${plateNumber}`);
-  else if (truckNumber) lines.push(`Gaari: ${truckNumber}`);
-  if (route.pickup || route.destination) {
-    lines.push(`Jidka: ${route.pickup || "—"} → ${route.destination || "—"}`);
-  }
+  appendTripPartyLines(lines, party);
   if (body) lines.push(String(body));
   if (extra) lines.push(String(extra));
   return lines.join("\n");

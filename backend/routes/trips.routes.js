@@ -10,6 +10,12 @@ import { createFeedbackToken } from "../services/deliveryFeedbackService.js";
 import { sendTripEventSms } from "../services/cargoSmsService.js";
 import { db } from "../services/dbService.js";
 import { emitUserNotification } from "../lib/notifyRealtime.js";
+import { prisma } from "../lib/prisma.js";
+import {
+  createTrackingLink,
+  revokeTrackingLink,
+  getTripTrackingForViewer,
+} from "../services/trackingLinkService.js";
 
 const router = Router();
 const uploadDir = process.env.VERCEL
@@ -44,13 +50,26 @@ const statusSchema = z
     weightAmount: z.coerce.number().positive().optional(),
     weightUnit: z.enum(["kg", "tons"]).optional(),
     measuredQuantity: z.coerce.number().positive().optional(),
-    measurementUnit: z.enum(["KG", "LITER", "HEAD"]).optional()
+    measurementUnit: z.enum(["KG", "LITER", "HEAD", "MIXED"]).optional(),
+    measurements: z
+      .object({
+        kg: z.coerce.number().positive().optional(),
+        liter: z.coerce.number().positive().optional(),
+        head: z.coerce.number().int().positive().optional(),
+      })
+      .optional(),
+    deliveryConfirmCode: z.string().trim().min(4).max(12).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.status === "Picked Up") {
       const hasLegacy = data.weightAmount != null && data.weightAmount > 0;
       const hasMeasured = data.measuredQuantity != null && data.measuredQuantity > 0;
-      if (!hasLegacy && !hasMeasured) {
+      const m = data.measurements || {};
+      const hasMixed =
+        (m.kg != null && m.kg > 0) ||
+        (m.liter != null && m.liter > 0) ||
+        (m.head != null && m.head > 0);
+      if (!hasLegacy && !hasMeasured && !hasMixed) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["measuredQuantity"],
@@ -64,6 +83,13 @@ const statusSchema = z
           message: "Select kg or tons"
         });
       }
+    }
+    if (data.status === "Delivered" && !String(data.deliveryConfirmCode || "").trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["deliveryConfirmCode"],
+        message: "Gali koodhka xaqiijinta ee macmiilka"
+      });
     }
   });
 
@@ -136,7 +162,10 @@ router.patch("/:id/status", requireRole("driver", "admin"), validate(statusSchem
     let measurementUnit;
 
     if (req.body.status === "Picked Up") {
-      if (req.body.measuredQuantity != null) {
+      if (req.body.measurements) {
+        measuredQuantity = req.body.measuredQuantity;
+        measurementUnit = req.body.measurementUnit;
+      } else if (req.body.measuredQuantity != null) {
         measuredQuantity = Number(req.body.measuredQuantity);
         measurementUnit = req.body.measurementUnit;
       } else if (req.body.weightAmount != null) {
@@ -152,7 +181,9 @@ router.patch("/:id/status", requireRole("driver", "admin"), validate(statusSchem
       driverId: req.user.role === "driver" ? req.user.sub : undefined,
       weight,
       measuredQuantity,
-      measurementUnit
+      measurementUnit,
+      measurements: req.body.measurements,
+      deliveryConfirmCode: req.body.deliveryConfirmCode,
     });
     if (!result) return res.status(404).json({ message: "Trip not found" });
     req.app.get("io")?.emit("trip.status.updated", result.trip);
@@ -364,6 +395,70 @@ router.post("/:id/confirm-delivery", async (req, res, next) => {
     const trip = await db.confirmTripDelivery(req.params.id, req.user.sub);
     if (!trip) return res.status(404).json({ message: "Trip not found" });
     res.json(trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function assertTripTrackAccess(req, tripId) {
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    select: { id: true, customerId: true, driverId: true },
+  });
+  if (!trip) {
+    const err = new Error("Trip not found");
+    err.status = 404;
+    throw err;
+  }
+  if (req.user.role === "admin") return trip;
+  if (req.user.role === "customer" && trip.customerId === req.user.sub) return trip;
+  if (req.user.role === "driver" && trip.driverId === req.user.sub) return trip;
+  const err = new Error("Not allowed");
+  err.status = 403;
+  throw err;
+}
+
+/** Authenticated live-tracking snapshot (customer/admin/assigned driver). */
+router.get("/:id/tracking", requireRole("customer", "admin", "driver"), async (req, res, next) => {
+  try {
+    await assertTripTrackAccess(req, req.params.id);
+    const data = await getTripTrackingForViewer(req.params.id, {
+      customerId: req.user.sub,
+      role: req.user.role,
+    });
+    if (!data) return res.status(404).json({ message: "Trip not found" });
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Create a revocable, expiring public tracking link (never uses sequential trip id). */
+router.post("/:id/tracking-link", requireRole("customer", "admin"), async (req, res, next) => {
+  try {
+    await assertTripTrackAccess(req, req.params.id);
+    const link = await createTrackingLink(req.params.id, {
+      createdById: req.user.sub,
+      label: req.body?.label || null,
+      expiresAt: req.body?.expiresAt ? new Date(req.body.expiresAt) : null,
+    });
+    const origin = process.env.PUBLIC_APP_URL || req.get("origin") || "";
+    res.status(201).json({
+      ...link,
+      url: origin ? `${String(origin).replace(/\/$/, "")}${link.path}` : link.path,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id/tracking-link", requireRole("customer", "admin"), async (req, res, next) => {
+  try {
+    await assertTripTrackAccess(req, req.params.id);
+    const revoked = await revokeTrackingLink(req.params.id, {
+      token: req.body?.token || req.query?.token || null,
+    });
+    res.json({ revoked });
   } catch (error) {
     next(error);
   }

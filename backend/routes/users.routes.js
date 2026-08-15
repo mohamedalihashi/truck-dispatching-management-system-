@@ -6,7 +6,7 @@ import { generateTempPassword } from "../lib/password.js";
 import { sendWelcomeEmail } from "../services/emailService.js";
 import { documentUpload } from "../lib/uploads.js";
 import { persistUploadedFile } from "../lib/persistUpload.js";
-import { strongPasswordSchema, fullNameSchema } from "../lib/validation.js";
+import { strongPasswordSchema, fullNameSchema, optionalEmailSchema, resolveAccountEmail, isPlaceholderEmail } from "../lib/validation.js";
 
 const router = Router();
 const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -14,7 +14,7 @@ const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const createSchema = z.object({
   name: fullNameSchema,
   username: z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9._-]+$/),
-  email: z.string().email().max(254),
+  email: optionalEmailSchema,
   password: strongPasswordSchema.optional(),
   role: z.enum(["admin", "customer", "driver"]),
   phone: z.string().trim().max(20).optional(),
@@ -149,7 +149,7 @@ router.post(
       const parsed = createSchema.safeParse({
         name: req.body.name,
         username: req.body.username,
-        email: req.body.email,
+        email: String(req.body.email || "").trim() || undefined,
         password: req.body.password || undefined,
         role,
         phone: req.body.phone || undefined,
@@ -201,8 +201,16 @@ router.post(
         return res.status(400).json({ message: "Driver license number/document, driver photo, and at least one truck document are required" });
       }
 
-      const existing = await db.findUserByEmail(parsed.data.email);
-      if (existing) return res.status(409).json({ message: "Email already registered" });
+      const accountEmail = resolveAccountEmail({
+        email: parsed.data.email,
+        username: parsed.data.username,
+        phone: parsed.data.phone
+      });
+
+      if (parsed.data.email) {
+        const existing = await db.findUserByEmail(parsed.data.email);
+        if (existing) return res.status(409).json({ message: "Email already registered" });
+      }
 
       const tempPassword = parsed.data.password || generateTempPassword();
       const truck = parsed.data.truck
@@ -215,7 +223,7 @@ router.post(
       const user = await db.createUser({
         name: parsed.data.name,
         username: parsed.data.username,
-        email: parsed.data.email,
+        email: accountEmail,
         password: tempPassword,
         role: parsed.data.role,
         phone: parsed.data.phone,
@@ -232,19 +240,28 @@ router.post(
         autoVerify: parsed.data.role === "driver"
       });
 
-      const emailResult = await sendWelcomeEmail(parsed.data.email, tempPassword, {
-        name: parsed.data.name,
-        role: parsed.data.role
-      });
+      let emailResult = { sent: false };
+      if (!isPlaceholderEmail(accountEmail) && parsed.data.email) {
+        emailResult = await sendWelcomeEmail(accountEmail, tempPassword, {
+          name: parsed.data.name,
+          role: parsed.data.role
+        });
+      } else {
+        emailResult = {
+          sent: false,
+          userMessage: `Account created. Share this temporary password with the user: ${tempPassword}`,
+          devPassword: tempPassword
+        };
+      }
 
       res.status(201).json({
         user,
         message:
           emailResult.userMessage ||
           (emailResult.sent
-            ? `Account created. Login password sent to ${parsed.data.email}.`
+            ? `Account created. Login password sent to ${accountEmail}.`
             : `Account created. Share the temporary password below with the user.`),
-        devPassword: emailResult.devPassword,
+        devPassword: emailResult.devPassword || (!emailResult.sent ? tempPassword : undefined),
         credentialsEmailed: Boolean(emailResult.sent)
       });
     } catch (error) {

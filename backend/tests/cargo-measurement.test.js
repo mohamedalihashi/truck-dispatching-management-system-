@@ -33,6 +33,30 @@ describe("resolveCargoMeasurement", () => {
     expect(resolveCargoMeasurement("General goods").unit).toBe("KG");
     expect(resolveCargoMeasurement("Construction materials").unit).toBe("KG");
   });
+
+  it("Others free-text keeps unitChoice (does not treat 'ari' in description as sheep)", () => {
+    const others = resolveCargoMeasurement("Others — baris baaato yanyo ari");
+    expect(others.unitChoice).toBe(true);
+    const free = resolveCargoMeasurement("baris baaato yanyo ari");
+    expect(free.unitChoice).toBe(true);
+  });
+
+  it("resolvePickupMeasurements accepts mixed kg + liter + head", async () => {
+    const { resolvePickupMeasurements, parseMeasurementParts } = await import(
+      "../lib/cargoMeasurement.js"
+    );
+    const resolved = resolvePickupMeasurements(
+      { measurements: { kg: 10, liter: 2, head: 4 } },
+      "Others — baris"
+    );
+    expect(resolved.ok).toBe(true);
+    expect(resolved.measurementUnit).toBe("MIXED");
+    expect(resolved.weightLabel).toContain("10 kg");
+    expect(resolved.weightLabel).toContain("2 liters");
+    expect(resolved.weightLabel).toContain("4 head");
+    const parts = parseMeasurementParts(resolved.weightLabel, "MIXED");
+    expect(parts).toHaveLength(3);
+  });
 });
 
 describe("resolveLivestockKind", () => {

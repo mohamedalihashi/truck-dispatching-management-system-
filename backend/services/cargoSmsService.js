@@ -61,11 +61,15 @@ export async function resolveCargoSmsRecipients(cargo) {
 }
 
 export function formatAssignedTruckLine({ driverName, truckType, truckNumber, plateNumber } = {}) {
+  const driver = String(driverName || "").trim() || "Darawal";
   const type = truckType || "Gaari";
-  const number = truckNumber || plateNumber || "N/A";
-  const plate = plateNumber && plateNumber !== truckNumber ? ` (taarikada ${plateNumber})` : "";
-  const driver = driverName ? ` Darawalka: ${driverName}.` : "";
-  return ` Nooca gaadhiga: ${type}. Lambarka gaadhiga: ${number}${plate}.${driver}`;
+  const plate = plateNumber || truckNumber || null;
+  const number = truckNumber && truckNumber !== plate ? truckNumber : null;
+  const parts = [`Darawalka: ${driver}`];
+  if (type) parts.push(`Nooca gaariga: ${type}`);
+  if (plate) parts.push(`Taargada: ${plate}`);
+  if (number) parts.push(`Gaari: ${number}`);
+  return ` ${parts.join(". ")}.`;
 }
 
 async function loadAssignedTruckDetails(request) {

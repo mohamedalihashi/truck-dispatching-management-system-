@@ -42,6 +42,8 @@ router.get("/me", requireRole("driver"), async (req, res, next) => {
         search: req.query.search,
         page: req.query.page,
         limit: req.query.limit,
+        // Hide cancelled/completed leftovers unless explicitly requested
+        excludeTerminal: req.query.includeTerminal !== "1" && !req.query.status,
       })
     );
   } catch (error) {
@@ -58,7 +60,10 @@ router.get("/", requireRole("driver", "admin", "customer"), async (req, res, nex
       limit: req.query.limit,
       publicOnly: req.user.role === "customer",
     };
-    if (req.user.role === "driver") filters.driverId = req.user.sub;
+    if (req.user.role === "driver") {
+      filters.driverId = req.user.sub;
+      filters.excludeTerminal = req.query.includeTerminal !== "1" && !req.query.status;
+    }
     res.json(await db.listSharedTrips(filters));
   } catch (error) {
     next(error);
@@ -72,9 +77,24 @@ router.get("/:id", requireRole("driver", "admin", "customer"), async (req, res, 
       includeCustomerPhone: req.user.role === "admin",
     });
     if (!trip) return res.status(404).json({ message: "Shared trip not found" });
-    if (req.user.role === "driver" && trip.driverId !== req.user.sub) {
-      return res.status(403).json({ message: "Not allowed to view this shared trip" });
+
+    if (req.user.role === "driver") {
+      if (String(trip.driverId || "") !== String(req.user.sub)) {
+        return res.status(403).json({ message: "Not allowed to view this shared trip" });
+      }
+    } else if (req.user.role === "customer") {
+      const ownsBooking = (trip.bookings || []).some(
+        (b) => String(b.customerId || "") === String(req.user.sub)
+      );
+      if (!ownsBooking) {
+        return res.status(403).json({ message: "Not allowed to view this shared trip" });
+      }
+      // Customers only see their own booking row(s)
+      trip.bookings = (trip.bookings || []).filter(
+        (b) => String(b.customerId || "") === String(req.user.sub)
+      );
     }
+
     res.json(trip);
   } catch (error) {
     next(error);
@@ -108,9 +128,16 @@ router.post("/assign-pool", requireRole("admin"), validate(assignPoolSchema), as
     });
     const io = req.app.get("io");
     if (io && result?.sharedTrip) {
-      io.emit("shared.pool.assigned", result);
+      const assignedDriverId = result.sharedTrip.driverId || req.body.driverId;
+      if (assignedDriverId) {
+        io.to(String(assignedDriverId)).emit("shared.pool.assigned", result);
+      }
       for (const booking of result.bookings || []) {
-        if (booking.tripId) io.emit("trip.updated", { id: booking.tripId });
+        if (booking.tripId) {
+          if (assignedDriverId) {
+            io.to(String(assignedDriverId)).emit("trip.updated", { id: booking.tripId });
+          }
+        }
       }
     }
     res.status(201).json(result);
@@ -213,12 +240,29 @@ router.patch("/:id/stops", requireRole("driver"), async (req, res, next) => {
   }
 });
 
+router.post("/:id/bookings/:bookingId/pickup", requireRole("driver"), async (req, res, next) => {
+  try {
+    const weightKg = req.body?.weightKg ?? req.body?.weight;
+    const trip = await db.pickupSharedBooking(req.params.id, req.params.bookingId, req.user.sub, {
+      weightKg,
+      measuredQuantity: req.body?.measuredQuantity,
+      measurementUnit: req.body?.measurementUnit,
+      measurements: req.body?.measurements,
+    });
+    req.app.get("io")?.emit("shared.trip.updated", trip);
+    res.json(trip);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/bookings/:bookingId/deliver", requireRole("driver"), async (req, res, next) => {
   try {
     const trip = await db.markSharedBookingDelivered(
       req.params.id,
       req.params.bookingId,
-      req.user.sub
+      req.user.sub,
+      { deliveryConfirmCode: req.body?.deliveryConfirmCode }
     );
     req.app.get("io")?.emit("trip.status.updated", { tripId: req.params.bookingId });
     res.json(trip);

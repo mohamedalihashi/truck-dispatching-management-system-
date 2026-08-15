@@ -11,6 +11,8 @@ import { useDashboardSearch } from "../../hooks/useDashboardSearch";
 import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../services/api";
 import { money, fareAfterDelivered, TRIP_STATUSES } from "../../utils/helpers";
+import { formatTripCargoQuantity } from "../../utils/cargoMeasurement";
+import { TripPhotosSection } from "../../components/ui/DocumentCard";
 
 const SHARED_TRIP_STATUSES = ["Open for booking", "Full", "Departed", "Completed", "Cancelled"];
 
@@ -158,11 +160,20 @@ export function TripsPage() {
             <Detail label="Driver" value={viewing.driver || "—"} />
             <Detail label="Truck" value={viewing.truck || "—"} />
             <Detail label="Cargo request" value={viewing.cargoRequestId || "—"} />
+            <Detail label="Cargo type / Nooca alaabta" value={viewing.cargoType || viewing.cargo || "—"} />
+            <Detail
+              label="Quantity / Tirada"
+              value={formatTripCargoQuantity(viewing)}
+            />
             <Detail label="Pickup" value={viewing.pickup} />
             <Detail label="Destination" value={viewing.destination} />
             <Detail label="Distance" value={viewing.distance || "—"} />
             <Detail label="ETA" value={viewing.estimatedTime || viewing.eta || "—"} />
           </dl>
+          <TripPhotosSection
+            cargoImageUrl={viewing.cargoImageUrl}
+            deliveryProofUrl={viewing.deliveryProofUrl}
+          />
         </Modal>
       )}
       </>
